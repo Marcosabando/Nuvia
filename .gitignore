@@ -1,0 +1,33 @@
+# Node modules
+node_modules/
+
+# Distribución / compilación
+dist/
+dist-ssr/
+temp/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Archivos de entorno y configuración sensible
+.env
+.env.*    # Ej: .env.dev, .env.prod
+config.js # si contiene credenciales privadas
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Dependencias y archivos de IDE
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# TypeScript
+*.tsbuildinfo
