@@ -105,13 +105,22 @@ export class AuthService {
   }
 
   /**
-   * Logout
+   * Logout completo
    */
   static logout(): void {
+    // Limpiar todos los datos de autenticación
     localStorage.removeItem('authToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
-    window.location.href = '/login';
+    localStorage.removeItem('rememberMe');
+    
+    // También limpiar sessionStorage por si acaso
+    sessionStorage.removeItem('authToken');
+    sessionStorage.removeItem('refreshToken');
+    sessionStorage.removeItem('user');
+    
+    // Redirigir al login
+    window.location.href = '/';
   }
 
   /**
