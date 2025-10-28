@@ -14,10 +14,12 @@ import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { NodeEnvs } from '@src/common/constants';
 import { RouteError } from '@src/common/util/route-errors';
 import authRouter from './routes/auth';
-import imagesRouter from './routes/ImagesRoutes'; // ✅ AGREGADO
+import imagesRouter from './routes/ImagesRoutes';
 import { testConnection } from '@src/config/database';
+import statsRouter from './routes/StatsRoutes';  // Importar rutas de estadísticas
 
 const app = express();
+
 
 /******************************************************
  * Middleware base
@@ -27,20 +29,33 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS
+// ✅ CORS CORREGIDO - Opción más permisiva para desarrollo
 const corsOptions = {
   origin: function (origin: string | undefined, callback: Function) {
-    const allowedOrigins = ENV.AllowedOrigins?.split(',') || ['http://localhost:3000'];
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:4173',
+       "http://localhost:3000",
+      "http://localhost:8080",
+      ...(ENV.AllowedOrigins?.split(',') || [])
+    ];
+    
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      logger.warn(`❌ Origen bloqueado por CORS: ${origin}`);
       callback(new Error('No permitido por CORS'));
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 app.use(cors(corsOptions));
+
 
 // Compresión de respuestas
 app.use(compression());
@@ -91,6 +106,7 @@ import userRouter from './routes/UserRoutes';
 app.use('/api/auth', authRouter);
 app.use('/api/users', userRouter);
 app.use('/api/images', imagesRouter);
+app.use('/api/stats', statsRouter); // 
 
 // Health check
 app.get('/health', (_: Request, res: Response) => {
@@ -112,6 +128,10 @@ app.get('/', (_: Request, res: Response) => {
         register: 'POST /api/auth/register',
         login: 'POST /api/auth/login',
         refresh: 'POST /api/auth/refresh'
+      },
+      users: {
+        login: 'POST /api/users/login', // ✅ Ruta del login
+        register: 'POST /api/users/register'
       },
       images: {
         upload: 'POST /api/images/upload',
