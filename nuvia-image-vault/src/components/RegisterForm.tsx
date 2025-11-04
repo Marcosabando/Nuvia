@@ -8,23 +8,54 @@ interface RegisterFormProps {
 export default function RegisterForm({ onClose }: RegisterFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
+    username: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Register submitted:', formData);
+
+    if (formData.password !== formData.confirmPassword) {
+      alert("Las contraseñas no coinciden");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:3000/api/users/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Error en el registro");
+      }
+
+      console.log("Usuario registrado:", data);
+      alert("Usuario creado con éxito ✅");
+      onClose(); // si quieres cerrar el modal
+    } catch (error: any) {
+      console.error("Error al registrar:", error.message);
+      alert(error.message);
+    }
   };
 
   return (
@@ -42,16 +73,16 @@ export default function RegisterForm({ onClose }: RegisterFormProps) {
       <form className="space-y-6" onSubmit={handleSubmit}>
         {/* Name */}
         <div className="space-y-3">
-          <label htmlFor="name" className="text-sm font-semibold block text-nuvia-deep">
+          <label htmlFor="username" className="text-sm font-semibold block text-nuvia-deep">
             Nombre completo
           </label>
           <div className="relative group">
             <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-nuvia-mauve group-focus-within:text-nuvia-rose transition-colors" />
             <input
               type="text"
-              id="name"
-              name="name"
-              value={formData.name}
+              id="username"
+              name="username"
+              value={formData.username}
               onChange={handleChange}
               placeholder="Tu nombre completo"
               required
@@ -100,8 +131,7 @@ export default function RegisterForm({ onClose }: RegisterFormProps) {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300"
-            >
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300">
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
@@ -130,8 +160,7 @@ export default function RegisterForm({ onClose }: RegisterFormProps) {
         {/* Submit */}
         <button
           type="submit"
-          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group"
-        >
+          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group">
           <span className="text-lg">Crear Cuenta</span>
           <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform duration-300" />
         </button>

@@ -20,7 +20,6 @@ export const API_CONFIG = {
   ENDPOINTS: {
     // Auth
     AUTH: {
-      LOGIN: '/auth/login',
       LOGIN_TEST: '/auth/login-test',
       REGISTER: '/auth/register',
       LOGOUT: '/auth/logout',
@@ -32,6 +31,7 @@ export const API_CONFIG = {
     // Users
     USERS: {
       BASE: '/users',
+      LOGIN: '/users/login',
       BY_ID: (id: number) => `/users/${id}`,
       UPDATE_PROFILE: '/users/profile',
       CHANGE_PASSWORD: '/users/password',
