@@ -15,6 +15,7 @@ import { NodeEnvs } from '@src/common/constants';
 import { RouteError } from '@src/common/util/route-errors';
 import authRouter from './routes/auth';
 import imagesRouter from './routes/ImagesRoutes';
+import videosRouter from './routes/VideosRoutes';
 import { testConnection } from '@src/config/database';
 import statsRouter from './routes/StatsRoutes';  // Importar rutas de estadísticas
 
@@ -107,6 +108,7 @@ import userRouter from './routes/UserRoutes';
 app.use('/api/users', userRouter);
 app.use('/api/images', imagesRouter);
 app.use('/api/stats', statsRouter); // 
+app.use('/api/videos', videosRouter);
 
 // Health check
 app.get('/health', (_: Request, res: Response) => {
