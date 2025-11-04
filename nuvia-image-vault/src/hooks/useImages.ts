@@ -1,8 +1,8 @@
-// src/hooks/useImages.ts
-import { useEffect, useState } from "react";
-import { apiService } from "@/services/api.services";
+// hooks/useImages.ts
+import { useState, useEffect } from 'react';
+import { apiService } from '@/services/api.services';
 
-interface ImageData {
+interface ImageItem {
   id: number;
   userId: number;
   title: string;
@@ -12,52 +12,62 @@ interface ImageData {
   fileSize: number;
   mimeType: string;
   created: string;
+  isFavorite?: boolean;
+  deletedAt?: string | null;
 }
 
-interface UseImagesReturn {
-  images: ImageData[];
-  loading: boolean;
-  error: string | null;
-  refetch: () => void;
-}
-
-export const useImages = (): UseImagesReturn => {
-  const [images, setImages] = useState<ImageData[]>([]);
+export function useImages() {
+  const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchImages = async () => {
     try {
       setLoading(true);
-      setError(null);
-
-      console.log("🔄 Obteniendo imágenes del usuario...");
-      
       const response = await apiService.get('/images');
-      
-      console.log("📸 Respuesta de imágenes:", response);
-
-      if (response.success && response.data) {
-        setImages(response.data);
-        console.log("✅ Imágenes cargadas correctamente:", response.data.length);
-      } else {
-        throw new Error(response.error || 'Error en la respuesta del servidor');
-      }
-
-    } catch (err: any) {
-      console.error("❌ Error cargando imágenes:", err);
-      
-      if (err.response?.data?.error) {
-        setError(`Error del servidor: ${err.response.data.error}`);
-      } else if (err.message) {
-        setError(`Error: ${err.message}`);
-      } else {
-        setError("No se pudieron cargar las imágenes");
-      }
+      setImages(response.data || []);
+      setError(null);
+    } catch (err) {
+      setError('Error al cargar las imágenes');
+      console.error('Error fetching images:', err);
     } finally {
       setLoading(false);
     }
   };
+
+  const toggleFavorite = async (imageId: number) => {
+    try {
+      await apiService.post(`/images/${imageId}/favorite`);
+      // Actualizar el estado local
+      setImages(prevImages => 
+        prevImages.map(image => 
+          image.id === imageId 
+            ? { ...image, isFavorite: !image.isFavorite }
+            : image
+        )
+      );
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      throw error;
+    }
+  };
+
+  const deleteImagePermanently = async (imageId: number) => {
+    try {
+      await apiService.delete(`/images/${imageId}/permanent`);  
+      setImages(prevImages => 
+        prevImages.filter(image => image.id !== imageId)
+      );
+    } catch (error) {
+      console.error('Error deleting image permanently:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Error al eliminar la imagen permanentemente';
+      throw new Error(errorMessage);
+    }
+  };
+
+  
 
   useEffect(() => {
     fetchImages();
@@ -67,8 +77,9 @@ export const useImages = (): UseImagesReturn => {
     images,
     loading,
     error,
-    refetch: fetchImages
+    refetch: fetchImages,
+    toggleFavorite,
+    deleteImagePermanently,
+    
   };
-};
-
-
+}

@@ -13,7 +13,6 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useImages } from "@/hooks/useImages";
 import { API_CONFIG } from "@/config/api.config";
-import { apiService } from "@/services/api.services";
 
 interface ImageItem {
   id: number;
@@ -25,7 +24,7 @@ interface ImageItem {
   fileSize: number;
   mimeType: string;
   created: string;
-  favorite?: boolean;
+  isFavorite?: boolean;
 }
 
 interface ImageGalleryProps {
@@ -51,19 +50,33 @@ const getImageUrl = (imagePath: string): string => {
 };
 
 export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
-  const { images, loading, error, refetch } = useImages();
+  const { images, loading, error, refetch, toggleFavorite, deleteImagePermanently } = useImages();
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+  const [processingAction, setProcessingAction] = useState<number | null>(null);
 
-  const toggleFavorite = (id: number) => {
-    console.log("Toggle favorite for image:", id);
+  const handleToggleFavorite = async (id: number) => {
+    try {
+      setProcessingAction(id);
+      await toggleFavorite(id);
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+    } finally {
+      setProcessingAction(null);
+    }
   };
 
-  const deleteImage = async (id: number) => {
-    try {
-      await apiService.delete(`/images/${id}`);
-      refetch();
-    } catch (error) {
-      console.error("Error deleting image:", error);
+  const handleDeletePermanently = async (imageId: number) => {
+    if (window.confirm('¿Estás seguro de que quieres eliminar permanentemente esta imagen? Esta acción no se puede deshacer.')) {
+      try {
+        setProcessingAction(imageId);
+        await deleteImagePermanently(imageId);
+        // No necesitas mostrar alert aquí porque el hook ya actualiza el estado
+      } catch (error) {
+        console.error("Error deleting image:", error);
+        alert('Error al eliminar la imagen');
+      } finally {
+        setProcessingAction(null);
+      }
     }
   };
 
@@ -123,7 +136,7 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-medium truncate">{image.originalFilename}</h3>
-                    {image.favorite && <Heart className="w-4 h-4 text-destructive fill-current" />}
+                    {image.isFavorite && <Heart className="w-4 h-4 text-destructive fill-current" />}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                     <span>{formatFileSize(image.fileSize)}</span>
@@ -150,8 +163,9 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                   </Dialog>
                   <ImageActions
                     image={image}
-                    onToggleFavorite={() => toggleFavorite(image.id)}
-                    onDelete={() => deleteImage(image.id)}
+                    processingAction={processingAction}
+                    onToggleFavorite={() => handleToggleFavorite(image.id)}
+                    onDelete={() => handleDeletePermanently(image.id)}
                   />
                 </div>
               </div>
@@ -190,12 +204,13 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                   variant="secondary"
                   size="sm"
                   className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                  onClick={() => toggleFavorite(image.id)}
+                  onClick={() => handleToggleFavorite(image.id)}
+                  disabled={processingAction === image.id}
                 >
                   <Heart
                     className={`w-3 h-3 md:w-4 md:h-4 ${
-                      image.favorite ? "text-destructive fill-current" : "text-muted-foreground"
-                    }`}
+                      image.isFavorite ? "text-destructive fill-current" : "text-muted-foreground"
+                    } ${processingAction === image.id ? "opacity-50" : ""}`}
                   />
                 </Button>
 
@@ -207,6 +222,7 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                       size="sm"
                       className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
                       onClick={(e) => e.stopPropagation()}
+                      disabled={processingAction === image.id}
                     >
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
@@ -216,9 +232,12 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                     className="w-48 z-[9999]"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
-                      <Heart className="w-4 h-4 mr-2" />
-                      {image.favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                    <DropdownMenuItem 
+                      onClick={() => handleToggleFavorite(image.id)}
+                      disabled={processingAction === image.id}
+                    >
+                      <Heart className={`w-4 h-4 mr-2 ${image.isFavorite ? "text-destructive fill-current" : ""}`} />
+                      {image.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => window.open(getImageUrl(image.imagePath), "_blank")}>
                       <Download className="w-4 h-4 mr-2" />
@@ -231,10 +250,11 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
-                      onClick={() => deleteImage(image.id)}
+                      onClick={() => handleDeletePermanently(image.id)}
+                      disabled={processingAction === image.id}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Mover a papelera
+                      {processingAction === image.id ? "Eliminando..." : "Eliminar permanentemente"}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -261,7 +281,7 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
             </div>
 
             {/* Badge de favorito */}
-            {image.favorite && (
+            {image.isFavorite && (
               <div className="absolute top-1 left-1 md:top-2 md:left-2">
                 <Badge variant="destructive" className="text-xs px-1.5 py-0.5">
                   <Heart className="w-2.5 h-2.5 md:w-3 md:h-3 mr-1 fill-current" />
@@ -278,11 +298,12 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
 
 interface ImageActionsProps {
   image: ImageItem;
+  processingAction: number | null;
   onToggleFavorite: () => void;
   onDelete: () => void;
 }
 
-function ImageActions({ image, onToggleFavorite, onDelete }: ImageActionsProps) {
+function ImageActions({ image, processingAction, onToggleFavorite, onDelete }: ImageActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -291,14 +312,18 @@ function ImageActions({ image, onToggleFavorite, onDelete }: ImageActionsProps) 
           size="sm"
           className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
           onClick={(e) => e.stopPropagation()}
+          disabled={processingAction === image.id}
         >
           <MoreHorizontal className="w-4 h-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onClick={onToggleFavorite}>
-          <Heart className="w-4 h-4 mr-2" />
-          {image.favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+        <DropdownMenuItem 
+          onClick={onToggleFavorite}
+          disabled={processingAction === image.id}
+        >
+          <Heart className={`w-4 h-4 mr-2 ${image.isFavorite ? "text-destructive fill-current" : ""}`} />
+          {image.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => window.open(getImageUrl(image.imagePath), "_blank")}>
           <Download className="w-4 h-4 mr-2" />
@@ -309,9 +334,13 @@ function ImageActions({ image, onToggleFavorite, onDelete }: ImageActionsProps) 
           Renombrar
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
+        <DropdownMenuItem 
+          className="text-destructive focus:text-destructive" 
+          onClick={onDelete}
+          disabled={processingAction === image.id}
+        >
           <Trash2 className="w-4 h-4 mr-2" />
-          Mover a papelera
+          {processingAction === image.id ? "Eliminando..." : "Eliminar permanentemente"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
