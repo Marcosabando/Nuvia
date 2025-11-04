@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { 
   Search, 
   Grid3X3, 
@@ -18,15 +18,175 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
 
 type ViewMode = "grid" | "list";
 
-export function TopBar() {
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+interface UploadFile {
+  id: string;
+  file: File;
+  progress: number;
+  status: 'uploading' | 'completed' | 'error';
+}
+
+export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const isMobile = useIsMobile();
+  const { toast } = useToast();
+
+  const uploadToServer = useCallback(async (file: File) => {
+    try {
+      console.log('📤 Subiendo archivo:', file.name);
+
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        throw new Error("No hay sesión activa. Por favor, inicia sesión nuevamente.");
+      }
+
+      // Crear FormData
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const xhr = new XMLHttpRequest();
+      
+      return new Promise((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded * 100) / event.total);
+            // Podrías agregar aquí un estado para mostrar progreso si lo deseas
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          console.log('📨 Respuesta del servidor:', {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            response: xhr.responseText
+          });
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              console.log('✅ Respuesta JSON:', response);
+              
+              // VERIFICAR SI LA RESPUESTA INDICA ÉXITO
+              if (response.success) {
+                toast({
+                  title: "✅ Subida completada",
+                  description: `${file.name} se subió correctamente`,
+                });
+                
+                // Llamar callback para recargar imágenes
+                if (onUploadComplete) {
+                  onUploadComplete();
+                }
+                
+                resolve(response);
+              } else {
+                // El servidor respondió OK pero con error en la lógica
+                reject(new Error(response.error || 'Error al guardar la imagen'));
+              }
+            } catch (parseError) {
+              reject(new Error('Error al procesar la respuesta del servidor'));
+            }
+          } else {
+            // Error HTTP
+            let errorMessage = `Error ${xhr.status}: ${xhr.statusText}`;
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              errorMessage = errorResponse.error || errorMessage;
+            } catch (e) {}
+            reject(new Error(errorMessage));
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Error de red al conectar con el servidor'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Subida cancelada'));
+        });
+
+        // Configurar y enviar la petición
+        xhr.open('POST', 'http://localhost:3000/api/images/upload');
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error completo subiendo archivo:', error);
+      
+      let errorMessage = `No se pudo subir ${file.name}`;
+      
+      if (error.message?.includes("401")) {
+        errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      } else if (error.message?.includes("413")) {
+        errorMessage = "El archivo es demasiado grande (máximo 10MB)";
+      } else if (error.message?.includes("500")) {
+        errorMessage = "Error interno del servidor al procesar la imagen";
+      } else if (error.message?.includes("404")) {
+        errorMessage = "Servicio no disponible. Ruta no encontrada.";
+      } else {
+        errorMessage = error.message || errorMessage;
+      }
+
+      toast({
+        title: "❌ Error en la subida",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    }
+  }, [toast, onUploadComplete]);
+
+  const handleFileUpload = useCallback(async () => {
+    // Crear input file dinámicamente
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = 'image/*,video/*';
+    
+    input.onchange = async (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        const files = Array.from(target.files);
+        
+        // Validar tipos de archivo
+        const mediaFiles = files.filter(file => 
+          file.type.startsWith('image/') || file.type.startsWith('video/')
+        );
+        
+        if (mediaFiles.length !== files.length) {
+          toast({
+            title: "Archivos no válidos",
+            description: "Solo se permiten archivos de imagen y vídeo",
+            variant: "destructive"
+          });
+        }
+
+        // Verificar tamaño (10MB máximo)
+        const oversizedFiles = mediaFiles.filter(file => file.size > 10 * 1024 * 1024);
+        if (oversizedFiles.length > 0) {
+          toast({
+            title: "Archivos demasiado grandes",
+            description: "El tamaño máximo por archivo es 10MB",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        // Subir cada archivo
+        for (const file of mediaFiles) {
+          await uploadToServer(file);
+        }
+      }
+    };
+    
+    input.click();
+  }, [toast, uploadToServer]);
 
   return (
     <header className="h-14 md:h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
@@ -58,41 +218,11 @@ export function TopBar() {
             </Button>
           )}
 
-          {/* View Mode Toggle - Hidden on mobile */}
-          {!isMobile && (
-            <div className="flex items-center rounded-lg border border-border p-1 bg-muted/30">
-              <Button
-                variant={viewMode === "grid" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("grid")}
-                className={`h-8 w-8 p-0 ${
-                  viewMode === "grid" 
-                    ? "bg-nuvia-mauve hover:bg-nuvia-mauve-hover text-white" 
-                    : "hover:bg-nuvia-rose/20"
-                }`}
-              >
-                <Grid3X3 className="w-4 h-4" />
-              </Button>
-              <Button
-                variant={viewMode === "list" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("list")}
-                className={`h-8 w-8 p-0 ${
-                  viewMode === "list" 
-                    ? "bg-nuvia-mauve hover:bg-nuvia-mauve-hover text-white" 
-                    : "hover:bg-nuvia-rose/20"
-                }`}
-              >
-                <List className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-
           {/* Filter Button - Responsive */}
           <Button 
             variant="outline" 
             size="sm" 
-            className={`${isMobile ? "h-9 w-9 p-0" : "gap-2"} bg-nuvia-mauve hover:bg-nuvia-rose text-nuvia-deep hover:text-nuvia-deep border-nuvia-mauve/30 transition-all`}
+            className={`${isMobile ? "h-9 w-9 p-0" : "gap-2"} bg-nuvia-mauve hover:bg-nuvia-rose border-nuvia-mauve/30 transition-all text-white hover:text-white`}
           >
             <SlidersHorizontal className="w-4 h-4" />
             {!isMobile && "Filtrar"}
@@ -100,7 +230,8 @@ export function TopBar() {
 
           {/* Upload Button - Responsive */}
           <Button 
-            className={`bg-nuvia-mauve hover:bg-nuvia-rose text-nuvia-deep hover:text-nuvia-deep shadow-nuvia-soft hover:shadow-nuvia-glow transition-all ${
+            onClick={handleFileUpload}
+            className={`text-white bg-nuvia-mauve hover:bg-nuvia-rose shadow-nuvia-soft hover:shadow-nuvia-glow transition-all ${
               isMobile ? "h-9 w-9 p-0" : "gap-2"
             }`}
             size="sm"

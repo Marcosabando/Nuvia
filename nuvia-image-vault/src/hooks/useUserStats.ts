@@ -1,4 +1,4 @@
-// src/hooks/useUserStats.ts - VERSIÓN CORREGIDA
+// src/hooks/useUserStats.ts - VERSIÓN ACTUALIZADA
 import { useEffect, useState } from "react";
 import { apiService } from '@/services/api.services';
 
@@ -41,7 +41,7 @@ export const useUserStats = (): UserStats => {
 
         console.log("🔄 Iniciando petición de perfil de usuario...");
 
-        // ✅ CORREGIDO: Usar el endpoint correcto /users/profile
+        // ✅ Usar el endpoint /users/profile que ahora incluye todas las estadísticas
         const response = await apiService.get('/users/profile');
         
         console.log("📊 Respuesta de perfil:", response);
@@ -53,21 +53,24 @@ export const useUserStats = (): UserStats => {
           setUsername(userData.username || "");
           setEmail(userData.email || "");
           
-          // Calcular estadísticas
+          // Calcular estadísticas - ahora vienen directamente del backend
           const storageUsedGB = parseFloat((userData.storageUsed / 1024 / 1024 / 1024).toFixed(2));
           const storageLimitGB = parseFloat((userData.storageLimit / 1024 / 1024 / 1024).toFixed(2));
-          const storagePercentage = parseFloat(userData.storagePercentage);
 
           setStats({
             totalImages: userData.stats?.totalImages || 0,
-            todayUploads: 0, // Por ahora, puedes agregar esta funcionalidad después
+            todayUploads: userData.stats?.todayUploads || 0, // ✅ Ahora viene del backend
             storageUsed: storageUsedGB,
             storageLimit: storageLimitGB,
-            storagePercentage: storagePercentage,
-            totalVideos: 0, // Por ahora, puedes agregar esta funcionalidad después
+            storagePercentage: parseFloat(userData.storagePercentage) || 0,
+            totalVideos: userData.stats?.totalVideos || 0, // ✅ Ahora viene del backend
           });
 
-          console.log("✅ Datos de usuario cargados correctamente");
+          console.log("✅ Datos de usuario cargados correctamente", {
+            totalImages: userData.stats?.totalImages,
+            todayUploads: userData.stats?.todayUploads,
+            totalVideos: userData.stats?.totalVideos
+          });
         } else {
           throw new Error(response.error || 'Error en la respuesta del servidor');
         }

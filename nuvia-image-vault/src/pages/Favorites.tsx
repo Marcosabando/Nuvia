@@ -6,42 +6,176 @@ import {
   Heart,
   Star,
   Download,
-  Share2,
   Search,
   Filter,
   MoreVertical,
   Image,
   Video,
   FileText,
+  Trash2,
+  Eye,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { apiService } from "@/services/api.services";
+import { API_CONFIG } from "@/config/api.config";
+
+interface FavoriteItem {
+  id: number;
+  imageId: number;
+  userId: number;
+  title: string;
+  originalFilename: string;
+  filename: string;
+  imagePath: string;
+  fileSize: number;
+  mimeType: string;
+  createdAt: string;
+  isFavorite: boolean;
+}
 
 const Favorites = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const favorites = [
-    { id: 1, name: "vacation-sunset.jpg", type: "image", size: "3.2 MB", date: "Hace 2 días", rating: 5, icon: Image },
-    { id: 2, name: "project-presentation.pdf", type: "document", size: "5.8 MB", date: "Hace 1 semana", rating: 4, icon: FileText },
-    { id: 3, name: "birthday-video.mp4", type: "video", size: "45.2 MB", date: "Hace 3 días", rating: 5, icon: Video },
-    { id: 4, name: "family-photo.jpg", type: "image", size: "2.1 MB", date: "Hace 5 días", rating: 5, icon: Image },
-    { id: 5, name: "wedding-ceremony.mp4", type: "video", size: "89.5 MB", date: "Hace 1 semana", rating: 5, icon: Video },
-    { id: 6, name: "design-portfolio.pdf", type: "document", size: "12.3 MB", date: "Hace 2 semanas", rating: 4, icon: FileText },
-  ];
+  // ✅ Obtener favoritos reales de la base de datos
+  useEffect(() => {
+    const fetchFavorites = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        console.log("🔄 Obteniendo favoritos...");
+        
+        // ✅ Obtener solo las imágenes marcadas como favoritas
+        const response = await apiService.get('/images?favorites=true');
+        
+        console.log("📸 Respuesta de favoritos:", response);
 
+        if (response.success && response.data) {
+          setFavorites(response.data);
+          console.log("✅ Favoritos cargados:", response.data.length);
+        } else {
+          throw new Error(response.error || 'Error al cargar favoritos');
+        }
+      } catch (err: any) {
+        console.error("❌ Error cargando favoritos:", err);
+        setError(err.message || "No se pudieron cargar los favoritos");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFavorites();
+  }, []);
+
+  // ✅ Función para quitar de favoritos
+  const removeFromFavorites = async (imageId: number) => {
+    try {
+      console.log("🗑️ Quitando de favoritos:", imageId);
+      
+      const response = await apiService.post(`/images/${imageId}/favorite`);
+      
+      if (response.success) {
+        console.log("✅ Favorito removido:", response.data);
+        
+        // ✅ Actualizar lista local inmediatamente
+        setFavorites(prev => prev.filter(fav => fav.imageId !== imageId));
+      }
+    } catch (error) {
+      console.error("❌ Error removiendo favorito:", error);
+    }
+  };
+
+  // ✅ Función para limpiar todos los favoritos
+  const clearAllFavorites = async () => {
+    try {
+      if (!confirm("¿Estás seguro de que quieres quitar todos los archivos de favoritos?")) {
+        return;
+      }
+
+      console.log("🧹 Limpiando todos los favoritos...");
+      
+      // Quitar cada favorito individualmente
+      const promises = favorites.map(fav => 
+        apiService.post(`/images/${fav.imageId}/favorite`)
+      );
+      
+      await Promise.all(promises);
+      
+      // ✅ Limpiar lista local
+      setFavorites([]);
+      
+      console.log("✅ Todos los favoritos removidos");
+    } catch (error) {
+      console.error("❌ Error limpiando favoritos:", error);
+    }
+  };
+
+  // ✅ Helper para obtener URL de imagen
+  const getImageUrl = (imagePath: string): string => {
+    let cleanPath = imagePath;
+    if (imagePath.startsWith("uploads/")) {
+      cleanPath = imagePath.replace("uploads/", "");
+    }
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
+  // ✅ Helper para determinar tipo de archivo
+  const getFileType = (mimeType: string): string => {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    return 'document';
+  };
+
+  // ✅ Helper para formatear tamaño
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+  };
+
+  // ✅ Helper para formatear fecha
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return "Hace 1 día";
+    if (diffDays < 7) return `Hace ${diffDays} días`;
+    if (diffDays < 30) return `Hace ${Math.ceil(diffDays / 7)} semanas`;
+    return `Hace ${Math.ceil(diffDays / 30)} meses`;
+  };
+
+  // ✅ Filtrar favoritos
   const filteredFavorites = favorites.filter((favorite) => {
-    const matchesSearch = favorite.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterType === "all" || favorite.type === filterType;
+    const matchesSearch = favorite.originalFilename.toLowerCase().includes(searchQuery.toLowerCase());
+    const fileType = getFileType(favorite.mimeType);
+    const matchesFilter = filterType === "all" || fileType === filterType;
     return matchesSearch && matchesFilter;
   });
 
-  const getTypeColor = (type: string) => {
+  // ✅ Estadísticas reales
+  const stats = {
+    total: favorites.length,
+    images: favorites.filter(fav => getFileType(fav.mimeType) === 'image').length,
+    videos: favorites.filter(fav => getFileType(fav.mimeType) === 'video').length,
+    documents: favorites.filter(fav => getFileType(fav.mimeType) === 'document').length,
+  };
+
+  const getTypeColor = (mimeType: string) => {
+    const type = getFileType(mimeType);
     switch (type) {
       case "document":
         return "text-nuvia-rose";
@@ -54,22 +188,51 @@ const Favorites = () => {
     }
   };
 
-  const renderStars = (rating: number) => {
-    return (
-      <div className="flex gap-0.5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Star
-            key={i}
-            className={`w-3 h-3 ${
-              i < rating
-                ? "fill-yellow-500 text-yellow-500"
-                : "text-nuvia-silver"
-            }`}
-          />
-        ))}
-      </div>
-    );
+  const getTypeIcon = (mimeType: string) => {
+    const type = getFileType(mimeType);
+    switch (type) {
+      case "document":
+        return FileText;
+      case "video":
+        return Video;
+      case "image":
+        return Image;
+      default:
+        return FileText;
+    }
   };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="max-w-7xl mx-auto space-y-8 p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-nuvia-mauve border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-nuvia-mauve">Cargando favoritos...</p>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppLayout>
+        <div className="max-w-7xl mx-auto space-y-8 p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <p className="text-red-500 mb-4">{error}</p>
+              <Button onClick={() => window.location.reload()} variant="outline">
+                Reintentar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -77,17 +240,22 @@ const Favorites = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-display font-bold idebar-background text-white font-bold bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
               Favoritos
             </h1>
             <p className="text-sm sm:text-base text-white mt-1">
               Tus archivos más importantes y destacados
             </p>
           </div>
-          <Button className="gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all">
-            <Heart className="w-5 h-5" />
-            Limpiar Favoritos
-          </Button>
+          {favorites.length > 0 && (
+            <Button 
+              onClick={clearAllFavorites}
+              className="gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all"
+            >
+              <Heart className="w-5 h-5" />
+              Limpiar Favoritos
+            </Button>
+          )}
         </div>
 
         {/* Stats Cards */}
@@ -98,7 +266,7 @@ const Favorites = () => {
                 <p className="text-sm text-nuvia-mauve">Total Favoritos</p>
                 <Heart className="w-5 h-5 text-nuvia-rose" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">6</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.total}</p>
             </CardContent>
           </Card>
 
@@ -108,7 +276,7 @@ const Favorites = () => {
                 <p className="text-sm text-nuvia-mauve">Imágenes</p>
                 <Image className="w-5 h-5 text-nuvia-peach" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">2</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.images}</p>
             </CardContent>
           </Card>
 
@@ -118,7 +286,7 @@ const Favorites = () => {
                 <p className="text-sm text-nuvia-mauve">Vídeos</p>
                 <Video className="w-5 h-5 text-nuvia-mauve" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">2</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.videos}</p>
             </CardContent>
           </Card>
 
@@ -128,7 +296,7 @@ const Favorites = () => {
                 <p className="text-sm text-nuvia-mauve">Documentos</p>
                 <FileText className="w-5 h-5 text-nuvia-silver" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">2</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.documents}</p>
             </CardContent>
           </Card>
         </div>
@@ -153,9 +321,9 @@ const Favorites = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
               <DropdownMenuItem onClick={() => setFilterType("all")}>Todos</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterType("document")}>Documentos</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterType("video")}>Vídeos</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setFilterType("image")}>Imágenes</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterType("video")}>Vídeos</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterType("document")}>Documentos</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -170,33 +338,41 @@ const Favorites = () => {
                     <th className="text-left p-4 font-semibold text-nuvia-mauve">Archivo</th>
                     <th className="text-left p-4 font-semibold text-nuvia-mauve hidden sm:table-cell">Tamaño</th>
                     <th className="text-left p-4 font-semibold text-nuvia-mauve hidden md:table-cell">Fecha</th>
-                    <th className="text-left p-4 font-semibold text-nuvia-mauve hidden lg:table-cell">Valoración</th>
+                    <th className="text-left p-4 font-semibold text-nuvia-mauve hidden lg:table-cell">Tipo</th>
                     <th className="w-10"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredFavorites.map((favorite) => {
-                    const Icon = favorite.icon;
+                    const Icon = getTypeIcon(favorite.mimeType);
+                    const fileType = getFileType(favorite.mimeType);
+                    
                     return (
                       <tr
-                        key={favorite.id}
+                        key={favorite.imageId}
                         className="border-b border-nuvia-peach/20 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
                       >
                         <td className="p-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-nuvia-deep/10 to-nuvia-peach/10 flex items-center justify-center">
-                              <Icon className={`w-5 h-5 ${getTypeColor(favorite.type)}`} />
+                              <Icon className={`w-5 h-5 ${getTypeColor(favorite.mimeType)}`} />
                             </div>
                             <div>
-                              <p className="font-medium text-nuvia-deep">{favorite.name}</p>
-                              <p className="text-xs text-nuvia-mauve sm:hidden">{favorite.size}</p>
+                              <p className="font-medium text-nuvia-deep">{favorite.originalFilename}</p>
+                              <p className="text-xs text-nuvia-mauve sm:hidden">
+                                {formatFileSize(favorite.fileSize)} • {fileType}
+                              </p>
                             </div>
                           </div>
                         </td>
-                        <td className="p-4 text-nuvia-mauve hidden sm:table-cell">{favorite.size}</td>
-                        <td className="p-4 text-nuvia-mauve hidden md:table-cell">{favorite.date}</td>
-                        <td className="p-4 hidden lg:table-cell">
-                          {renderStars(favorite.rating)}
+                        <td className="p-4 text-nuvia-mauve hidden sm:table-cell">
+                          {formatFileSize(favorite.fileSize)}
+                        </td>
+                        <td className="p-4 text-nuvia-mauve hidden md:table-cell">
+                          {formatDate(favorite.createdAt)}
+                        </td>
+                        <td className="p-4 text-nuvia-mauve hidden lg:table-cell capitalize">
+                          {fileType}
                         </td>
                         <td className="p-4">
                           <DropdownMenu>
@@ -206,10 +382,21 @@ const Favorites = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
-                              <DropdownMenuItem>Abrir</DropdownMenuItem>
-                              <DropdownMenuItem>Descargar</DropdownMenuItem>
-                              <DropdownMenuItem>Compartir</DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive">Quitar de favoritos</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(getImageUrl(favorite.imagePath), "_blank")}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                Abrir
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(getImageUrl(favorite.imagePath), "_blank")}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Descargar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => removeFromFavorites(favorite.imageId)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Quitar de favoritos
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -222,11 +409,23 @@ const Favorites = () => {
           </CardContent>
         </Card>
 
-        {filteredFavorites.length === 0 && (
+        {filteredFavorites.length === 0 && favorites.length === 0 && (
           <Card className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-nuvia-soft border border-nuvia-peach/30">
             <CardContent className="py-12 text-center">
               <Heart className="w-12 h-12 mx-auto text-nuvia-mauve mb-4" />
-              <p className="text-nuvia-mauve">No se encontraron favoritos</p>
+              <p className="text-nuvia-mauve">No tienes archivos en favoritos</p>
+              <p className="text-sm text-nuvia-mauve/70 mt-2">
+                Marca algunos archivos como favoritos para verlos aquí
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {filteredFavorites.length === 0 && favorites.length > 0 && (
+          <Card className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-nuvia-soft border border-nuvia-peach/30">
+            <CardContent className="py-12 text-center">
+              <Search className="w-12 h-12 mx-auto text-nuvia-mauve mb-4" />
+              <p className="text-nuvia-mauve">No se encontraron favoritos con los filtros aplicados</p>
             </CardContent>
           </Card>
         )}

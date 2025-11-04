@@ -1,9 +1,9 @@
-// src/hooks/useImages.ts
+// src/hooks/useImages.ts - VERSIÓN CORREGIDA
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
 interface ImageData {
-  id: number;
+  id: number;           // ✅ Mantener id para el frontend
   userId: number;
   title: string;
   originalFilename: string;
@@ -12,6 +12,7 @@ interface ImageData {
   fileSize: number;
   mimeType: string;
   created: string;
+  isFavorite?: boolean; // ✅ Añadir este campo
 }
 
 interface UseImagesReturn {
@@ -38,8 +39,22 @@ export const useImages = (): UseImagesReturn => {
       console.log("📸 Respuesta de imágenes:", response);
 
       if (response.success && response.data) {
-        setImages(response.data);
-        console.log("✅ Imágenes cargadas correctamente:", response.data.length);
+        // ✅ TRANSFORMAR los datos del backend al formato del frontend
+        const transformedImages = response.data.map((img: any) => ({
+          id: img.imageId,        // ✅ Convertir imageId → id
+          userId: img.userId,
+          title: img.title,
+          originalFilename: img.originalFilename,
+          filename: img.filename,
+          imagePath: img.imagePath,
+          fileSize: img.fileSize,
+          mimeType: img.mimeType,
+          created: img.createdAt,  // ✅ Convertir createdAt → created
+          isFavorite: img.isFavorite // ✅ Añadir campo de favoritos
+        }));
+
+        setImages(transformedImages);
+        console.log("✅ Imágenes transformadas:", transformedImages);
       } else {
         throw new Error(response.error || 'Error en la respuesta del servidor');
       }
@@ -70,5 +85,3 @@ export const useImages = (): UseImagesReturn => {
     refetch: fetchImages
   };
 };
-
-

@@ -120,11 +120,7 @@ const Home = () => {
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex items-center gap-2">
-              <Badge className="bg-nuvia-peach/15 text-nuvia-peach-dark border-nuvia-peach/40 shadow-nuvia-soft">
-                Todos los archivos
-              </Badge>
-            </div>
+
           </div>
 
           <TabsContent value="gallery" className="space-y-6 animate-fade-in">

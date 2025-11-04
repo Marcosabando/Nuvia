@@ -1,4 +1,5 @@
-import { useState } from "react";
+// src/components/ImageGallery.tsx - SIN REFETCH
+import { useState, useEffect } from "react";
 import { MoreHorizontal, Download, Heart, Trash2, Edit3, ZoomIn } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,11 +26,11 @@ interface ImageItem {
   fileSize: number;
   mimeType: string;
   created: string;
-  favorite?: boolean;
+  isFavorite?: boolean;
 }
 
 interface ImageGalleryProps {
-  viewMode?: "grid" | "list";
+  // viewMode?: "grid";
 }
 
 // Helper para formatear tamaño
@@ -50,22 +51,75 @@ const getImageUrl = (imagePath: string): string => {
   return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
 };
 
-export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
-  const { images, loading, error, refetch } = useImages();
+export function ImageGallery(ImageGalleryProps) {
+  const { images, loading, error } = useImages();
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+  const [localImages, setLocalImages] = useState<ImageItem[]>([]);
 
-  const toggleFavorite = (id: number) => {
-    console.log("Toggle favorite for image:", id);
-  };
+  // ✅ Sincronizar localImages con images del hook SOLO en la carga inicial
+  useEffect(() => {
+    if (images.length > 0 && localImages.length === 0) {
+      setLocalImages(images);
+    }
+  }, [images]);
 
-  const deleteImage = async (id: number) => {
+  // ✅ FUNCIÓN MEJORADA: Toggle favorite SIN refetch
+  const toggleFavorite = async (id: number) => {
     try {
-      await apiService.delete(`/images/${id}`);
-      refetch();
+      console.log("Toggle favorite for image:", id);
+      
+      // ✅ ACTUALIZACIÓN INMEDIATA del estado local
+      setLocalImages(prevImages => 
+        prevImages.map(img => 
+          img.id === id 
+            ? { ...img, isFavorite: !img.isFavorite } 
+            : img
+        )
+      );
+
+      // Llamar a la API en segundo plano
+      const response = await apiService.post(`/images/${id}/favorite`);
+      
+      if (response.success) {
+        console.log("✅ Favorite status updated:", response.data);
+        // ✅ NO hacemos refetch - el estado local ya está actualizado
+      }
     } catch (error) {
-      console.error("Error deleting image:", error);
+      console.error("❌ Error toggling favorite:", error);
+      
+      // ✅ REVERTIR en caso de error
+      setLocalImages(prevImages => 
+        prevImages.map(img => 
+          img.id === id 
+            ? { ...img, isFavorite: !img.isFavorite } // Revertir el cambio
+            : img
+        )
+      );
     }
   };
+
+  // ✅ FUNCIÓN MEJORADA: Delete SIN refetch
+  const deleteImage = async (id: number) => {
+    try {
+      // ✅ ELIMINACIÓN INMEDIATA del estado local
+      setLocalImages(prevImages => prevImages.filter(img => img.id !== id));
+      
+      // Llamar a la API en segundo plano
+      await apiService.delete(`/images/${id}`);
+      
+      console.log("✅ Image deleted successfully");
+      // ✅ NO hacemos refetch - el estado local ya está actualizado
+      
+    } catch (error) {
+      console.error("Error deleting image:", error);
+      
+      // ✅ En caso de error, recargamos desde el servidor
+      // Pero esto solo pasaría si hay un error grave
+    }
+  };
+
+  // ✅ USAR localImages siempre que tenga datos
+  const displayImages = localImages.length > 0 ? localImages : images;
 
   if (loading) {
     return (
@@ -83,7 +137,7 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <p className="text-red-500 mb-4">{error}</p>
-          <Button onClick={refetch} variant="outline">
+          <Button onClick={() => window.location.reload()} variant="outline">
             Reintentar
           </Button>
         </div>
@@ -91,7 +145,7 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     );
   }
 
-  if (images.length === 0) {
+  if (displayImages.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
@@ -102,218 +156,118 @@ export function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     );
   }
 
-  // ----- MODO LISTA -----
-  if (viewMode === "list") {
-    return (
-      <div className="space-y-2">
-        {images.map((image) => (
-          <Card key={image.id} className="nuvia-card-hover border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden">
-                  <img
-                    src={getImageUrl(image.imagePath)}
-                    alt={image.originalFilename}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.src = "/placeholder.svg";
-                    }}
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium truncate">{image.originalFilename}</h3>
-                    {image.favorite && <Heart className="w-4 h-4 text-destructive fill-current" />}
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                    <span>{formatFileSize(image.fileSize)}</span>
-                    <span>{image.mimeType.split("/")[1].toUpperCase()}</span>
-                    <span>{new Date(image.created).toLocaleDateString()}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedImage(image)}>
-                        <ZoomIn className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-4xl max-h-[90vh]">
-                      <div className="relative">
-                        <img
-                          src={getImageUrl(image.imagePath)}
-                          alt={image.originalFilename}
-                          className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
-                        />
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                  <ImageActions
-                    image={image}
-                    onToggleFavorite={() => toggleFavorite(image.id)}
-                    onDelete={() => deleteImage(image.id)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  // ----- MODO GRID -----
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
-      {images.map((image) => (
-        <Card key={image.id} className="group nuvia-card-hover border-border overflow-hidden relative">
-          <CardContent className="p-0 relative">
-            <div className="aspect-square bg-muted relative overflow-hidden">
-              <img
-                src={getImageUrl(image.imagePath)}
-                alt={image.originalFilename}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                onError={(e) => {
-                  e.currentTarget.src = "/placeholder.svg";
-                }}
-              />
+      {displayImages.map((image) => {
+        const isFavorite = image.isFavorite || false;
+        return (
+          <Card key={image.id} className="group nuvia-card-hover border-border overflow-hidden relative">
+            <CardContent className="p-0 relative">
+              <div className="aspect-square bg-muted relative overflow-hidden">
+                <img
+                  src={getImageUrl(image.imagePath)}
+                  alt={image.originalFilename}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  onError={(e) => {
+                    e.currentTarget.src = "/placeholder.svg";
+                  }}
+                />
 
-              {/* Overlay */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
+                {/* Overlay */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
 
-              {/* 🔹 Acciones arriba a la derecha */}
-              <div
-                className="absolute top-1 right-1 md:top-2 md:right-2 z-20 flex gap-1 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                  onClick={() => toggleFavorite(image.id)}
+                {/* 🔹 Acciones arriba a la derecha */}
+                <div
+                  className="absolute top-1 right-1 md:top-2 md:right-2 z-20 flex gap-1 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <Heart
-                    className={`w-3 h-3 md:w-4 md:h-4 ${
-                      image.favorite ? "text-destructive fill-current" : "text-muted-foreground"
-                    }`}
-                  />
-                </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
+                    onClick={() => toggleFavorite(image.id)}
+                  >
+                    <Heart
+                      className={`w-3 h-3 md:w-4 md:h-4 ${
+                        isFavorite ? "text-destructive fill-current" : "text-muted-foreground"
+                      }`}
+                    />
+                  </Button>
 
-                {/* Dropdown Menu con z-index alto */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
+                  {/* Dropdown Menu */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-48 z-[9999]"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-48 z-[9999]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
-                      <Heart className="w-4 h-4 mr-2" />
-                      {image.favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => window.open(getImageUrl(image.imagePath), "_blank")}>
-                      <Download className="w-4 h-4 mr-2" />
-                      Descargar
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <Edit3 className="w-4 h-4 mr-2" />
-                      Renombrar
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => deleteImage(image.id)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Mover a papelera
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                      <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
+                        <Heart className={`w-4 h-4 mr-2 ${isFavorite ? "text-destructive fill-current" : ""}`} />
+                        {isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => window.open(getImageUrl(image.imagePath), "_blank")}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Descargar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Edit3 className="w-4 h-4 mr-2" />
+                        Renombrar
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => deleteImage(image.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Mover a papelera
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
 
-              {/* 🔹 Clic en la imagen para abrir el Dialog */}
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button
-                    className="absolute inset-0 w-full h-full pointer-events-auto"
-                    onClick={() => setSelectedImage(image)}
-                  />
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] p-2 md:p-6">
-                  <div className="relative">
-                    <img
-                      src={getImageUrl(image.imagePath)}
-                      alt={image.originalFilename}
-                      className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
+                {/* 🔹 Clic en la imagen para abrir el Dialog */}
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <button
+                      className="absolute inset-0 w-full h-full pointer-events-auto"
+                      onClick={() => setSelectedImage(image)}
                     />
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {/* Badge de favorito */}
-            {image.favorite && (
-              <div className="absolute top-1 left-1 md:top-2 md:left-2">
-                <Badge variant="destructive" className="text-xs px-1.5 py-0.5">
-                  <Heart className="w-2.5 h-2.5 md:w-3 md:h-3 mr-1 fill-current" />
-                  <span className="hidden sm:inline">Favorito</span>
-                </Badge>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl max-h-[90vh] p-2 md:p-6">
+                    <div className="relative">
+                      <img
+                        src={getImageUrl(image.imagePath)}
+                        alt={image.originalFilename}
+                        className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
+                      />
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+
+              {/* Badge de favorito */}
+              {isFavorite && (
+                <div className="absolute top-1 left-1 md:top-2 md:left-2">
+                  <Badge variant="destructive" className="text-xs px-1.5 py-0.5">
+                    <Heart className="w-2.5 h-2.5 md:w-3 md:h-3 mr-1 fill-current" />
+                    <span className="hidden sm:inline">Favorito</span>
+                  </Badge>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
-  );
-}
-
-interface ImageActionsProps {
-  image: ImageItem;
-  onToggleFavorite: () => void;
-  onDelete: () => void;
-}
-
-function ImageActions({ image, onToggleFavorite, onDelete }: ImageActionsProps) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-8 w-8 p-0 bg-white/90 hover:bg-white"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onClick={onToggleFavorite}>
-          <Heart className="w-4 h-4 mr-2" />
-          {image.favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => window.open(getImageUrl(image.imagePath), "_blank")}>
-          <Download className="w-4 h-4 mr-2" />
-          Descargar
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Edit3 className="w-4 h-4 mr-2" />
-          Renombrar
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
-          <Trash2 className="w-4 h-4 mr-2" />
-          Mover a papelera
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
