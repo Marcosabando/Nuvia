@@ -6,20 +6,20 @@ import path from "path";
 import fs from "fs/promises";
 
 // ============================================================================
-// CONSTANTES
+// CONSTANTS
 // ============================================================================
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // ============================================================================
-// FUNCIONES AUXILIARES
+// HELPER FUNCTIONS
 // ============================================================================
 const validateFile = (file: Express.Multer.File) => {
   if (!ALLOWED_TYPES.includes(file.mimetype)) {
-    throw new Error(`Formato no permitido: ${file.mimetype}`);
+    throw new Error(`Format not allowed: ${file.mimetype}`);
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`Archivo muy grande: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    throw new Error(`File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
   }
 };
 
@@ -28,17 +28,17 @@ const getRelativePath = (userId: number, filename: string): string => {
 };
 
 // ============================================================================
-// 📤 SUBIR IMÁGENES
+// 📤 UPLOAD IMAGES
 // ============================================================================
 
 /**
- * Subir una imagen individual
+ * Upload single image
  * POST /api/images/upload
  */
 export const uploadImage = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No se subió ninguna imagen" });
+      res.status(400).json({ error: "No image uploaded" });
       return;
     }
 
@@ -51,9 +51,9 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
     const { title, description } = req.body;
 
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO imagenes 
-      (user_id, title, description, original_filename, filename, image_path, 
-       file_size, mime_type) 
+      `INSERT INTO images 
+      (userId, title, description, originalFilename, filename, imagePath, 
+       fileSize, mimeType) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
@@ -69,9 +69,9 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
 
     res.status(201).json({
       success: true,
-      message: "Imagen subida con éxito",
+      message: "Image uploaded successfully",
       data: {
-        id: result.insertId,
+        imageId: result.insertId,
         title: title || file.originalname,
         originalname: file.originalname,
         filename: file.filename,
@@ -84,21 +84,21 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
     console.error("Error uploading image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al subir la imagen",
+      error: "Error uploading image",
       details: (error as Error).message,
     });
   }
 };
 
 /**
- * Subir múltiples imágenes
+ * Upload multiple images
  * POST /api/images/upload-multiple
  */
 export const uploadMultipleImages = async (req: Request, res: Response): Promise<void> => {
   const connection = await pool.getConnection();
   try {
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      res.status(400).json({ error: "No se subieron imágenes" });
+      res.status(400).json({ error: "No images uploaded" });
       return;
     }
 
@@ -114,9 +114,9 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
       const relativePath = getRelativePath(userId, file.filename);
 
       const [result] = await connection.query<ResultSetHeader>(
-        `INSERT INTO imagenes 
-         (user_id, title, original_filename, filename, image_path, 
-          file_size, mime_type)
+        `INSERT INTO images 
+         (userId, title, originalFilename, filename, imagePath, 
+          fileSize, mimeType)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
@@ -130,7 +130,7 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
       );
 
       insertedImages.push({
-        id: result.insertId,
+        imageId: result.insertId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
@@ -143,7 +143,7 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
 
     res.status(201).json({
       success: true,
-      message: `${insertedImages.length} imágenes subidas con éxito`,
+      message: `${insertedImages.length} images uploaded successfully`,
       data: insertedImages,
     });
   } catch (error) {
@@ -151,7 +151,7 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     console.error("Error uploading multiple images:", error);
     res.status(500).json({
       success: false,
-      error: "Error al subir las imágenes",
+      error: "Error uploading images",
       details: (error as Error).message,
     });
   } finally {
@@ -160,11 +160,11 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
 };
 
 // ============================================================================
-// 📋 OBTENER IMÁGENES
+// 📋 GET IMAGES
 // ============================================================================
 
 /**
- * Obtener todas las imágenes del usuario (activas)
+ * Get all user images (active)
  * GET /api/images
  * Query params: page, limit, favorites (true/false)
  */
@@ -178,34 +178,34 @@ export const getUserImages = async (req: Request, res: Response): Promise<void> 
 
     let query = `
       SELECT 
-        id, user_id as userId, title, description,
-        original_filename as originalFilename, filename, 
-        image_path as imagePath, file_size as fileSize, 
-        mime_type as mimeType, width, height,
-        is_favorite as isFavorite, is_public as isPublic,
-        location, taken_date as takenDate, camera_info as cameraInfo,
-        created_at as createdAt, updated_at as updatedAt
-      FROM imagenes 
-      WHERE user_id = ? AND deleted_at IS NULL
+        imageId, userId, title, description,
+        originalFilename, filename, 
+        imagePath, fileSize, 
+        mimeType, width, height,
+        isFavorite, isPublic,
+        location, takenDate, cameraInfo,
+        createdAt, updatedAt
+      FROM images 
+      WHERE userId = ? AND deletedAt IS NULL
     `;
 
     const params: any[] = [userId];
 
     if (favoritesOnly) {
-      query += ` AND is_favorite = 1`;
+      query += ` AND isFavorite = 1`;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     const [images] = await pool.query<RowDataPacket[]>(query, params);
 
-    // Contar total
-    let countQuery = `SELECT COUNT(*) as total FROM imagenes WHERE user_id = ? AND deleted_at IS NULL`;
+    // Count total
+    let countQuery = `SELECT COUNT(*) as total FROM images WHERE userId = ? AND deletedAt IS NULL`;
     const countParams: any[] = [userId];
 
     if (favoritesOnly) {
-      countQuery += ` AND is_favorite = 1`;
+      countQuery += ` AND isFavorite = 1`;
     }
 
     const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
@@ -225,13 +225,13 @@ export const getUserImages = async (req: Request, res: Response): Promise<void> 
     console.error("Error getting user images:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener las imágenes",
+      error: "Error getting images",
     });
   }
 };
 
 /**
- * Obtener imagen por ID
+ * Get image by ID
  * GET /api/images/:id
  */
 export const getImageById = async (req: Request, res: Response): Promise<void> => {
@@ -241,22 +241,22 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
 
     const [images] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        id, user_id as userId, title, description,
-        original_filename as originalFilename, filename, 
-        image_path as imagePath, file_size as fileSize, 
-        mime_type as mimeType, width, height,
-        is_favorite as isFavorite, is_public as isPublic,
-        location, taken_date as takenDate, camera_info as cameraInfo,
-        created_at as createdAt, updated_at as updatedAt
-       FROM imagenes 
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+        imageId, userId, title, description,
+        originalFilename, filename, 
+        imagePath, fileSize, 
+        mimeType, width, height,
+        isFavorite, isPublic,
+        location, takenDate, cameraInfo,
+        createdAt, updatedAt
+       FROM images 
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [imageId, userId]
     );
 
     if (images.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
@@ -269,13 +269,13 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
     console.error("Error getting image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener la imagen",
+      error: "Error getting image",
     });
   }
 };
 
 /**
- * Obtener imágenes recientes (últimas 10)
+ * Get recent images (last 10)
  * GET /api/images/recent
  */
 export const getRecentImages = async (req: Request, res: Response): Promise<void> => {
@@ -285,12 +285,12 @@ export const getRecentImages = async (req: Request, res: Response): Promise<void
 
     const [images] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        id, title, image_path as imagePath, mime_type as mimeType,
-        file_size as fileSize, is_favorite as isFavorite,
-        created_at as createdAt
-       FROM imagenes 
-       WHERE user_id = ? AND deleted_at IS NULL
-       ORDER BY created_at DESC
+        imageId, title, imagePath, mimeType,
+        fileSize, isFavorite,
+        createdAt
+       FROM images 
+       WHERE userId = ? AND deletedAt IS NULL
+       ORDER BY createdAt DESC
        LIMIT ?`,
       [userId, limit]
     );
@@ -303,13 +303,13 @@ export const getRecentImages = async (req: Request, res: Response): Promise<void
     console.error("Error getting recent images:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener imágenes recientes",
+      error: "Error getting recent images",
     });
   }
 };
 
 /**
- * Buscar imágenes
+ * Search images
  * GET /api/images/search?q=query
  */
 export const searchImages = async (req: Request, res: Response): Promise<void> => {
@@ -323,7 +323,7 @@ export const searchImages = async (req: Request, res: Response): Promise<void> =
     if (!searchQuery || searchQuery.trim() === "") {
       res.status(400).json({
         success: false,
-        error: "Se requiere un término de búsqueda",
+        error: "Search term required",
       });
       return;
     }
@@ -332,22 +332,22 @@ export const searchImages = async (req: Request, res: Response): Promise<void> =
 
     const [images] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        id, title, description, image_path as imagePath,
-        mime_type as mimeType, file_size as fileSize,
-        is_favorite as isFavorite, created_at as createdAt
-       FROM imagenes 
-       WHERE user_id = ? AND deleted_at IS NULL
-         AND (title LIKE ? OR description LIKE ? OR original_filename LIKE ?)
-       ORDER BY created_at DESC
+        imageId, title, description, imagePath,
+        mimeType, fileSize,
+        isFavorite, createdAt
+       FROM images 
+       WHERE userId = ? AND deletedAt IS NULL
+         AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)
+       ORDER BY createdAt DESC
        LIMIT ? OFFSET ?`,
       [userId, searchTerm, searchTerm, searchTerm, limit, offset]
     );
 
     const [countResult] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) as total 
-       FROM imagenes 
-       WHERE user_id = ? AND deleted_at IS NULL
-         AND (title LIKE ? OR description LIKE ? OR original_filename LIKE ?)`,
+       FROM images 
+       WHERE userId = ? AND deletedAt IS NULL
+         AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)`,
       [userId, searchTerm, searchTerm, searchTerm]
     );
 
@@ -367,17 +367,17 @@ export const searchImages = async (req: Request, res: Response): Promise<void> =
     console.error("Error searching images:", error);
     res.status(500).json({
       success: false,
-      error: "Error al buscar imágenes",
+      error: "Error searching images",
     });
   }
 };
 
 // ============================================================================
-// ✏️ ACTUALIZAR IMÁGENES
+// ✏️ UPDATE IMAGES
 // ============================================================================
 
 /**
- * Actualizar título de imagen
+ * Update image title
  * PATCH /api/images/:id/title
  */
 export const updateImageTitle = async (req: Request, res: Response): Promise<void> => {
@@ -389,42 +389,42 @@ export const updateImageTitle = async (req: Request, res: Response): Promise<voi
     if (!title || title.trim() === "") {
       res.status(400).json({
         success: false,
-        error: "El título no puede estar vacío",
+        error: "Title cannot be empty",
       });
       return;
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE imagenes 
-       SET title = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE images 
+       SET title = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [title.trim(), imageId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Título actualizado con éxito",
+      message: "Title updated successfully",
       data: { title: title.trim() },
     });
   } catch (error) {
     console.error("Error updating image title:", error);
     res.status(500).json({
       success: false,
-      error: "Error al actualizar el título",
+      error: "Error updating title",
     });
   }
 };
 
 /**
- * Actualizar descripción de imagen
+ * Update image description
  * PATCH /api/images/:id/description
  */
 export const updateImageDescription = async (req: Request, res: Response): Promise<void> => {
@@ -434,36 +434,36 @@ export const updateImageDescription = async (req: Request, res: Response): Promi
     const { description } = req.body;
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE imagenes 
-       SET description = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE images 
+       SET description = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [description || null, imageId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Descripción actualizada con éxito",
+      message: "Description updated successfully",
       data: { description },
     });
   } catch (error) {
     console.error("Error updating image description:", error);
     res.status(500).json({
       success: false,
-      error: "Error al actualizar la descripción",
+      error: "Error updating description",
     });
   }
 };
 
 /**
- * Actualizar metadatos de imagen (width, height, location, etc.)
+ * Update image metadata (width, height, location, etc.)
  * PATCH /api/images/:id/metadata
  */
 export const updateImageMetadata = async (req: Request, res: Response): Promise<void> => {
@@ -488,59 +488,59 @@ export const updateImageMetadata = async (req: Request, res: Response): Promise<
       values.push(location);
     }
     if (takenDate !== undefined) {
-      updates.push("taken_date = ?");
+      updates.push("takenDate = ?");
       values.push(takenDate);
     }
     if (cameraInfo !== undefined) {
-      updates.push("camera_info = ?");
+      updates.push("cameraInfo = ?");
       values.push(cameraInfo);
     }
 
     if (updates.length === 0) {
       res.status(400).json({
         success: false,
-        error: "No hay campos para actualizar",
+        error: "No fields to update",
       });
       return;
     }
 
-    updates.push("updated_at = CURRENT_TIMESTAMP");
+    updates.push("updatedAt = CURRENT_TIMESTAMP");
     values.push(imageId, userId);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE imagenes 
+      `UPDATE images 
        SET ${updates.join(", ")}
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       values
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Metadatos actualizados con éxito",
+      message: "Metadata updated successfully",
     });
   } catch (error) {
     console.error("Error updating image metadata:", error);
     res.status(500).json({
       success: false,
-      error: "Error al actualizar los metadatos",
+      error: "Error updating metadata",
     });
   }
 };
 
 // ============================================================================
-// ⭐ FAVORITOS
+// ⭐ FAVORITES
 // ============================================================================
 
 /**
- * Toggle favorito
+ * Toggle favorite
  * POST /api/images/:id/favorite
  */
 export const toggleImageFavorite = async (req: Request, res: Response): Promise<void> => {
@@ -548,18 +548,18 @@ export const toggleImageFavorite = async (req: Request, res: Response): Promise<
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
 
-    // Obtener estado actual
+    // Get current state
     const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT is_favorite as isFavorite 
-       FROM imagenes 
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `SELECT isFavorite 
+       FROM images 
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [imageId, userId]
     );
 
     if (images.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
@@ -567,15 +567,15 @@ export const toggleImageFavorite = async (req: Request, res: Response): Promise<
     const newFavoriteStatus = !images[0].isFavorite;
 
     await pool.query(
-      `UPDATE imagenes 
-       SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ?`,
+      `UPDATE images 
+       SET isFavorite = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ?`,
       [newFavoriteStatus, imageId, userId]
     );
 
     res.json({
       success: true,
-      message: newFavoriteStatus ? "Agregado a favoritos" : "Eliminado de favoritos",
+      message: newFavoriteStatus ? "Added to favorites" : "Removed from favorites",
       data: {
         isFavorite: newFavoriteStatus,
       },
@@ -584,17 +584,17 @@ export const toggleImageFavorite = async (req: Request, res: Response): Promise<
     console.error("Error toggling favorite:", error);
     res.status(500).json({
       success: false,
-      error: "Error al cambiar el estado de favorito",
+      error: "Error toggling favorite status",
     });
   }
 };
 
 // ============================================================================
-// 🔓 PÚBLICO/PRIVADO
+// 🔓 PUBLIC/PRIVATE
 // ============================================================================
 
 /**
- * Toggle público/privado
+ * Toggle public/private
  * POST /api/images/:id/toggle-public
  */
 export const toggleImagePublic = async (req: Request, res: Response): Promise<void> => {
@@ -603,16 +603,16 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
     const imageId = parseInt(req.params.id);
 
     const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT is_public as isPublic 
-       FROM imagenes 
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `SELECT isPublic 
+       FROM images 
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [imageId, userId]
     );
 
     if (images.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
@@ -620,15 +620,15 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
     const newPublicStatus = !images[0].isPublic;
 
     await pool.query(
-      `UPDATE imagenes 
-       SET is_public = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ?`,
+      `UPDATE images 
+       SET isPublic = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ?`,
       [newPublicStatus, imageId, userId]
     );
 
     res.json({
       success: true,
-      message: newPublicStatus ? "Imagen ahora es pública" : "Imagen ahora es privada",
+      message: newPublicStatus ? "Image is now public" : "Image is now private",
       data: {
         isPublic: newPublicStatus,
       },
@@ -637,17 +637,17 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
     console.error("Error toggling public status:", error);
     res.status(500).json({
       success: false,
-      error: "Error al cambiar la visibilidad",
+      error: "Error changing visibility",
     });
   }
 };
 
 // ============================================================================
-// 🗑️ SOFT DELETE (PAPELERA)
+// 🗑️ SOFT DELETE (TRASH)
 // ============================================================================
 
 /**
- * Mover imagen a papelera (soft delete)
+ * Move image to trash (soft delete)
  * DELETE /api/images/:id
  */
 export const softDeleteImage = async (req: Request, res: Response): Promise<void> => {
@@ -656,35 +656,35 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
     const imageId = parseInt(req.params.id);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE imagenes 
-       SET deleted_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE images 
+       SET deletedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
       [imageId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Imagen movida a la papelera",
+      message: "Image moved to trash",
     });
   } catch (error) {
     console.error("Error soft deleting image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al eliminar la imagen",
+      error: "Error deleting image",
     });
   }
 };
 
 /**
- * Restaurar imagen desde papelera
+ * Restore image from trash
  * POST /api/images/:id/restore
  */
 export const restoreImage = async (req: Request, res: Response): Promise<void> => {
@@ -693,35 +693,35 @@ export const restoreImage = async (req: Request, res: Response): Promise<void> =
     const imageId = parseInt(req.params.id);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE imagenes 
-       SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
+      `UPDATE images 
+       SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP
+       WHERE imageId = ? AND userId = ? AND deletedAt IS NOT NULL`,
       [imageId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada en la papelera",
+        error: "Image not found in trash",
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Imagen restaurada con éxito",
+      message: "Image restored successfully",
     });
   } catch (error) {
     console.error("Error restoring image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al restaurar la imagen",
+      error: "Error restoring image",
     });
   }
 };
 
 /**
- * Obtener imágenes eliminadas (papelera)
+ * Get deleted images (trash)
  * GET /api/images/deleted
  */
 export const getDeletedImages = async (req: Request, res: Response): Promise<void> => {
@@ -733,18 +733,18 @@ export const getDeletedImages = async (req: Request, res: Response): Promise<voi
 
     const [images] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        id, title, image_path as imagePath, mime_type as mimeType,
-        file_size as fileSize, deleted_at as deletedAt,
-        created_at as createdAt
-       FROM imagenes 
-       WHERE user_id = ? AND deleted_at IS NOT NULL
-       ORDER BY deleted_at DESC
+        imageId, title, imagePath, mimeType,
+        fileSize, deletedAt,
+        createdAt
+       FROM images 
+       WHERE userId = ? AND deletedAt IS NOT NULL
+       ORDER BY deletedAt DESC
        LIMIT ? OFFSET ?`,
       [userId, limit, offset]
     );
 
     const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM imagenes WHERE user_id = ? AND deleted_at IS NOT NULL`,
+      `SELECT COUNT(*) as total FROM images WHERE userId = ? AND deletedAt IS NOT NULL`,
       [userId]
     );
 
@@ -764,13 +764,13 @@ export const getDeletedImages = async (req: Request, res: Response): Promise<voi
     console.error("Error getting deleted images:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener imágenes eliminadas",
+      error: "Error getting deleted images",
     });
   }
 };
 
 /**
- * Eliminar imagen permanentemente
+ * Delete image permanently
  * DELETE /api/images/:id/permanent
  */
 export const deleteImagePermanently = async (req: Request, res: Response): Promise<void> => {
@@ -778,54 +778,54 @@ export const deleteImagePermanently = async (req: Request, res: Response): Promi
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
 
-    // Obtener info de la imagen
+    // Get image info
     const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT image_path as imagePath 
-       FROM imagenes 
-       WHERE id = ? AND user_id = ?`,
+      `SELECT imagePath 
+       FROM images 
+       WHERE imageId = ? AND userId = ?`,
       [imageId, userId]
     );
 
     if (images.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Imagen no encontrada",
+        error: "Image not found",
       });
       return;
     }
 
     const imagePath = images[0].imagePath;
 
-    // Eliminar de BD
-    await pool.query(`DELETE FROM imagenes WHERE id = ? AND user_id = ?`, [imageId, userId]);
+    // Delete from DB
+    await pool.query(`DELETE FROM images WHERE imageId = ? AND userId = ?`, [imageId, userId]);
 
-    // Eliminar archivo físico
+    // Delete physical file
     try {
       await fs.unlink(imagePath);
     } catch (fsError) {
       console.error("Error deleting file:", fsError);
-      // No fallar si el archivo no existe
+      // Don't fail if file doesn't exist
     }
 
     res.json({
       success: true,
-      message: "Imagen eliminada permanentemente",
+      message: "Image permanently deleted",
     });
   } catch (error) {
     console.error("Error permanently deleting image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al eliminar la imagen permanentemente",
+      error: "Error permanently deleting image",
     });
   }
 };
 
 // ============================================================================
-// 📊 ESTADÍSTICAS
+// 📊 STATISTICS
 // ============================================================================
 
 /**
- * Obtener estadísticas de imágenes del usuario
+ * Get user image statistics
  * GET /api/images/stats
  */
 export const getImageStats = async (req: Request, res: Response): Promise<void> => {
@@ -835,12 +835,12 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
     const [stats] = await pool.query<RowDataPacket[]>(
       `SELECT 
         COUNT(*) as totalImages,
-        SUM(file_size) as totalSize,
-        SUM(is_favorite) as totalFavorites,
-        SUM(is_public) as totalPublic,
-        COUNT(CASE WHEN deleted_at IS NOT NULL THEN 1 END) as totalDeleted
-       FROM imagenes 
-       WHERE user_id = ?`,
+        SUM(fileSize) as totalSize,
+        SUM(isFavorite) as totalFavorites,
+        SUM(isPublic) as totalPublic,
+        COUNT(CASE WHEN deletedAt IS NOT NULL THEN 1 END) as totalDeleted
+       FROM images 
+       WHERE userId = ?`,
       [userId]
     );
 
@@ -862,7 +862,7 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
     console.error("Error getting image stats:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener estadísticas",
+      error: "Error getting statistics",
     });
   }
 };

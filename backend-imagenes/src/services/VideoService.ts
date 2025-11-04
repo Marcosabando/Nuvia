@@ -5,7 +5,7 @@ import { RowDataPacket, ResultSetHeader } from "mysql2";
 import path from "path";
 import fs from "fs/promises";
 
-// Constantes
+// Constants
 const ALLOWED_TYPES = [
   "video/mp4",
   "video/webm",
@@ -15,50 +15,50 @@ const ALLOWED_TYPES = [
 ];
 const MAX_FILE_SIZE = 2000 * 1024 * 1024; // 2GB
 
-// ✅ Función auxiliar para validar archivo
+// ✅ Helper function to validate file
 const validateFile = (file: Express.Multer.File) => {
   if (!ALLOWED_TYPES.includes(file.mimetype)) {
-    throw new Error(`Formato de video no permitido: ${file.mimetype}`);
+    throw new Error(`Video format not allowed: ${file.mimetype}`);
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`Video muy grande: ${(file.size / 1024 / 1024).toFixed(2)}MB. Máximo: 2000MB`);
+    throw new Error(`Video too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Max: 2000MB`);
   }
 };
 
-// ✅ Función auxiliar para crear ruta relativa
+// ✅ Helper function to create relative path
 const getRelativePath = (userId: number, filename: string): string => {
   return path.join("uploads", "videos", userId.toString(), filename).replace(/\\/g, '/');
 };
 
-// ✅ Subir video individual
+// ✅ Upload single video
 export const uploadVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No se subió ningún video" });
+      res.status(400).json({ error: "No video uploaded" });
       return;
     }
 
     const userId = req.user!.userId;
     const file = req.file;
 
-    // Validar archivo
+    // Validate file
     validateFile(file);
 
     const relativePath = getRelativePath(userId, file.filename);
 
-    // Insertar en BD
+    // Insert into DB
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO videos 
-      (user_id, title, original_filename, filename, video_path, file_size, mime_type) 
+      (userId, title, originalFilename, filename, videoPath, fileSize, mimeType) 
       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [userId, file.originalname, file.originalname, file.filename, relativePath, file.size, file.mimetype]
     );
 
     res.status(201).json({
       success: true,
-      message: "Video subido con éxito",
+      message: "Video uploaded successfully",
       data: {
-        id: result.insertId,
+        videoId: result.insertId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
@@ -70,18 +70,18 @@ export const uploadVideo = async (req: Request, res: Response): Promise<void> =>
     console.error("Error uploading video:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al subir el video",
+      error: "Error uploading video",
       details: (error as Error).message 
     });
   }
 };
 
-// ✅ Subir múltiples videos
+// ✅ Upload multiple videos
 export const uploadMultipleVideos = async (req: Request, res: Response): Promise<void> => {
   const connection = await pool.getConnection();
   try {
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      res.status(400).json({ error: "No se subieron videos" });
+      res.status(400).json({ error: "No videos uploaded" });
       return;
     }
 
@@ -98,13 +98,13 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
 
       const [result] = await connection.query<ResultSetHeader>(
         `INSERT INTO videos 
-         (user_id, title, original_filename, filename, video_path, file_size, mime_type)
+         (userId, title, originalFilename, filename, videoPath, fileSize, mimeType)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [userId, file.originalname, file.originalname, file.filename, relativePath, file.size, file.mimetype]
       );
 
       insertedVideos.push({
-        id: result.insertId,
+        videoId: result.insertId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
@@ -117,7 +117,7 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
 
     res.status(201).json({
       success: true,
-      message: "Videos subidos con éxito",
+      message: "Videos uploaded successfully",
       data: insertedVideos,
     });
   } catch (error) {
@@ -125,7 +125,7 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
     console.error("Error uploading multiple videos:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al subir los videos", 
+      error: "Error uploading videos", 
       details: (error as Error).message 
     });
   } finally {
@@ -133,7 +133,7 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
   }
 };
 
-// ✅ Obtener todos los videos del usuario
+// ✅ Get all user videos
 export const getUserVideos = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -142,31 +142,31 @@ export const getUserVideos = async (req: Request, res: Response): Promise<void> 
     const offset = (page - 1) * limit;
     const favoritesOnly = req.query.favorites === 'true';
 
-    let query = `SELECT id, user_id as userId, title, description, original_filename as originalFilename, 
-              filename, video_path as videoPath, file_size as fileSize, 
-              mime_type as mimeType, duration, width, height, fps, bitrate, codec,
-              is_favorite as isFavorite, is_public as isPublic, 
-              upload_date as uploadDate, recorded_date as recordedDate, 
-              location, created_at as created
+    let query = `SELECT videoId, userId, title, description, originalFilename, 
+              filename, videoPath, fileSize, 
+              mimeType, duration, width, height, fps, bitrate, codec,
+              isFavorite, isPublic, 
+              uploadDate, recordedDate, 
+              location, createdAt
        FROM videos 
-       WHERE user_id = ? AND deleted_at IS NULL`;
+       WHERE userId = ? AND deletedAt IS NULL`;
     
     const queryParams: any[] = [userId];
 
     if (favoritesOnly) {
-      query += ` AND is_favorite = 1`;
+      query += ` AND isFavorite = 1`;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
     queryParams.push(limit, offset);
 
     const [videos] = await pool.query<RowDataPacket[]>(query, queryParams);
 
-    let countQuery = `SELECT COUNT(*) as total FROM videos WHERE user_id = ? AND deleted_at IS NULL`;
+    let countQuery = `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NULL`;
     const countParams: any[] = [userId];
 
     if (favoritesOnly) {
-      countQuery += ` AND is_favorite = 1`;
+      countQuery += ` AND isFavorite = 1`;
     }
 
     const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
@@ -187,33 +187,33 @@ export const getUserVideos = async (req: Request, res: Response): Promise<void> 
     console.error("Error getting user videos:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al obtener los videos" 
+      error: "Error getting videos" 
     });
   }
 };
 
-// ✅ Obtener video por ID
+// ✅ Get video by ID
 export const getVideoById = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT id, user_id as userId, title, description, original_filename as originalFilename, 
-              filename, video_path as videoPath, file_size as fileSize, 
-              mime_type as mimeType, duration, width, height, fps, bitrate, codec,
-              is_favorite as isFavorite, is_public as isPublic,
-              upload_date as uploadDate, recorded_date as recordedDate,
-              location, created_at as created 
+      `SELECT videoId, userId, title, description, originalFilename, 
+              filename, videoPath, fileSize, 
+              mimeType, duration, width, height, fps, bitrate, codec,
+              isFavorite, isPublic,
+              uploadDate, recordedDate,
+              location, createdAt 
        FROM videos 
-       WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+       WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [videoId, userId]
     );
 
     if (videos.length === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
@@ -226,125 +226,125 @@ export const getVideoById = async (req: Request, res: Response): Promise<void> =
     console.error("Error getting video:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al obtener el video" 
+      error: "Error getting video" 
     });
   }
 };
 
-// ✅ Eliminar video (hard delete)
+// ✅ Delete video (hard delete)
 export const deleteVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    // Obtener info del video
+    // Get video info
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT video_path as videoPath FROM videos WHERE id = ? AND user_id = ?`,
+      `SELECT videoPath FROM videos WHERE videoId = ? AND userId = ?`,
       [videoId, userId]
     );
 
     if (videos.length === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
 
     const videoPath = videos[0].videoPath;
 
-    // Eliminar de BD
+    // Delete from DB
     await pool.query(
-      `DELETE FROM videos WHERE id = ? AND user_id = ?`,
+      `DELETE FROM videos WHERE videoId = ? AND userId = ?`,
       [videoId, userId]
     );
 
-    // Eliminar archivo físico
+    // Delete physical file
     try {
       await fs.unlink(videoPath);
     } catch (fsError) {
       console.error("Error deleting file:", fsError);
-      // No fallar si el archivo no existe
+      // Don't fail if file doesn't exist
     }
 
     res.json({
       success: true,
-      message: "Video eliminado con éxito",
+      message: "Video deleted successfully",
     });
   } catch (error) {
     console.error("Error deleting video:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al eliminar el video" 
+      error: "Error deleting video" 
     });
   }
 };
 
-// ✅ Soft delete (mover a papelera)
+// ✅ Soft delete (move to trash)
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE videos SET deletedAt = CURRENT_TIMESTAMP WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [videoId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Video movido a la papelera",
+      message: "Video moved to trash",
     });
   } catch (error) {
     console.error("Error soft deleting video:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al mover el video a la papelera" 
+      error: "Error moving video to trash" 
     });
   }
 };
 
-// ✅ Restaurar video de la papelera
+// ✅ Restore video from trash
 export const restoreVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
+      `UPDATE videos SET deletedAt = NULL WHERE videoId = ? AND userId = ? AND deletedAt IS NOT NULL`,
       [videoId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado en la papelera" 
+        error: "Video not found in trash" 
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Video restaurado con éxito",
+      message: "Video restored successfully",
     });
   } catch (error) {
     console.error("Error restoring video:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al restaurar el video" 
+      error: "Error restoring video" 
     });
   }
 };
 
-// ✅ Obtener videos eliminados (papelera)
+// ✅ Get deleted videos (trash)
 export const getDeletedVideos = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -353,18 +353,18 @@ export const getDeletedVideos = async (req: Request, res: Response): Promise<voi
     const offset = (page - 1) * limit;
 
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT id, user_id as userId, title, description, original_filename as originalFilename, 
-              filename, video_path as videoPath, file_size as fileSize, 
-              mime_type as mimeType, duration, deleted_at as deletedAt, created_at as created
+      `SELECT videoId, userId, title, description, originalFilename, 
+              filename, videoPath, fileSize, 
+              mimeType, duration, deletedAt, createdAt
        FROM videos 
-       WHERE user_id = ? AND deleted_at IS NOT NULL
-       ORDER BY deleted_at DESC
+       WHERE userId = ? AND deletedAt IS NOT NULL
+       ORDER BY deletedAt DESC
        LIMIT ? OFFSET ?`,
       [userId, limit, offset]
     );
 
     const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM videos WHERE user_id = ? AND deleted_at IS NOT NULL`,
+      `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NOT NULL`,
       [userId]
     );
 
@@ -384,12 +384,12 @@ export const getDeletedVideos = async (req: Request, res: Response): Promise<voi
     console.error("Error getting deleted videos:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al obtener videos eliminados" 
+      error: "Error getting deleted videos" 
     });
   }
 };
 
-// ✅ Actualizar título del video
+// ✅ Update video title
 export const updateVideoTitle = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -399,38 +399,38 @@ export const updateVideoTitle = async (req: Request, res: Response): Promise<voi
     if (!title || title.trim() === "") {
       res.status(400).json({ 
         success: false,
-        error: "El título no puede estar vacío" 
+        error: "Title cannot be empty" 
       });
       return;
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET title = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE videos SET title = ? WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [title.trim(), videoId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Título actualizado con éxito",
+      message: "Title updated successfully",
     });
   } catch (error) {
     console.error("Error updating video title:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al actualizar el título" 
+      error: "Error updating title" 
     });
   }
 };
 
-// ✅ Actualizar descripción del video
+// ✅ Update video description
 export const updateVideoDescription = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -438,39 +438,39 @@ export const updateVideoDescription = async (req: Request, res: Response): Promi
     const { description } = req.body;
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET description = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE videos SET description = ? WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [description || null, videoId, userId]
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Descripción actualizada con éxito",
+      message: "Description updated successfully",
     });
   } catch (error) {
     console.error("Error updating video description:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al actualizar la descripción" 
+      error: "Error updating description" 
     });
   }
 };
 
-// ✅ Actualizar metadatos del video (duración, resolución, fps, etc.)
+// ✅ Update video metadata (duration, resolution, fps, etc.)
 export const updateVideoMetadata = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
     const { duration, width, height, fps, bitrate, codec } = req.body;
 
-    // Construir query dinámicamente solo con campos presentes
+    // Build query dynamically only with present fields
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -502,7 +502,7 @@ export const updateVideoMetadata = async (req: Request, res: Response): Promise<
     if (updates.length === 0) {
       res.status(400).json({ 
         success: false,
-        error: "No se proporcionaron metadatos para actualizar" 
+        error: "No metadata provided to update" 
       });
       return;
     }
@@ -510,47 +510,47 @@ export const updateVideoMetadata = async (req: Request, res: Response): Promise<
     values.push(videoId, userId);
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET ${updates.join(', ')} WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `UPDATE videos SET ${updates.join(', ')} WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       values
     );
 
     if (result.affectedRows === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
 
     res.json({
       success: true,
-      message: "Metadatos actualizados con éxito",
+      message: "Metadata updated successfully",
     });
   } catch (error) {
     console.error("Error updating video metadata:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al actualizar los metadatos" 
+      error: "Error updating metadata" 
     });
   }
 };
 
-// ✅ Marcar/desmarcar video como favorito
+// ✅ Mark/unmark video as favorite
 export const toggleVideoFavorite = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    // Verificar que el video existe y obtener estado actual
+    // Verify video exists and get current state
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT is_favorite as isFavorite FROM videos WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      `SELECT isFavorite FROM videos WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [videoId, userId]
     );
 
     if (videos.length === 0) {
       res.status(404).json({ 
         success: false,
-        error: "Video no encontrado" 
+        error: "Video not found" 
       });
       return;
     }
@@ -558,15 +558,15 @@ export const toggleVideoFavorite = async (req: Request, res: Response): Promise<
     const currentFavorite = videos[0].isFavorite;
     const newFavorite = !currentFavorite;
 
-    // Actualizar estado
+    // Update state
     await pool.query<ResultSetHeader>(
-      `UPDATE videos SET is_favorite = ? WHERE id = ? AND user_id = ?`,
+      `UPDATE videos SET isFavorite = ? WHERE videoId = ? AND userId = ?`,
       [newFavorite, videoId, userId]
     );
 
     res.json({
       success: true,
-      message: newFavorite ? "Video añadido a favoritos" : "Video eliminado de favoritos",
+      message: newFavorite ? "Video added to favorites" : "Video removed from favorites",
       data: {
         isFavorite: newFavorite
       }
@@ -575,12 +575,12 @@ export const toggleVideoFavorite = async (req: Request, res: Response): Promise<
     console.error("Error toggling video favorite:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al actualizar favorito" 
+      error: "Error updating favorite" 
     });
   }
 };
 
-// ✅ Buscar videos
+// ✅ Search videos
 export const searchVideos = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -592,7 +592,7 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
     if (!searchTerm || searchTerm.trim() === "") {
       res.status(400).json({ 
         success: false,
-        error: "Término de búsqueda requerido" 
+        error: "Search term required" 
       });
       return;
     }
@@ -600,21 +600,21 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
     const searchPattern = `%${searchTerm}%`;
 
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT id, user_id as userId, title, description, original_filename as originalFilename, 
-              filename, video_path as videoPath, file_size as fileSize, 
-              mime_type as mimeType, duration, is_favorite as isFavorite, created_at as created
+      `SELECT videoId, userId, title, description, originalFilename, 
+              filename, videoPath, fileSize, 
+              mimeType, duration, isFavorite, createdAt
        FROM videos 
-       WHERE user_id = ? AND deleted_at IS NULL 
-       AND (title LIKE ? OR description LIKE ? OR original_filename LIKE ?)
-       ORDER BY created_at DESC
+       WHERE userId = ? AND deletedAt IS NULL 
+       AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)
+       ORDER BY createdAt DESC
        LIMIT ? OFFSET ?`,
       [userId, searchPattern, searchPattern, searchPattern, limit, offset]
     );
 
     const [countResult] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) as total FROM videos 
-       WHERE user_id = ? AND deleted_at IS NULL 
-       AND (title LIKE ? OR description LIKE ? OR original_filename LIKE ?)`,
+       WHERE userId = ? AND deletedAt IS NULL 
+       AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)`,
       [userId, searchPattern, searchPattern, searchPattern]
     );
 
@@ -634,12 +634,12 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
     console.error("Error searching videos:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al buscar videos" 
+      error: "Error searching videos" 
     });
   }
 };
 
-// ✅ Obtener estadísticas de videos del usuario
+// ✅ Get user video statistics
 export const getVideoStats = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -647,15 +647,15 @@ export const getVideoStats = async (req: Request, res: Response): Promise<void> 
     const [stats] = await pool.query<RowDataPacket[]>(
       `SELECT 
         COUNT(*) as totalVideos,
-        COUNT(CASE WHEN is_favorite = 1 THEN 1 END) as favoriteVideos,
-        COUNT(CASE WHEN deleted_at IS NOT NULL THEN 1 END) as deletedVideos,
-        SUM(file_size) as totalSize,
-        SUM(CASE WHEN deleted_at IS NULL THEN file_size ELSE 0 END) as activeSize,
+        COUNT(CASE WHEN isFavorite = 1 THEN 1 END) as favoriteVideos,
+        COUNT(CASE WHEN deletedAt IS NOT NULL THEN 1 END) as deletedVideos,
+        SUM(fileSize) as totalSize,
+        SUM(CASE WHEN deletedAt IS NULL THEN fileSize ELSE 0 END) as activeSize,
         SUM(duration) as totalDuration,
         AVG(duration) as avgDuration,
-        MAX(created_at) as lastUpload
+        MAX(createdAt) as lastUpload
        FROM videos 
-       WHERE user_id = ?`,
+       WHERE userId = ?`,
       [userId]
     );
 
@@ -678,24 +678,24 @@ export const getVideoStats = async (req: Request, res: Response): Promise<void> 
     console.error("Error getting video stats:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al obtener estadísticas" 
+      error: "Error getting statistics" 
     });
   }
 };
 
-// ✅ Obtener videos recientes
+// ✅ Get recent videos
 export const getRecentVideos = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const limit = parseInt(req.query.limit as string) || 10;
 
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT id, user_id as userId, title, original_filename as originalFilename, 
-              filename, video_path as videoPath, file_size as fileSize, 
-              mime_type as mimeType, duration, is_favorite as isFavorite, created_at as created
+      `SELECT videoId, userId, title, originalFilename, 
+              filename, videoPath, fileSize, 
+              mimeType, duration, isFavorite, createdAt
        FROM videos 
-       WHERE user_id = ? AND deleted_at IS NULL
-       ORDER BY created_at DESC
+       WHERE userId = ? AND deletedAt IS NULL
+       ORDER BY createdAt DESC
        LIMIT ?`,
       [userId, limit]
     );
@@ -708,7 +708,7 @@ export const getRecentVideos = async (req: Request, res: Response): Promise<void
     console.error("Error getting recent videos:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error al obtener videos recientes" 
+      error: "Error getting recent videos" 
     });
   }
 };
