@@ -38,53 +38,71 @@ const getRelativePath = (userId: number, filename: string): string => {
 export const uploadImage = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No image uploaded" });
+      res.status(400).json({ error: "No se subió ningún archivo" });
       return;
     }
 
     const userId = req.user!.userId;
     const file = req.file;
 
+    console.log("🔍 DEBUG - File object completo:", file);
+
     validateFile(file);
 
     const relativePath = getRelativePath(userId, file.filename);
     const { title, description } = req.body;
 
+    // ✅ USAR file.size que ahora SÍ tiene valor (488934 en tu ejemplo)
+    const fileSize = file.size;
+
+    console.log("💾 Insertando en BD con fileSize:", fileSize);
+
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO images 
       (userId, title, description, originalFilename, filename, imagePath, 
-       fileSize, mimeType) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       fileSize, mimeType, uploadDate) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         userId,
-        title || file.originalname,
+        title || file.originalname || 'Untitled',
         description || null,
-        file.originalname,
-        file.filename,
+        file.originalname || 'unknown',
+        file.filename || 'unknown',
         relativePath,
-        file.size,
-        file.mimetype,
+        fileSize,  // ← Esto ahora debería ser 488934
+        file.mimetype || 'application/octet-stream',
       ]
     );
 
+    console.log("✅ INSERT exitoso, ID:", result.insertId);
+
+    // ✅ VERIFICAR qué se insertó en la BD
+    const [insertedRow] = await pool.query<RowDataPacket[]>(
+      `SELECT imageId, originalFilename, fileSize, mimeType FROM images WHERE imageId = ?`,
+      [result.insertId]
+    );
+
+    console.log("📋 REGISTRO INSERTADO EN BD:", insertedRow[0]);
+
     res.status(201).json({
       success: true,
-      message: "Image uploaded successfully",
+      message: "Archivo subido con éxito",
       data: {
-        imageId: result.insertId,
+        id: result.insertId,
         title: title || file.originalname,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
-        size: file.size,
+        size: fileSize,
         url: `/${relativePath}`,
+        type: file.mimetype.startsWith('video/') ? 'video' : 'image'
       },
     });
   } catch (error) {
-    console.error("Error uploading image:", error);
+    console.error("❌ Error uploading file:", error);
     res.status(500).json({
       success: false,
-      error: "Error uploading image",
+      error: "Error al subir el archivo",
       details: (error as Error).message,
     });
   }

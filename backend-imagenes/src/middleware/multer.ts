@@ -1,4 +1,4 @@
-// src/middleware/upload.ts
+// src/middleware/multer.ts - VERSIÓN CORREGIDA
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -322,4 +322,4 @@ export const handleUploadError = (error: any, req: Request, res: Response, next:
   });
 };
 
-export default upload;
+export default multer;

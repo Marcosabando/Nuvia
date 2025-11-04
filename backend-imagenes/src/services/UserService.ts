@@ -178,6 +178,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 };
 
 // ✅ Get authenticated user profile
+// ✅ Get authenticated user profile
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -197,13 +198,26 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Get image statistics
+    // Get comprehensive statistics
     const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as totalImages FROM images WHERE userId = ? AND deletedAt IS NULL`,
-      [userId]
+      `SELECT 
+        -- Total images
+        (SELECT COUNT(*) FROM images WHERE userId = ? AND deletedAt IS NULL) as totalImages,
+        
+        -- Total videos  
+        (SELECT COUNT(*) FROM videos WHERE userId = ? AND deletedAt IS NULL) as totalVideos,
+        
+        -- Today's uploads (both images and videos)
+        (
+          (SELECT COUNT(*) FROM images WHERE userId = ? AND DATE(uploadDate) = CURDATE()) +
+          (SELECT COUNT(*) FROM videos WHERE userId = ? AND DATE(uploadDate) = CURDATE())
+        ) as todayUploads
+      `,
+      [userId, userId, userId, userId]
     );
 
     const user = users[0];
+    const statistics = stats[0];
 
     res.json({
       success: true,
@@ -219,7 +233,9 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,
         stats: {
-          totalImages: stats[0].totalImages
+          totalImages: statistics.totalImages || 0,
+          totalVideos: statistics.totalVideos || 0,
+          todayUploads: statistics.todayUploads || 0
         }
       }
     });
