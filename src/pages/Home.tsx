@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Images, Upload, TrendingUp, Video } from "lucide-react";
 import { useUserStats } from "@/hooks/useUserStats";
+import { VideoGallery } from "@/components/VideoGallery";
 
 const Home = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -24,7 +25,7 @@ const Home = () => {
         <div className="space-y-4">
           <div>
             <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
-              Bienvenido a Nuvia{username ? `, ${username}` : ""}
+             Bienvenido a Nuvia{username ? `, ${username}` : ""}
             </h1>
             <p className="text-sm sm:text-base text-white mt-1">
               Tu plataforma elegante de gestión multimedia
@@ -103,13 +104,20 @@ const Home = () => {
         {/* Main Content Tabs */}
         <Tabs defaultValue="gallery" className="space-y-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <TabsList className="grid w-full sm:w-fit grid-cols-2 bg-white/50 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
+            <TabsList className="grid w-full sm:w-fit grid-cols-3 bg-white/50 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
               <TabsTrigger 
                 value="gallery" 
                 className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300"
               >
                 <Images className="w-4 h-4" />
-                Galería
+                Imágenes
+              </TabsTrigger>
+              <TabsTrigger 
+                value="videos" 
+                className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300"
+              >
+                <Video className="w-4 h-4" />
+                Videos
               </TabsTrigger>
               <TabsTrigger 
                 value="upload" 
@@ -132,11 +140,25 @@ const Home = () => {
               <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
                 <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
                   <Images className="w-5 h-5 text-nuvia-mauve" />
-                  Galería de Multimedia
+                  Galería de Imágenes
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
                 <ImageGallery key={refreshKey} viewMode={viewMode} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="videos" className="space-y-6 animate-fade-in">
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
+                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
+                  <Video className="w-5 h-5 text-nuvia-mauve" />
+                  Galería de Videos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <VideoGallery key={refreshKey} viewMode={viewMode} />
               </CardContent>
             </Card>
           </TabsContent>
