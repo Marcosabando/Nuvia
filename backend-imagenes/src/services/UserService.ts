@@ -7,16 +7,16 @@ import { generateToken, generateRefreshToken } from "@src/config/jwt";
 
 const SALT_ROUNDS = 10;
 
-// ✅ Registrar nuevo usuario
+// ✅ Register new user
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, email, password } = req.body;
 
-    // Validaciones básicas
+    // Basic validations
     if (!username || !email || !password) {
       res.status(400).json({
         success: false,
-        error: "Username, email y password son requeridos"
+        error: "Username, email and password are required"
       });
       return;
     }
@@ -24,37 +24,36 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     if (password.length < 6) {
       res.status(400).json({
         success: false,
-        error: "La contraseña debe tener al menos 6 caracteres"
+        error: "Password must be at least 6 characters"
       });
       return;
     }
 
-    // Verificar si el usuario ya existe
+    // Check if user already exists
     const [existingUsers] = await pool.query<RowDataPacket[]>(
-      `SELECT id FROM usuarios WHERE email = ? OR username = ?`,
+      `SELECT userId FROM users WHERE email = ? OR username = ?`,
       [email, username]
     );
 
     if (existingUsers.length > 0) {
       res.status(409).json({
         success: false,
-        error: "El email o username ya está registrado"
+        error: "Email or username already registered"
       });
       return;
     }
 
-    // Hash de la contraseña
-    const salt = await bcrypt.genSalt(SALT_ROUNDS);
-    const passwordHash = await bcrypt.hash(password, salt);
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Insertar usuario
+    // Insert user
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO usuarios (username, email, password_hash, salt, is_active, email_verified)
-       VALUES (?, ?, ?, ?, TRUE, FALSE)`,
-      [username, email, passwordHash, salt]
+      `INSERT INTO users (username, email, password, isActive, emailVerified)
+       VALUES (?, ?, ?, TRUE, FALSE)`,
+      [username, email, passwordHash]
     );
 
-    // Generar tokens
+    // Generate tokens
     const payload = {
       userId: result.insertId,
       email,
@@ -66,10 +65,10 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 
     res.status(201).json({
       success: true,
-      message: "Usuario registrado exitosamente",
+      message: "User registered successfully",
       data: {
         user: {
-          id: result.insertId,
+          userId: result.insertId,
           username,
           email,
           storageUsed: 0,
@@ -83,13 +82,13 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     console.error("Error registering user:", error);
     res.status(500).json({
       success: false,
-      error: "Error al registrar usuario",
+      error: "Error registering user",
       details: (error as Error).message
     });
   }
 };
 
-// ✅ Login de usuario
+// ✅ User login
 export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -97,57 +96,57 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     if (!email || !password) {
       res.status(400).json({
         success: false,
-        error: "Email y password son requeridos"
+        error: "Email and password are required"
       });
       return;
     }
 
-    // Buscar usuario
+    // Find user
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT id, username, email, password_hash, is_active 
-       FROM usuarios WHERE email = ?`,
+      `SELECT userId, username, email, password, isActive 
+       FROM users WHERE email = ?`,
       [email]
     );
 
     if (users.length === 0) {
       res.status(401).json({
         success: false,
-        error: "Credenciales inválidas"
+        error: "Invalid credentials"
       });
       return;
     }
 
     const user = users[0];
 
-    // Verificar si está activo
-    if (!user.is_active) {
+    // Check if active
+    if (!user.isActive) {
       res.status(403).json({
         success: false,
-        error: "Cuenta desactivada"
+        error: "Account deactivated"
       });
       return;
     }
 
-    // Verificar contraseña
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
       res.status(401).json({
         success: false,
-        error: "Credenciales inválidas"
+        error: "Invalid credentials"
       });
       return;
     }
 
-    // Actualizar último login
+    // Update last login
     await pool.query(
-      `UPDATE usuarios SET last_login = NOW() WHERE id = ?`,
-      [user.id]
+      `UPDATE users SET lastLogin = NOW() WHERE userId = ?`,
+      [user.userId]
     );
 
-    // Generar tokens
+    // Generate tokens
     const payload = {
-      userId: user.id,
+      userId: user.userId,
       email: user.email,
       username: user.username
     };
@@ -157,10 +156,10 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       success: true,
-      message: "Login exitoso",
+      message: "Login successful",
       data: {
         user: {
-          id: user.id,
+          userId: user.userId,
           username: user.username,
           email: user.email
         },
@@ -172,35 +171,35 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     console.error("Error logging in:", error);
     res.status(500).json({
       success: false,
-      error: "Error al iniciar sesión",
+      error: "Error logging in",
       details: (error as Error).message
     });
   }
 };
 
-// ✅ Obtener perfil del usuario autenticado
+// ✅ Get authenticated user profile
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
 
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT id, username, email, storage_used, storage_limit, 
-              is_active, email_verified, last_login, created_at 
-       FROM usuarios WHERE id = ?`,
+      `SELECT userId, username, email, storageUsed, storageLimit, 
+              isActive, emailVerified, lastLogin, createdAt 
+       FROM users WHERE userId = ?`,
       [userId]
     );
 
     if (users.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Usuario no encontrado"
+        error: "User not found"
       });
       return;
     }
 
-    // Obtener estadísticas de imágenes
+    // Get image statistics
     const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as totalImages FROM imagenes WHERE user_id = ?`,
+      `SELECT COUNT(*) as totalImages FROM images WHERE userId = ? AND deletedAt IS NULL`,
       [userId]
     );
 
@@ -209,16 +208,16 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     res.json({
       success: true,
       data: {
-        id: user.id,
+        userId: user.userId,
         username: user.username,
         email: user.email,
-        storageUsed: user.storage_used,
-        storageLimit: user.storage_limit,
-        storagePercentage: ((user.storage_used / user.storage_limit) * 100).toFixed(2),
-        isActive: user.is_active,
-        emailVerified: user.email_verified,
-        lastLogin: user.last_login,
-        createdAt: user.created_at,
+        storageUsed: user.storageUsed,
+        storageLimit: user.storageLimit,
+        storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
+        isActive: user.isActive,
+        emailVerified: user.emailVerified,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
         stats: {
           totalImages: stats[0].totalImages
         }
@@ -228,12 +227,12 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     console.error("Error getting profile:", error);
     res.status(500).json({
       success: false,
-      error: "Error al obtener perfil"
+      error: "Error getting profile"
     });
   }
 };
 
-// ✅ Actualizar perfil
+// ✅ Update profile
 export const updateProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -242,29 +241,29 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     if (!username && !email) {
       res.status(400).json({
         success: false,
-        error: "Debe proporcionar al menos un campo para actualizar"
+        error: "Must provide at least one field to update"
       });
       return;
     }
 
-    // Verificar si el nuevo email/username ya existe
+    // Check if new email/username already exists
     if (email || username) {
       const [existing] = await pool.query<RowDataPacket[]>(
-        `SELECT id FROM usuarios 
-         WHERE (email = ? OR username = ?) AND id != ?`,
+        `SELECT userId FROM users 
+         WHERE (email = ? OR username = ?) AND userId != ?`,
         [email || '', username || '', userId]
       );
 
       if (existing.length > 0) {
         res.status(409).json({
           success: false,
-          error: "El email o username ya está en uso"
+          error: "Email or username already in use"
         });
         return;
       }
     }
 
-    // Construir query dinámica
+    // Build dynamic query
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -281,24 +280,24 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     values.push(userId);
 
     await pool.query(
-      `UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`,
+      `UPDATE users SET ${updates.join(', ')} WHERE userId = ?`,
       values
     );
 
     res.json({
       success: true,
-      message: "Perfil actualizado exitosamente"
+      message: "Profile updated successfully"
     });
   } catch (error) {
     console.error("Error updating profile:", error);
     res.status(500).json({
       success: false,
-      error: "Error al actualizar perfil"
+      error: "Error updating profile"
     });
   }
 };
 
-// ✅ Cambiar contraseña
+// ✅ Change password
 export const changePassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -307,7 +306,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     if (!currentPassword || !newPassword) {
       res.status(400).json({
         success: false,
-        error: "Contraseña actual y nueva son requeridas"
+        error: "Current and new password are required"
       });
       return;
     }
@@ -315,60 +314,59 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     if (newPassword.length < 6) {
       res.status(400).json({
         success: false,
-        error: "La nueva contraseña debe tener al menos 6 caracteres"
+        error: "New password must be at least 6 characters"
       });
       return;
     }
 
-    // Obtener contraseña actual
+    // Get current password
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT password_hash FROM usuarios WHERE id = ?`,
+      `SELECT password FROM users WHERE userId = ?`,
       [userId]
     );
 
     if (users.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Usuario no encontrado"
+        error: "User not found"
       });
       return;
     }
 
-    // Verificar contraseña actual
-    const isValid = await bcrypt.compare(currentPassword, users[0].password_hash);
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, users[0].password);
 
     if (!isValid) {
       res.status(401).json({
         success: false,
-        error: "Contraseña actual incorrecta"
+        error: "Current password is incorrect"
       });
       return;
     }
 
-    // Hash de nueva contraseña
-    const salt = await bcrypt.genSalt(SALT_ROUNDS);
-    const newPasswordHash = await bcrypt.hash(newPassword, salt);
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
-    // Actualizar
+    // Update
     await pool.query(
-      `UPDATE usuarios SET password_hash = ?, salt = ? WHERE id = ?`,
-      [newPasswordHash, salt, userId]
+      `UPDATE users SET password = ? WHERE userId = ?`,
+      [newPasswordHash, userId]
     );
 
     res.json({
       success: true,
-      message: "Contraseña cambiada exitosamente"
+      message: "Password changed successfully"
     });
   } catch (error) {
     console.error("Error changing password:", error);
     res.status(500).json({
       success: false,
-      error: "Error al cambiar contraseña"
+      error: "Error changing password"
     });
   }
 };
 
-// ✅ Eliminar cuenta
+// ✅ Delete account
 export const deleteAccount = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -377,47 +375,47 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
     if (!password) {
       res.status(400).json({
         success: false,
-        error: "Contraseña requerida para eliminar cuenta"
+        error: "Password required to delete account"
       });
       return;
     }
 
-    // Verificar contraseña
+    // Verify password
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT password_hash FROM usuarios WHERE id = ?`,
+      `SELECT password FROM users WHERE userId = ?`,
       [userId]
     );
 
     if (users.length === 0) {
       res.status(404).json({
         success: false,
-        error: "Usuario no encontrado"
+        error: "User not found"
       });
       return;
     }
 
-    const isValid = await bcrypt.compare(password, users[0].password_hash);
+    const isValid = await bcrypt.compare(password, users[0].password);
 
     if (!isValid) {
       res.status(401).json({
         success: false,
-        error: "Contraseña incorrecta"
+        error: "Incorrect password"
       });
       return;
     }
 
-    // Eliminar usuario (cascade eliminará imágenes automáticamente)
-    await pool.query(`DELETE FROM usuarios WHERE id = ?`, [userId]);
+    // Delete user (cascade will delete images automatically)
+    await pool.query(`DELETE FROM users WHERE userId = ?`, [userId]);
 
     res.json({
       success: true,
-      message: "Cuenta eliminada exitosamente"
+      message: "Account deleted successfully"
     });
   } catch (error) {
     console.error("Error deleting account:", error);
     res.status(500).json({
       success: false,
-      error: "Error al eliminar cuenta"
+      error: "Error deleting account"
     });
   }
 };
@@ -430,4 +428,3 @@ export default {
   changePassword,
   deleteAccount
 };
-
