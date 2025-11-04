@@ -103,7 +103,7 @@ app.use('/uploads', express.static(uploadsPath));
  ******************************************************/
 import userRouter from './routes/UserRoutes';
 
-app.use('/api/auth', authRouter);
+// app.use('/api/auth', authRouter);
 app.use('/api/users', userRouter);
 app.use('/api/images', imagesRouter);
 app.use('/api/stats', statsRouter); // 
