@@ -1,9 +1,6 @@
-// src/config/api.config.ts
-
 export const API_CONFIG = {
-  // ⚠️ IMPORTANTE: BASE_URL NO debe incluir /api al final
-  // porque los endpoints ya lo tienen
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000',
+  // Base URL desde variable de entorno
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
   
   // URL de uploads
   UPLOADS_URL: import.meta.env.VITE_UPLOADS_URL || 'http://localhost:3000/uploads',
@@ -13,8 +10,8 @@ export const API_CONFIG = {
   APP_VERSION: import.meta.env.VITE_APP_VERSION || '1.0.0',
   
   // Límites (50MB como en tu backend)
-  MAX_FILE_SIZE: parseInt(import.meta.env.VITE_MAX_FILE_SIZE || '52428800'), // 50MB
-  MAX_VIDEO_SIZE: parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE || '104857600'), // 100MB
+  MAX_FILE_SIZE: parseInt(import.meta.env.VITE_MAX_FILE_SIZE || '52428800'),
+  MAX_VIDEO_SIZE: parseInt(import.meta.env.VITE_MAX_VIDEO_SIZE || '104857600'), // 100MB para videos
   
   // Formatos permitidos
   ALLOWED_IMAGE_FORMATS: (import.meta.env.VITE_ALLOWED_IMAGE_FORMATS || 'image/jpeg,image/png,image/gif,image/webp').split(','),
@@ -23,7 +20,7 @@ export const API_CONFIG = {
   // Timeout por defecto
   TIMEOUT: 30000,
   
-  // Endpoints de tu API (todos empiezan con /api)
+  // Endpoints de tu API
   ENDPOINTS: {
     // Auth
     AUTH: {
@@ -50,7 +47,6 @@ export const API_CONFIG = {
       BASE: '/images',
       BY_ID: (id: number) => `/images/${id}`,
       UPLOAD: '/images/upload',
-      UPLOAD_MULTIPLE: '/images/upload-multiple',
       BY_USER: (userId: number) => `/images/user/${userId}`,
       BY_ALBUM: (albumId: number) => `/images/album/${albumId}`,
       BY_CATEGORY: (categoryId: number) => `/images/category/${categoryId}`,
@@ -82,15 +78,9 @@ export const API_CONFIG = {
     // Tags
     TAGS: {
       BASE: '/tags',
-      BY_ID: (id: number) => `/tags/search`,
+      BY_ID: (id: number) => `/tags/${id}`,
       SEARCH: '/tags/search',
     },
-
-    // Stats
-    STATS: {
-      USER: '/stats/user',
-      GLOBAL: '/stats/global',
-    }
   },
   
   // Headers por defecto
@@ -101,7 +91,6 @@ export const API_CONFIG = {
 
 /**
  * Construye la URL completa para un endpoint
- * @param endpoint - El endpoint que ya incluye /api (ej: '/api/auth/login')
  */
 export const buildUrl = (endpoint: string): string => {
   return `${API_CONFIG.BASE_URL}${endpoint}`;
@@ -109,44 +98,22 @@ export const buildUrl = (endpoint: string): string => {
 
 /**
  * Obtiene la URL completa de una imagen subida
- * @param path - Puede ser solo el nombre del archivo o la ruta completa
  */
-export const getImageUrl = (path: string): string => {
-  if (!path) return '';
-  
+export const getImageUrl = (filename: string): string => {
+  if (!filename) return '';
   // Si ya es una URL completa, retornarla tal cual
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  
-  // Si ya incluye /uploads, construir desde BASE_URL
-  if (path.startsWith('/uploads')) {
-    return `${API_CONFIG.BASE_URL}${path}`;
-  }
-  
-  // Si solo es el nombre del archivo, usar UPLOADS_URL
-  return `${API_CONFIG.UPLOADS_URL}/${path.replace(/^\//, '')}`;
+  if (filename.startsWith('http')) return filename;
+  return `${API_CONFIG.UPLOADS_URL}/${filename}`;
 };
 
 /**
  * Obtiene la URL completa de un video subido
- * @param path - Puede ser solo el nombre del archivo o la ruta completa
  */
-export const getVideoUrl = (path: string): string => {
-  if (!path) return '';
-  
+export const getVideoUrl = (filename: string): string => {
+  if (!filename) return '';
   // Si ya es una URL completa, retornarla tal cual
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  
-  // Si ya incluye /uploads, construir desde BASE_URL
-  if (path.startsWith('/uploads')) {
-    return `${API_CONFIG.BASE_URL}${path}`;
-  }
-  
-  // Si solo es el nombre del archivo, usar UPLOADS_URL
-  return `${API_CONFIG.UPLOADS_URL}/${path.replace(/^\//, '')}`;
+  if (filename.startsWith('http')) return filename;
+  return `${API_CONFIG.UPLOADS_URL}/${filename}`;
 };
 
 /**
@@ -154,7 +121,7 @@ export const getVideoUrl = (path: string): string => {
  */
 export const validateFileSize = (file: File): { valid: boolean; error?: string } => {
   if (file.size > API_CONFIG.MAX_FILE_SIZE) {
-    const maxMB = (API_CONFIG.MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+    const maxMB = API_CONFIG.MAX_FILE_SIZE / (1024 * 1024);
     return {
       valid: false,
       error: `El archivo es demasiado grande. Tamaño máximo: ${maxMB}MB`
@@ -168,7 +135,7 @@ export const validateFileSize = (file: File): { valid: boolean; error?: string }
  */
 export const validateVideoSize = (file: File): { valid: boolean; error?: string } => {
   if (file.size > API_CONFIG.MAX_VIDEO_SIZE) {
-    const maxMB = (API_CONFIG.MAX_VIDEO_SIZE / (1024 * 1024)).toFixed(0);
+    const maxMB = API_CONFIG.MAX_VIDEO_SIZE / (1024 * 1024);
     return {
       valid: false,
       error: `El video es demasiado grande. Tamaño máximo: ${maxMB}MB`
@@ -213,12 +180,3 @@ export const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 };
-
-// Debug en desarrollo
-if (import.meta.env.DEV) {
-  console.log('🔧 API Config:', {
-    baseUrl: API_CONFIG.BASE_URL,
-    uploadsUrl: API_CONFIG.UPLOADS_URL,
-    registerEndpoint: buildUrl(API_CONFIG.ENDPOINTS.AUTH.REGISTER)
-  });
-}

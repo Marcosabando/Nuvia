@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Lock, Mail, Eye, EyeOff, ArrowRight, AlertCircle } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { AuthService } from "@/services/auth.service"; // 👈 Usa AuthService
+import { API_CONFIG, buildUrl } from "../config/api.config";
 
 interface LoginFormProps {
   openRegister: () => void;
@@ -16,35 +16,52 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
 
     try {
-      // ✅ Usa AuthService - maneja todo automáticamente
-      const response = await AuthService.login({
-        email: formData.email.trim(),
-        password: formData.password
+      const response = await fetch(buildUrl("/users/login"), {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          email: formData.email, 
+          password: formData.password 
+        }),
       });
 
-      console.log("✅ Login exitoso:", response);
-
-      // Manejar "Recordar sesión"
-      if (formData.rememberMe) {
-        localStorage.setItem("rememberMe", "true");
-      } else {
-        localStorage.removeItem("rememberMe");
+      console.log("Status:", response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error del servidor: ${response.status}`);
       }
-      
-      // Redirigir al home
-      navigate("/home");
-      
+
+      const data = await response.json();
+      console.log("Respuesta completa del servidor:", data);
+
+      if (data.success) {
+        // Guardar token y datos del usuario
+        localStorage.setItem("authToken", data.data.token);
+        localStorage.setItem("user", JSON.stringify(data.data.user));
+        
+        if (formData.rememberMe) {
+          localStorage.setItem("rememberMe", "true");
+        } else {
+          localStorage.removeItem("rememberMe");
+        }
+        
+        // Redirigir a la página home
+        navigate("/home");
+      } else {
+        alert(data.error || "Credenciales inválidas");
+      }
     } catch (error: any) {
-      console.error("❌ Error en login:", error);
-      setError(error.message || "Error de autenticación");
+      console.error("Error en login:", error);
+      alert("Error de autenticación: " + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +73,6 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-    setError(null); // Limpiar error al escribir
   };
 
   const handleForgotPassword = () => {
@@ -75,14 +91,6 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
         <p className="text-nuvia-rose font-medium text-lg">Ingresa a tu cuenta para continuar</p>
       </div>
 
-      {/* Error Alert */}
-      {error && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex items-start gap-3 animate-shake mb-6">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700 font-medium">{error}</p>
-        </div>
-      )}
-
       <form className="space-y-6" onSubmit={handleSubmit}>
         {/* Email */}
         <div className="space-y-3">
@@ -100,7 +108,6 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
               placeholder="tu@email.com"
               required
               disabled={isLoading}
-              autoComplete="email"
               className="w-full pl-12 pr-4 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl focus:outline-none focus:border-nuvia-rose focus:shadow-nuvia-accent transition-all duration-300 hover:border-nuvia-mauve/50 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
@@ -122,7 +129,6 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
               placeholder="Tu contraseña"
               required
               disabled={isLoading}
-              autoComplete="current-password"
               className="w-full pl-12 pr-14 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl focus:outline-none focus:border-nuvia-rose focus:shadow-nuvia-accent transition-all duration-300 hover:border-nuvia-mauve/50 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button

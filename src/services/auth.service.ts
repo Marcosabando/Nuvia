@@ -1,4 +1,3 @@
-// src/services/auth.service.ts
 
 import { apiService } from './api.service';
 import { API_CONFIG } from '@/config/api.config';
