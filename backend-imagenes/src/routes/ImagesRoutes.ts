@@ -1,7 +1,7 @@
 // src/routes/ImageRoutes.ts
 import { Router } from "express";
 import auth from "@src/middleware/auth";
-import { uploadMultiple, uploadSingle } from "@src/middleware/multer";
+import { uploadMultiple, uploadMultipleImages, uploadSingle } from "@src/middleware/multer";
 import * as ImageService from "@src/services/ImageService";
 
 const router = Router();
@@ -31,7 +31,7 @@ router.post("/upload", uploadSingle, ImageService.uploadImage);
  * Body (multipart/form-data):
  *   - files: array de imágenes
  */
-router.post("/upload-multiple", uploadMultiple, ImageService.uploadMultipleImages);
+router.post("/upload-multiple", uploadMultipleImages, ImageService.uploadMultipleImages);
 
 // ============================================================================
 // 📊 ESTADÍSTICAS - Debe ir ANTES de /:id para evitar conflictos

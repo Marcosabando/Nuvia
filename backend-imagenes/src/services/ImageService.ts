@@ -24,7 +24,8 @@ const validateFile = (file: Express.Multer.File) => {
 };
 
 const getRelativePath = (userId: number, filename: string): string => {
-  return path.join("uploads", userId.toString(), filename).replace(/\\/g, '/');
+  const relative = path.join('uploads', userId.toString(), 'images', filename);
+  return relative.replace(/\\/g, '/');
 };
 
 // ============================================================================
@@ -813,13 +814,16 @@ export const deleteImagePermanently = async (req: Request, res: Response): Promi
     }
 
     const imagePath = images[0].imagePath;
+    const absoluteImagePath = path.isAbsolute(imagePath)
+      ? imagePath
+      : path.join(process.cwd(), imagePath);
 
     // Delete from DB
     await pool.query(`DELETE FROM images WHERE imageId = ? AND userId = ?`, [imageId, userId]);
 
     // Delete physical file
     try {
-      await fs.unlink(imagePath);
+      await fs.unlink(absoluteImagePath);
     } catch (fsError) {
       console.error("Error deleting file:", fsError);
       // Don't fail if file doesn't exist

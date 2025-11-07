@@ -4,6 +4,13 @@ import { pool } from "@src/config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import path from "path";
 import fs from "fs/promises";
+import ffmpeg from "fluent-ffmpeg";
+import type { FfprobeData, FfprobeStream } from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffprobeInstaller from "@ffprobe-installer/ffprobe";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
 
 // Constants
 const ALLOWED_TYPES = [
@@ -14,6 +21,98 @@ const ALLOWED_TYPES = [
   "video/x-matroska" // .mkv
 ];
 const MAX_FILE_SIZE = 2000 * 1024 * 1024; // 2GB
+
+const resolveStoragePath = (storedPath: string | null | undefined): string | null => {
+  if (!storedPath) {
+    return null;
+  }
+  if (path.isAbsolute(storedPath)) {
+    return storedPath;
+  }
+  const normalized = storedPath.replace(/^[/\\]+/, '').replace(/\\/g, '/');
+  return path.join(process.cwd(), normalized);
+};
+
+interface VideoMetadata {
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
+  fps?: number | null;
+  bitrate?: number | null;
+  codec?: string | null;
+}
+
+const parseFps = (value?: string): number | null => {
+  if (!value || value === '0/0') {
+    return null;
+  }
+  const [num, den] = value.split('/').map(part => Number(part));
+  if (!den) {
+    return Number.isFinite(num) ? num : null;
+  }
+  const fps = num / den;
+  return Number.isFinite(fps) ? Number(fps.toFixed(2)) : null;
+};
+
+const extractVideoMetadata = async (filePath: string): Promise<VideoMetadata> => {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (error: Error | null, data: FfprobeData) => {
+      if (error) {
+        console.error('Error obteniendo metadata de video:', error);
+        return resolve({});
+      }
+
+      const streams = (data.streams ?? []) as FfprobeStream[];
+      const videoStream = streams.find((stream) => stream.codec_type === 'video');
+      const durationValue = data.format?.duration;
+      const duration = typeof durationValue === 'number'
+        ? Number(durationValue.toFixed(2))
+        : durationValue
+          ? Number(Number(durationValue).toFixed(2))
+          : null;
+
+      const bitrateValue = data.format?.bit_rate;
+      const bitrate = bitrateValue ? Number.parseInt(String(bitrateValue), 10) : null;
+      const codec = videoStream?.codec_name ?? null;
+
+      const metadata: VideoMetadata = {
+        duration: Number.isFinite(duration ?? NaN) ? duration : null,
+        width: videoStream?.width ?? null,
+        height: videoStream?.height ?? null,
+        fps: parseFps(videoStream?.avg_frame_rate ?? videoStream?.r_frame_rate),
+        bitrate: Number.isFinite(bitrate ?? NaN) ? bitrate : null,
+        codec,
+      };
+
+      resolve(metadata);
+    });
+  });
+};
+
+const generateVideoThumbnail = async (userId: number, sourcePath: string, filename: string): Promise<string | null> => {
+  const uploadsDir = path.join(process.cwd(), 'uploads', userId.toString(), 'videos', 'thumbnails');
+  const baseName = path.parse(filename).name;
+  const thumbnailFilename = `${baseName}-thumb.jpg`;
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  return new Promise((resolve) => {
+    ffmpeg(sourcePath)
+      .on('error', (error: Error) => {
+        console.error('Error generando thumbnail de video:', error);
+        resolve(null);
+      })
+      .on('end', () => {
+        const relative = path.join('uploads', userId.toString(), 'videos', 'thumbnails', thumbnailFilename).replace(/\\/g, '/');
+        resolve(relative);
+      })
+      .screenshots({
+        count: 1,
+        filename: thumbnailFilename,
+        folder: uploadsDir,
+        size: '320x?',
+      });
+  });
+};
 
 // ✅ Helper function to validate file
 const validateFile = (file: Express.Multer.File) => {
@@ -27,7 +126,8 @@ const validateFile = (file: Express.Multer.File) => {
 
 // ✅ Helper function to create relative path
 const getRelativePath = (userId: number, filename: string): string => {
-  return path.join("uploads", "videos", userId.toString(), filename).replace(/\\/g, '/');
+  const relative = path.join('uploads', userId.toString(), 'videos', filename);
+  return relative.replace(/\\/g, '/');
 };
 
 // ✅ Upload single video
@@ -45,13 +145,37 @@ export const uploadVideo = async (req: Request, res: Response): Promise<void> =>
     validateFile(file);
 
     const relativePath = getRelativePath(userId, file.filename);
+    const absolutePath = file.path;
+
+    const metadata = await extractVideoMetadata(absolutePath);
+    let thumbnailPath: string | null = null;
+    try {
+      thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
+    } catch (thumbnailError) {
+      console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+    }
 
     // Insert into DB
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO videos 
-      (userId, title, originalFilename, filename, videoPath, fileSize, mimeType) 
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, file.originalname, file.originalname, file.filename, relativePath, file.size, file.mimetype]
+      (userId, title, originalFilename, filename, videoPath, thumbnailPath, fileSize, mimeType, duration, width, height, fps, bitrate, codec) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        file.originalname,
+        file.originalname,
+        file.filename,
+        relativePath,
+        thumbnailPath,
+        file.size,
+        file.mimetype,
+        metadata.duration ?? null,
+        metadata.width ?? null,
+        metadata.height ?? null,
+        metadata.fps ?? null,
+        metadata.bitrate ?? null,
+        metadata.codec ?? null,
+      ]
     );
 
     res.status(201).json({
@@ -63,7 +187,14 @@ export const uploadVideo = async (req: Request, res: Response): Promise<void> =>
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
+        duration: metadata.duration ?? null,
+        width: metadata.width ?? null,
+        height: metadata.height ?? null,
+        fps: metadata.fps ?? null,
+        bitrate: metadata.bitrate ?? null,
+        codec: metadata.codec ?? null,
         url: `/${relativePath}`,
+        thumbnail: thumbnailPath ? `/${thumbnailPath}` : null,
       },
     });
   } catch (error) {
@@ -95,12 +226,36 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
       validateFile(file);
 
       const relativePath = getRelativePath(userId, file.filename);
+      const absolutePath = file.path;
+      const metadata = await extractVideoMetadata(absolutePath);
+
+      let thumbnailPath: string | null = null;
+      try {
+        thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
+      } catch (thumbnailError) {
+        console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+      }
 
       const [result] = await connection.query<ResultSetHeader>(
         `INSERT INTO videos 
-         (userId, title, originalFilename, filename, videoPath, fileSize, mimeType)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [userId, file.originalname, file.originalname, file.filename, relativePath, file.size, file.mimetype]
+         (userId, title, originalFilename, filename, videoPath, thumbnailPath, fileSize, mimeType, duration, width, height, fps, bitrate, codec)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          file.originalname,
+          file.originalname,
+          file.filename,
+          relativePath,
+          thumbnailPath,
+          file.size,
+          file.mimetype,
+          metadata.duration ?? null,
+          metadata.width ?? null,
+          metadata.height ?? null,
+          metadata.fps ?? null,
+          metadata.bitrate ?? null,
+          metadata.codec ?? null,
+        ]
       );
 
       insertedVideos.push({
@@ -109,7 +264,14 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
+        duration: metadata.duration ?? null,
+        width: metadata.width ?? null,
+        height: metadata.height ?? null,
+        fps: metadata.fps ?? null,
+        bitrate: metadata.bitrate ?? null,
+        codec: metadata.codec ?? null,
         url: `/${relativePath}`,
+        thumbnail: thumbnailPath ? `/${thumbnailPath}` : null,
       });
     }
 
@@ -143,7 +305,7 @@ export const getUserVideos = async (req: Request, res: Response): Promise<void> 
     const favoritesOnly = req.query.favorites === 'true';
 
     let query = `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, fileSize, 
+              filename, videoPath, thumbnailPath, fileSize, 
               mimeType, duration, width, height, fps, bitrate, codec,
               isFavorite, isPublic, 
               uploadDate, recordedDate, 
@@ -192,6 +354,83 @@ export const getUserVideos = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+export const getVideosByUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const requestedUserId = parseInt(req.params.userId);
+
+    if (Number.isNaN(requestedUserId)) {
+      res.status(400).json({
+        success: false,
+        error: "Invalid user id"
+      });
+      return;
+    }
+
+    const authenticatedUserId = req.user!.userId;
+
+    if (requestedUserId !== authenticatedUserId) {
+      res.status(403).json({
+        success: false,
+        error: "Not authorized to view videos for this user"
+      });
+      return;
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+    const favoritesOnly = req.query.favorites === 'true';
+
+    let query = `SELECT videoId, userId, title, description, originalFilename, 
+              filename, videoPath, thumbnailPath, fileSize, 
+              mimeType, duration, width, height, fps, bitrate, codec,
+              isFavorite, isPublic, 
+              uploadDate, recordedDate, 
+              location, createdAt
+       FROM videos 
+       WHERE userId = ? AND deletedAt IS NULL`;
+
+    const queryParams: any[] = [requestedUserId];
+
+    if (favoritesOnly) {
+      query += ` AND isFavorite = 1`;
+    }
+
+    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
+    queryParams.push(limit, offset);
+
+    const [videos] = await pool.query<RowDataPacket[]>(query, queryParams);
+
+    let countQuery = `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NULL`;
+    const countParams: any[] = [requestedUserId];
+
+    if (favoritesOnly) {
+      countQuery += ` AND isFavorite = 1`;
+    }
+
+    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
+
+    const total = countResult[0].total;
+
+    res.json({
+      success: true,
+      data: videos,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Error getting videos by user:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error getting videos"
+    });
+  }
+};
+
 // ✅ Get video by ID
 export const getVideoById = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -200,7 +439,7 @@ export const getVideoById = async (req: Request, res: Response): Promise<void> =
 
     const [videos] = await pool.query<RowDataPacket[]>(
       `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, fileSize, 
+              filename, videoPath, thumbnailPath, fileSize, 
               mimeType, duration, width, height, fps, bitrate, codec,
               isFavorite, isPublic,
               uploadDate, recordedDate,
@@ -239,7 +478,7 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
 
     // Get video info
     const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoPath FROM videos WHERE videoId = ? AND userId = ?`,
+      `SELECT videoPath, thumbnailPath FROM videos WHERE videoId = ? AND userId = ?`,
       [videoId, userId]
     );
 
@@ -251,7 +490,8 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const videoPath = videos[0].videoPath;
+    const videoPath = videos[0].videoPath as string;
+    const thumbnailPath = videos[0].thumbnailPath as string | null;
 
     // Delete from DB
     await pool.query(
@@ -260,11 +500,24 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
     );
 
     // Delete physical file
-    try {
-      await fs.unlink(videoPath);
-    } catch (fsError) {
-      console.error("Error deleting file:", fsError);
-      // Don't fail if file doesn't exist
+    const absoluteVideoPath = resolveStoragePath(videoPath);
+    if (absoluteVideoPath) {
+      try {
+        await fs.unlink(absoluteVideoPath);
+      } catch (fsError) {
+        console.error("Error deleting video file:", fsError);
+      }
+    }
+
+    if (thumbnailPath) {
+      const absoluteThumbnailPath = resolveStoragePath(thumbnailPath);
+      if (absoluteThumbnailPath) {
+        try {
+          await fs.unlink(absoluteThumbnailPath);
+        } catch (fsError) {
+          console.error("Error deleting thumbnail file:", fsError);
+        }
+      }
     }
 
     res.json({
@@ -354,7 +607,7 @@ export const getDeletedVideos = async (req: Request, res: Response): Promise<voi
 
     const [videos] = await pool.query<RowDataPacket[]>(
       `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, fileSize, 
+              filename, videoPath, thumbnailPath, fileSize, 
               mimeType, duration, deletedAt, createdAt
        FROM videos 
        WHERE userId = ? AND deletedAt IS NOT NULL
@@ -601,7 +854,7 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
 
     const [videos] = await pool.query<RowDataPacket[]>(
       `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, fileSize, 
+              filename, videoPath, thumbnailPath, fileSize, 
               mimeType, duration, isFavorite, createdAt
        FROM videos 
        WHERE userId = ? AND deletedAt IS NULL 
@@ -691,7 +944,7 @@ export const getRecentVideos = async (req: Request, res: Response): Promise<void
 
     const [videos] = await pool.query<RowDataPacket[]>(
       `SELECT videoId, userId, title, originalFilename, 
-              filename, videoPath, fileSize, 
+              filename, videoPath, thumbnailPath, fileSize, 
               mimeType, duration, isFavorite, createdAt
        FROM videos 
        WHERE userId = ? AND deletedAt IS NULL
