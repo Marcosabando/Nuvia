@@ -2,7 +2,7 @@
 import auth from "@src/middleware/auth";
 import { Router } from "express";
 import * as VideoService from "@src/services/VideoService";
-import { uploadSingle } from "@src/middleware/multer";
+import { uploadMultipleVideos, uploadSingle, uploadSingleVideo } from "@src/middleware/multer";
 const router = Router();
 // ============================================================================
 // 🔒 TODAS LAS RUTAS REQUIEREN AUTENTICACIÓN
@@ -14,8 +14,8 @@ router.use(auth);
 // 📤 UPLOAD - Subir videos
 // ============================================================================ 
 
-router.post("/upload",uploadSingle, VideoService.uploadVideo);
-router.post("/upload-multiple", VideoService.uploadMultipleVideos);
+router.post("/upload", uploadSingleVideo, VideoService.uploadVideo);
+router.post("/upload-multiple", uploadMultipleVideos, VideoService.uploadMultipleVideos);
 
 // ============================================================================
 // 📊 ESTADÍSTICAS - Debe ir ANTES de /:id para evitar conflictos
@@ -36,6 +36,7 @@ router.get("/deleted", VideoService.getDeletedVideos);
 // ============================================================================   
 
 router.get("/", VideoService.getUserVideos);
+router.get("/user/:userId", VideoService.getVideosByUser);
 router.get("/:id", VideoService.getVideoById);
 
 // ============================================================================

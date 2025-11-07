@@ -17,7 +17,8 @@ const config: DatabaseConfig = {
   port: parseInt(process.env.DB_PORT || '3306'),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'photo_management_system',
+  // ⚠️ El nombre por defecto debe coincidir con la base instalada (nuvia)
+  database: process.env.DB_NAME || 'nuvia',
   connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10'),
 };
 
