@@ -1,9 +1,9 @@
-// src/services/ImageService.ts
 import { Request, Response } from "express";
 import { pool } from "@src/config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import path from "path";
-import fs from "fs/promises";
+import fs from "fs/promises"; 
+
 
 // ============================================================================
 // CONSTANTS
@@ -24,8 +24,7 @@ const validateFile = (file: Express.Multer.File) => {
 };
 
 const getRelativePath = (userId: number, filename: string): string => {
-  const relative = path.join('uploads', userId.toString(), 'images', filename);
-  return relative.replace(/\\/g, '/');
+  return path.join("uploads", userId.toString(), filename).replace(/\\/g, '/');
 };
 
 // ============================================================================
@@ -39,71 +38,53 @@ const getRelativePath = (userId: number, filename: string): string => {
 export const uploadImage = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No se subió ningún archivo" });
+      res.status(400).json({ error: "No image uploaded" });
       return;
     }
 
     const userId = req.user!.userId;
     const file = req.file;
 
-    console.log("🔍 DEBUG - File object completo:", file);
-
     validateFile(file);
 
     const relativePath = getRelativePath(userId, file.filename);
     const { title, description } = req.body;
 
-    // ✅ USAR file.size que ahora SÍ tiene valor (488934 en tu ejemplo)
-    const fileSize = file.size;
-
-    console.log("💾 Insertando en BD con fileSize:", fileSize);
-
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO images 
       (userId, title, description, originalFilename, filename, imagePath, 
-       fileSize, mimeType, uploadDate) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       fileSize, mimeType) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
-        title || file.originalname || 'Untitled',
+        title || file.originalname,
         description || null,
-        file.originalname || 'unknown',
-        file.filename || 'unknown',
+        file.originalname,
+        file.filename,
         relativePath,
-        fileSize,  // ← Esto ahora debería ser 488934
-        file.mimetype || 'application/octet-stream',
+        file.size,
+        file.mimetype,
       ]
     );
 
-    console.log("✅ INSERT exitoso, ID:", result.insertId);
-
-    // ✅ VERIFICAR qué se insertó en la BD
-    const [insertedRow] = await pool.query<RowDataPacket[]>(
-      `SELECT imageId, originalFilename, fileSize, mimeType FROM images WHERE imageId = ?`,
-      [result.insertId]
-    );
-
-    console.log("📋 REGISTRO INSERTADO EN BD:", insertedRow[0]);
-
     res.status(201).json({
       success: true,
-      message: "Archivo subido con éxito",
+      message: "Image uploaded successfully",
       data: {
-        id: result.insertId,
+        imageId: result.insertId,
         title: title || file.originalname,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
-        size: fileSize,
+        size: file.size,
         url: `/${relativePath}`,
-        type: file.mimetype.startsWith('video/') ? 'video' : 'image'
       },
     });
   } catch (error) {
-    console.error("❌ Error uploading file:", error);
+    console.error("Error uploading image:", error);
     res.status(500).json({
       success: false,
-      error: "Error al subir el archivo",
+      error: "Error uploading image",
       details: (error as Error).message,
     });
   }
@@ -661,186 +642,7 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
   }
 };
 
-// ============================================================================
-// 🗑️ SOFT DELETE (TRASH)
-// ============================================================================
 
-/**
- * Move image to trash (soft delete)
- * DELETE /api/images/:id
- */
-export const softDeleteImage = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.userId;
-    const imageId = parseInt(req.params.id);
-
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE images 
-       SET deletedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [imageId, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      res.status(404).json({
-        success: false,
-        error: "Image not found",
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: "Image moved to trash",
-    });
-  } catch (error) {
-    console.error("Error soft deleting image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error deleting image",
-    });
-  }
-};
-
-/**
- * Restore image from trash
- * POST /api/images/:id/restore
- */
-export const restoreImage = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.userId;
-    const imageId = parseInt(req.params.id);
-
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE images 
-       SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NOT NULL`,
-      [imageId, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      res.status(404).json({
-        success: false,
-        error: "Image not found in trash",
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: "Image restored successfully",
-    });
-  } catch (error) {
-    console.error("Error restoring image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error restoring image",
-    });
-  }
-};
-
-/**
- * Get deleted images (trash)
- * GET /api/images/deleted
- */
-export const getDeletedImages = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.userId;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
-
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        imageId, title, imagePath, mimeType,
-        fileSize, deletedAt,
-        createdAt
-       FROM images 
-       WHERE userId = ? AND deletedAt IS NOT NULL
-       ORDER BY deletedAt DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
-    );
-
-    const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM images WHERE userId = ? AND deletedAt IS NOT NULL`,
-      [userId]
-    );
-
-    const total = countResult[0].total;
-
-    res.json({
-      success: true,
-      data: images,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    console.error("Error getting deleted images:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error getting deleted images",
-    });
-  }
-};
-
-/**
- * Delete image permanently
- * DELETE /api/images/:id/permanent
- */
-export const deleteImagePermanently = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.userId;
-    const imageId = parseInt(req.params.id);
-
-    // Get image info
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT imagePath 
-       FROM images 
-       WHERE imageId = ? AND userId = ?`,
-      [imageId, userId]
-    );
-
-    if (images.length === 0) {
-      res.status(404).json({
-        success: false,
-        error: "Image not found",
-      });
-      return;
-    }
-
-    const imagePath = images[0].imagePath;
-    const absoluteImagePath = path.isAbsolute(imagePath)
-      ? imagePath
-      : path.join(process.cwd(), imagePath);
-
-    // Delete from DB
-    await pool.query(`DELETE FROM images WHERE imageId = ? AND userId = ?`, [imageId, userId]);
-
-    // Delete physical file
-    try {
-      await fs.unlink(absoluteImagePath);
-    } catch (fsError) {
-      console.error("Error deleting file:", fsError);
-      // Don't fail if file doesn't exist
-    }
-
-    res.json({
-      success: true,
-      message: "Image permanently deleted",
-    });
-  } catch (error) {
-    console.error("Error permanently deleting image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error permanently deleting image",
-    });
-  }
-};
 
 // ============================================================================
 // 📊 STATISTICS
@@ -885,6 +687,74 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({
       success: false,
       error: "Error getting statistics",
+    });
+  }
+};
+
+
+// ============================================================================
+// ❌ DELETE IMAGES
+// ============================================================================ 
+
+/**
+ * Soft delete image (move to trash)
+ * DELETE /api/images/:id/trash
+ **/
+
+export const moveToTrash = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    // 1️⃣ Buscar la imagen
+    const [rows]: any = await pool.query("SELECT * FROM images WHERE imageId = ?", [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Imagen no encontrada" });
+    }
+
+    const image = rows[0];
+
+    // 2️⃣ Insertar en la papelera
+    // SOLUCIÓN: No pasar deletedAt ni permanentDeleteAt, dejar que MySQL y el trigger los manejen
+    await pool.query(
+      `INSERT INTO trash (
+        userId,
+        itemType,
+        itemId,
+        originalName,
+        originalPath,
+        fileSize,
+        mimeType,
+        metadata
+      ) VALUES (?, 'image', ?, ?, ?, ?, ?, ?)`,
+      [
+        image.userId,
+        image.imageId,
+        image.originalFilename,
+        image.imagePath,
+        image.fileSize,
+        image.mimeType,
+        JSON.stringify({
+          width: image.width,
+          height: image.height,
+          title: image.title,
+        })
+      ]
+    );
+
+    // 3️⃣ Marcar imagen como eliminada (soft delete)
+    await pool.query("UPDATE images SET deletedAt = NOW() WHERE imageId = ?", [id]);
+
+    res.json({
+      success: true,
+      message: "🗑️ Imagen movida a la papelera correctamente",
+      imageId: id,
+    });
+  } catch (error) {
+    console.error("❌ Error al mover imagen a la papelera:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error interno del servidor", 
+      error: error instanceof Error ? error.message : String(error)
     });
   }
 };
