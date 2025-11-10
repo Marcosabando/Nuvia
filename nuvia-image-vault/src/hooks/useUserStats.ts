@@ -26,7 +26,7 @@ export const useUserStats = (): UserStats => {
     totalImages: 0,
     todayUploads: 0,
     storageUsed: 0,
-    storageLimit: 5, // 5GB por defecto
+    storageLimit: 50, // 5GB por defecto
     storagePercentage: 0,
     totalVideos: 0,
   });
