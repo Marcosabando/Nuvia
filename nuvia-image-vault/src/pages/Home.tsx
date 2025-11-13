@@ -1,7 +1,7 @@
 // src/pages/Home.tsx
 import { useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { ImageGallery } from "@/components/ImageGallery";
+import ImageGallery from "@/components/ImageGallery";
 import { VideoGallery } from "@/components/VideoGallery";
 import { UploadZone } from "@/components/UploadZone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Images, Upload, TrendingUp, Video, Plus } from "lucide-react";
 import { useUserStats } from "@/hooks/useUserStats";
+import { Grid3X3, List } from "lucide-react"
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent
+} from "@/components/ui/tabs"
 
 const Home = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -18,7 +25,8 @@ const Home = () => {
   const [selectedCount, setSelectedCount] = useState(0);
 
   const handleUploadComplete = () => {
-    setRefreshKey(prev => prev + 1);
+    setRefreshKey((prev) => prev + 1);
+    // Si estamos en la pestaña de upload, cambiar a la galería correspondiente
     if (activeTab === "upload") {
       setActiveTab("images");
     }
@@ -27,6 +35,7 @@ const Home = () => {
   const handleTabChange = (value: string) => {
     setActiveTab(value);
   };
+
 
   return (
     <AppLayout>
@@ -37,17 +46,13 @@ const Home = () => {
             <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
               Bienvenido a Nuvia{username ? `, ${username}` : ""}
             </h1>
-            <p className="text-sm sm:text-base text-white mt-1">
-              Tu plataforma elegante de gestión multimedia
-            </p>
+            <p className="text-sm sm:text-base text-white mt-1">Tu plataforma elegante de gestión multimedia</p>
           </div>
 
           {/* Mostrar error si existe */}
           {error && (
             <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
-              <p className="text-red-200 text-sm">
-                Error cargando estadísticas: {error}
-              </p>
+              <p className="text-red-200 text-sm">Error cargando estadísticas: {error}</p>
             </div>
           )}
 
@@ -111,114 +116,114 @@ const Home = () => {
           </div>
         </div>
 
-        {/* Main Content - Todo dentro de un solo Card */}
-        <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
-          <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 pb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold text-2xl mb-2">
-                  <Images className="w-6 h-6 text-nuvia-mauve" />
-                  Galería Multimedia
-                </CardTitle>
-                <p className="text-nuvia-deep/70 text-sm">
-                  Gestiona tus imágenes y videos en un solo lugar
-                </p>
-              </div>
-              
-              {/* Contador de seleccionados - Solo mostrar si hay seleccionados */}
-              {selectedCount > 0 && (
-                <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2 border border-nuvia-silver/30">
-                  <span className="text-sm font-medium text-nuvia-deep">
-                    {selectedCount} archivo{selectedCount !== 1 ? 's' : ''} seleccionado{selectedCount !== 1 ? 's' : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Tabs y Botón de Subir - Ahora DENTRO del card header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-4">
-              {/* Tabs de Imágenes y Videos - Usando Button en lugar de TabsList para evitar el error */}
-              <div className="flex gap-2 bg-white/50 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl p-1">
-                <Button
-                  variant={activeTab === "images" ? "default" : "ghost"}
-                  onClick={() => setActiveTab("images")}
-                  className={`gap-2 ${
-                    activeTab === "images" 
-                      ? "bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white" 
-                      : "text-nuvia-deep hover:bg-nuvia-peach/20"
-                  } transition-all duration-300`}
-                >
+        {/* Main Content Tabs */}
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 w-full sm:w-auto">
+              <TabsList className="grid w-full sm:w-fit grid-cols-3 bg-white/50 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
+                <TabsTrigger
+                  value="images"
+                  className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                   <Images className="w-4 h-4" />
                   Imágenes
-                  <Badge variant="secondary" className="ml-1 bg-nuvia-mauve/20 text-nuvia-mauve border-0 text-xs">
-                    {loading ? "..." : stats.totalImages}
-                  </Badge>
-                </Button>
-                <Button
-                  variant={activeTab === "videos" ? "default" : "ghost"}
-                  onClick={() => setActiveTab("videos")}
-                  className={`gap-2 ${
-                    activeTab === "videos" 
-                      ? "bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white" 
-                      : "text-nuvia-deep hover:bg-nuvia-peach/20"
-                  } transition-all duration-300`}
-                >
+                </TabsTrigger>
+                <TabsTrigger
+                  value="videos"
+                  className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                   <Video className="w-4 h-4" />
                   Videos
-                  <Badge variant="secondary" className="ml-1 bg-nuvia-mauve/20 text-nuvia-mauve border-0 text-xs">
-                    {loading ? "..." : stats.totalVideos}
-                  </Badge>
-                </Button>
-              </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="upload"
+                  className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                  <Upload className="w-4 h-4" />
+                  Subir
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Botón de Subir - Usando Button en lugar de TabsList */}
-              <Button
-                onClick={() => setActiveTab("upload")}
-                className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve/90 hover:to-nuvia-rose/90 text-white transition-all duration-300"
-              >
-                <Plus className="w-4 h-4" />
-                Subir Archivos
-                {selectedCount > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-white/20 text-white border-0 text-xs">
-                    {selectedCount}
-                  </Badge>
-                )}
-              </Button>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-6">
-            {/* Contenido de las pestañas */}
-            <div className="w-full">
-              {/* Pestaña de Galería de Imágenes */}
-              {activeTab === "images" && (
-                <div className="space-y-6 animate-fade-in">
-                  <ImageGallery 
-                    key={`images-${refreshKey}`} 
-                    viewMode={viewMode}
-                  />
-                </div>
-              )}
-
-              {/* Pestaña de Galería de Videos */}
-              {activeTab === "videos" && (
-                <div className="space-y-6 animate-fade-in">
-                  <VideoGallery 
-                    key={`videos-${refreshKey}`} 
-                    viewMode={viewMode}
-                  />
-                </div>
-              )}
-
-              {/* Pestaña de Subida */}
-              {activeTab === "upload" && (
-                <div className="animate-fade-in">
-                  <UploadZone onUploadComplete={handleUploadComplete} />
+              {/* View Mode Toggle - Solo mostrar en galerías */}
+              {(activeTab === "images" || activeTab === "videos") && (
+                <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden bg-white/50 backdrop-blur-sm">
+                  <Button
+                    variant={viewMode === "grid" ? "default" : "ghost"}
+                    size="icon"
+                    className="w-9 h-9 rounded-none"
+                    onClick={() => setViewMode("grid")}>
+                    <Grid3X3 className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "list" ? "default" : "ghost"}
+                    size="icon"
+                    className="w-9 h-9 rounded-none"
+                    onClick={() => setViewMode("list")}>
+                    <List className="w-4 h-4" />
+                  </Button>
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Badge de estadísticas activas */}
+            {(activeTab === "images" || activeTab === "videos") && (
+              <Badge variant="secondary" className="bg-white/50 text-nuvia-deep border-nuvia-silver/30">
+                {activeTab === "images" 
+                  ? `${stats.totalImages} imágenes` 
+                  : `${stats.totalVideos} videos`
+                }
+              </Badge>
+            )}
+          </div>
+
+          {/* Pestaña de Galería de Imágenes */}
+          <TabsContent value="images" className="space-y-6 animate-fade-in">
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
+                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
+                  <Images className="w-5 h-5 text-nuvia-mauve" />
+                  Galería de Imágenes
+                  <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
+                    {stats.totalImages} elementos
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <ImageGallery key={`images-${refreshKey}`} viewMode={viewMode} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Pestaña de Galería de Videos */}
+          <TabsContent value="videos" className="space-y-6 animate-fade-in">
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
+                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
+                  <Video className="w-5 h-5 text-nuvia-mauve" />
+                  Galería de Videos
+                  <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
+                    {stats.totalVideos} elementos
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <VideoGallery key={`videos-${refreshKey}`} viewMode={viewMode} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Pestaña de Subida */}
+          <TabsContent value="upload" className="animate-fade-in">
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
+                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
+                  <Upload className="w-5 h-5 text-nuvia-mauve" />
+                  Subir Archivos Multimedia
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <UploadZone onUploadComplete={handleUploadComplete} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Información de uso de almacenamiento */}
         <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
@@ -227,10 +232,10 @@ const Home = () => {
               <div className="flex-1">
                 <h3 className="font-semibold text-nuvia-deep mb-2">Uso de Almacenamiento</h3>
                 <div className="w-full bg-nuvia-silver/30 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
-                    style={{ 
-                      width: `${Math.min((stats.storageUsed / stats.storageLimit) * 100, 100)}%`
+                    style={{
+                      width: `${Math.min((stats.storageUsed / 50) * 100, 100)}%`, // Asumiendo 50GB como máximo
                     }}
                   />
                 </div>

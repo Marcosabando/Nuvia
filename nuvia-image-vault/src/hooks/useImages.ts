@@ -1,18 +1,20 @@
-// src/hooks/useImages.ts - VERSIÓN CORREGIDA
+// src/hooks/useImages.ts - VERSIÓN MEJORADA
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
 interface ImageData {
-  id: number;           // ✅ Mantener id para el frontend
+  id: number;
   userId: number;
   title: string;
   originalFilename: string;
   filename: string;
   imagePath: string;
+  thumbnailPath?: string;  // ✅ AÑADIR
+  mediumPath?: string;      // ✅ AÑADIR
   fileSize: number;
   mimeType: string;
   created: string;
-  isFavorite?: boolean; // ✅ Añadir este campo
+  isFavorite?: boolean;
 }
 
 interface UseImagesReturn {
@@ -39,18 +41,19 @@ export const useImages = (): UseImagesReturn => {
       console.log("📸 Respuesta de imágenes:", response);
 
       if (response.success && response.data) {
-        // ✅ TRANSFORMAR los datos del backend al formato del frontend
         const transformedImages = response.data.map((img: any) => ({
-          id: img.imageId,        // ✅ Convertir imageId → id
+          id: img.imageId,
           userId: img.userId,
           title: img.title,
           originalFilename: img.originalFilename,
           filename: img.filename,
           imagePath: img.imagePath,
+          thumbnailPath: img.thumbnailPath,  // ✅ INCLUIR
+          mediumPath: img.mediumPath,        // ✅ INCLUIR
           fileSize: img.fileSize,
           mimeType: img.mimeType,
-          created: img.createdAt,  // ✅ Convertir createdAt → created
-          isFavorite: img.isFavorite // ✅ Añadir campo de favoritos
+          created: img.createdAt,
+          isFavorite: img.isFavorite
         }));
 
         setImages(transformedImages);
