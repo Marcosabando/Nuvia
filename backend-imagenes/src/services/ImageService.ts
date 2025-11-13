@@ -23,8 +23,9 @@ const validateFile = (file: Express.Multer.File) => {
   }
 };
 
-const getRelativePath = (userId: number, filename: string): string => {
-  return path.join("uploads", userId.toString(), filename).replace(/\\/g, '/');
+// 🔧 CORREGIDO: Ahora incluye la carpeta /images/
+const getRelativePath = (userId: number, filename: string, subfolder: string = 'images'): string => {
+  return path.join("uploads", userId.toString(), subfolder, filename).replace(/\\/g, '/');
 };
 
 // ============================================================================
@@ -47,7 +48,8 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
 
     validateFile(file);
 
-    const relativePath = getRelativePath(userId, file.filename);
+    // 🔧 CORREGIDO: Ahora incluye /images/ en la ruta
+    const relativePath = getRelativePath(userId, file.filename, 'images');
     const { title, description } = req.body;
 
     const [result] = await pool.query<ResultSetHeader>(
@@ -111,7 +113,8 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     for (const file of files) {
       validateFile(file);
 
-      const relativePath = getRelativePath(userId, file.filename);
+      // 🔧 CORREGIDO: Ahora incluye /images/ en la ruta
+      const relativePath = getRelativePath(userId, file.filename, 'images');
 
       const [result] = await connection.query<ResultSetHeader>(
         `INSERT INTO images 
@@ -642,8 +645,6 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
   }
 };
 
-
-
 // ============================================================================
 // 📊 STATISTICS
 // ============================================================================
@@ -691,7 +692,6 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-
 // ============================================================================
 // ❌ DELETE IMAGES
 // ============================================================================ 
@@ -699,8 +699,7 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
 /**
  * Soft delete image (move to trash)
  * DELETE /api/images/:id/trash
- **/
-
+ */
 export const moveToTrash = async (req: Request, res: Response) => {
   const { id } = req.params;
 
@@ -712,9 +711,27 @@ export const moveToTrash = async (req: Request, res: Response) => {
     }
 
     const image = rows[0];
+    
+    // 🔧 CORREGIDO: Arreglar la ruta si no tiene /images/
+    let correctPath = image.imagePath;
+    if (!correctPath.includes('/images/')) {
+      const parts = correctPath.split('/');
+      if (parts.length >= 3) {
+        const userId = parts[1];
+        const filename = parts.slice(2).join('/');
+        correctPath = `uploads/${userId}/images/${filename}`;
+      }
+    }
 
-    // 2️⃣ Insertar en la papelera
-    // SOLUCIÓN: No pasar deletedAt ni permanentDeleteAt, dejar que MySQL y el trigger los manejen
+    console.log('📸 Imagen a mover a papelera:', {
+      imageId: image.imageId,
+      imagePath: image.imagePath,
+      correctPath: correctPath,
+      filename: image.filename,
+      originalFilename: image.originalFilename
+    });
+
+    // 2️⃣ Insertar en la papelera con la ruta corregida
     await pool.query(
       `INSERT INTO trash (
         userId,
@@ -730,7 +747,7 @@ export const moveToTrash = async (req: Request, res: Response) => {
         image.userId,
         image.imageId,
         image.originalFilename,
-        image.imagePath,
+        correctPath,  // 🔧 Usa la ruta corregida
         image.fileSize,
         image.mimeType,
         JSON.stringify({

@@ -122,7 +122,7 @@ export const getTrashStats = async (req: Request, res: Response): Promise<void> 
 };
 
 // ============================================================================
-// 🗑️ SOFT DELETE (TRASH) - Para imágenes específicamente
+// 🗑️ SOFT DELETE (TRASH) - IMÁGENES
 // ============================================================================
 
 /**
@@ -164,6 +164,27 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
       [imageId, userId]
     );
 
+    // ✅ CONSTRUIR RUTA COMPLETA CON /images/
+    let fullPath = image.imagePath;
+    
+    // Si no empieza con 'uploads/', agregarlo
+    if (!fullPath.startsWith('uploads/')) {
+      fullPath = `uploads/${fullPath}`;
+    }
+    
+    // ✅ Si la ruta no incluye '/images/', insertarlo después del userId
+    // Ejemplo: "uploads/2/archivo.png" → "uploads/2/images/archivo.png"
+    if (!fullPath.includes('/images/') && !fullPath.includes('/videos/')) {
+      const parts = fullPath.split('/');
+      if (parts.length >= 3) {
+        // parts = ["uploads", "2", "archivo.png"]
+        parts.splice(2, 0, 'images'); // Insertar 'images' después de userId
+        fullPath = parts.join('/');
+      }
+    }
+
+    console.log('📁 Ruta de imagen guardada en trash:', fullPath);
+
     // Add to trash table
     const metadata = JSON.stringify({
       width: image.width,
@@ -179,7 +200,7 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
         userId,
         imageId,
         image.originalFilename || image.filename,
-        image.imagePath,
+        fullPath,  // ✅ Usar la ruta corregida
         image.fileSize,
         image.mimeType,
         metadata,
@@ -202,6 +223,112 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
     res.status(500).json({
       success: false,
       error: "Error moving image to trash",
+      details: (error as Error).message,
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+// ============================================================================
+// 🗑️ SOFT DELETE (TRASH) - VIDEOS
+// ============================================================================
+
+/**
+ * Move video to trash (soft delete)
+ * DELETE /api/videos/:id
+ */
+export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
+  const connection = await pool.getConnection();
+  try {
+    const userId = req.user!.userId;
+    const videoId = parseInt(req.params.id);
+
+    await connection.beginTransaction();
+
+    // Get video info
+    const [videos] = await connection.query<RowDataPacket[]>(
+      `SELECT videoId, title, originalFilename, filename, videoPath, fileSize, mimeType, duration, width, height
+       FROM videos 
+       WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
+      [videoId, userId]
+    );
+
+    if (videos.length === 0) {
+      await connection.rollback();
+      res.status(404).json({
+        success: false,
+        error: "Video not found",
+      });
+      return;
+    }
+
+    const video = videos[0];
+
+    // Mark as deleted
+    await connection.query(
+      `UPDATE videos 
+       SET deletedAt = CURRENT_TIMESTAMP
+       WHERE videoId = ? AND userId = ?`,
+      [videoId, userId]
+    );
+
+    // ✅ CONSTRUIR RUTA COMPLETA CON /videos/
+    let fullPath = video.videoPath;
+    
+    if (!fullPath.startsWith('uploads/')) {
+      fullPath = `uploads/${fullPath}`;
+    }
+    
+    // ✅ Insertar '/videos/' si no existe
+    if (!fullPath.includes('/videos/') && !fullPath.includes('/images/')) {
+      const parts = fullPath.split('/');
+      if (parts.length >= 3) {
+        parts.splice(2, 0, 'videos'); // Insertar 'videos' después de userId
+        fullPath = parts.join('/');
+      }
+    }
+
+    console.log('📁 Ruta de video guardada en trash:', fullPath);
+
+    const metadata = JSON.stringify({
+      duration: video.duration,
+      width: video.width,
+      height: video.height,
+      title: video.title,
+    });
+
+    await connection.query(
+      `INSERT INTO trash 
+       (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
+       VALUES (?, 'video', ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        videoId,
+        video.originalFilename || video.filename,
+        fullPath,
+        video.fileSize,
+        video.mimeType,
+        metadata,
+      ]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: "Video moved to trash",
+      data: {
+        videoId,
+        originalName: video.originalFilename || video.filename,
+      },
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error moving video to trash:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error moving video to trash",
       details: (error as Error).message,
     });
   } finally {
@@ -256,6 +383,59 @@ export const restoreImage = async (req: Request, res: Response): Promise<void> =
     res.status(500).json({
       success: false,
       error: "Error restoring image",
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+/**
+ * Restore video from trash
+ * POST /api/videos/:id/restore
+ */
+export const restoreVideo = async (req: Request, res: Response): Promise<void> => {
+  const connection = await pool.getConnection();
+  try {
+    const userId = req.user!.userId;
+    const videoId = parseInt(req.params.id);
+
+    await connection.beginTransaction();
+
+    // Restore video
+    const [result] = await connection.query<ResultSetHeader>(
+      `UPDATE videos 
+       SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP
+       WHERE videoId = ? AND userId = ? AND deletedAt IS NOT NULL`,
+      [videoId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      res.status(404).json({
+        success: false,
+        error: "Video not found in trash",
+      });
+      return;
+    }
+
+    // Remove from trash table
+    await connection.query(
+      `DELETE FROM trash WHERE itemType = 'video' AND itemId = ? AND userId = ?`,
+      [videoId, userId]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: "Video restored successfully",
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error restoring video:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error restoring video",
     });
   } finally {
     connection.release();
@@ -323,6 +503,73 @@ export const deleteImagePermanently = async (req: Request, res: Response): Promi
     res.status(500).json({
       success: false,
       error: "Error permanently deleting image",
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+/**
+ * Delete video permanently
+ * DELETE /api/videos/:id/permanent
+ */
+export const deleteVideoPermanently = async (req: Request, res: Response): Promise<void> => {
+  const connection = await pool.getConnection();
+  try {
+    const userId = req.user!.userId;
+    const videoId = parseInt(req.params.id);
+
+    await connection.beginTransaction();
+
+    // Get video info
+    const [videos] = await connection.query<RowDataPacket[]>(
+      `SELECT videoPath 
+       FROM videos 
+       WHERE videoId = ? AND userId = ?`,
+      [videoId, userId]
+    );
+
+    if (videos.length === 0) {
+      await connection.rollback();
+      res.status(404).json({
+        success: false,
+        error: "Video not found",
+      });
+      return;
+    }
+
+    const videoPath = videos[0].videoPath;
+
+    // Delete from DB
+    await connection.query(`DELETE FROM videos WHERE videoId = ? AND userId = ?`, [videoId, userId]);
+
+    // Remove from trash table
+    await connection.query(
+      `DELETE FROM trash WHERE itemType = 'video' AND itemId = ? AND userId = ?`,
+      [videoId, userId]
+    );
+
+    await connection.commit();
+
+    // Delete physical file
+    try {
+      await fs.unlink(videoPath);
+      console.log(`✅ Video file deleted: ${videoPath}`);
+    } catch (fsError) {
+      console.error("Error deleting video file:", fsError);
+      // Don't fail if file doesn't exist
+    }
+
+    res.json({
+      success: true,
+      message: "Video permanently deleted",
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error permanently deleting video:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error permanently deleting video",
     });
   } finally {
     connection.release();
