@@ -1,4 +1,3 @@
-// src/server.ts
 import express, { Request, Response, NextFunction } from 'express';
 import morgan from 'morgan';
 import helmet from 'helmet';
@@ -23,7 +22,8 @@ import imagesRouter from './routes/ImagesRoutes';
 import videosRouter from './routes/VideosRoutes';
 import statsRouter from './routes/StatsRoutes';
 import trashRouter from './routes/TrashRoutes';
-import recentsRouter from './routes/RecentsRoutes'; // 👈 NUEVO
+import recentsRouter from './routes/RecentsRoutes';
+import foldersRouter from './routes/Folders';
 
 const app = express();
 
@@ -194,7 +194,8 @@ app.use('/api/images', imagesRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/trash', trashRouter);
-app.use('/api/recents', recentsRouter); // 👈 NUEVO
+app.use('/api/recents', recentsRouter);
+app.use('/api/folders', foldersRouter);
 
 /******************************************************
  * 🩺 Health Check
@@ -245,6 +246,16 @@ app.get('/', (_: Request, res: Response) => {
         videos: 'GET /api/recents/videos',
         timeline: 'GET /api/recents/timeline',
         mostViewed: 'GET /api/recents/most-viewed',
+      },
+      folders: {
+        list: 'GET /api/folders',
+        getById: 'GET /api/folders/:id',
+        content: 'GET /api/folders/:id/content',
+        create: 'POST /api/folders',
+        update: 'PATCH /api/folders/:id',
+        delete: 'DELETE /api/folders/:id',
+        addImage: 'POST /api/folders/:id/images',
+        removeImage: 'DELETE /api/folders/:id/images/:imageId',
       },
     },
     status: 'online',
