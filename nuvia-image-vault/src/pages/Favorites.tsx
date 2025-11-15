@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Heart,
-  Star,
   Download,
   Search,
   Filter,
@@ -25,19 +24,32 @@ import {
 import { apiService } from "@/services/api.services";
 import { API_CONFIG } from "@/config/api.config";
 
-interface FavoriteItem {
+interface BaseFavorite {
   id: number;
-  imageId: number;
   userId: number;
   title: string;
   originalFilename: string;
   filename: string;
-  imagePath: string;
+  thumbnailPath?: string;
   fileSize: number;
   mimeType: string;
   createdAt: string;
   isFavorite: boolean;
 }
+
+interface FavoriteImage extends BaseFavorite {
+  imageId: number;
+  imagePath: string;
+  type: 'image';
+}
+
+interface FavoriteVideo extends BaseFavorite {
+  videoId: number;
+  videoPath: string;
+  type: 'video';
+}
+
+type FavoriteItem = FavoriteImage | FavoriteVideo;
 
 const Favorites = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,26 +58,73 @@ const Favorites = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Obtener favoritos reales de la base de datos
+  // ✅ Obtener favoritos reales de la base de datos (imágenes + videos)
   useEffect(() => {
     const fetchFavorites = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        console.log("🔄 Obteniendo favoritos...");
+        console.log("🔄 Obteniendo favoritos (imágenes + videos)...");
         
-        // ✅ Obtener solo las imágenes marcadas como favoritas
-        const response = await apiService.get('/images?favorites=true');
-        
-        console.log("📸 Respuesta de favoritos:", response);
+        // ✅ Obtener imágenes favoritas
+        const imagesResponse = await apiService.get('/images?favorites=true');
+        console.log("📸 Imágenes favoritas:", imagesResponse);
 
-        if (response.success && response.data) {
-          setFavorites(response.data);
-          console.log("✅ Favoritos cargados:", response.data.length);
-        } else {
-          throw new Error(response.error || 'Error al cargar favoritos');
+        // ✅ Obtener videos favoritos
+        const videosResponse = await apiService.get('/videos?favorites=true');
+        console.log("🎬 Videos favoritos:", videosResponse);
+
+        const allFavorites: FavoriteItem[] = [];
+
+        // Agregar imágenes favoritas
+        if (imagesResponse.success && imagesResponse.data) {
+          const images = imagesResponse.data.map((img: any): FavoriteImage => ({
+            id: img.imageId,
+            imageId: img.imageId,
+            userId: img.userId,
+            title: img.title,
+            originalFilename: img.originalFilename,
+            filename: img.filename,
+            imagePath: img.imagePath,
+            thumbnailPath: img.thumbnailPath,
+            fileSize: img.fileSize,
+            mimeType: img.mimeType,
+            createdAt: img.createdAt,
+            isFavorite: img.isFavorite,
+            type: 'image'
+          }));
+          allFavorites.push(...images);
         }
+
+        // Agregar videos favoritos
+        if (videosResponse.success && videosResponse.data) {
+          const videos = videosResponse.data.map((vid: any): FavoriteVideo => ({
+            id: vid.videoId,
+            videoId: vid.videoId,
+            userId: vid.userId,
+            title: vid.title,
+            originalFilename: vid.originalFilename,
+            filename: vid.filename,
+            videoPath: vid.videoPath,
+            thumbnailPath: vid.thumbnailPath,
+            fileSize: vid.fileSize,
+            mimeType: vid.mimeType,
+            createdAt: vid.createdAt,
+            isFavorite: vid.isFavorite,
+            type: 'video'
+          }));
+          allFavorites.push(...videos);
+        }
+
+        // Ordenar por fecha (más recientes primero)
+        allFavorites.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        setFavorites(allFavorites);
+        console.log("✅ Total favoritos cargados:", allFavorites.length);
+        
       } catch (err: any) {
         console.error("❌ Error cargando favoritos:", err);
         setError(err.message || "No se pudieron cargar los favoritos");
@@ -78,17 +137,23 @@ const Favorites = () => {
   }, []);
 
   // ✅ Función para quitar de favoritos
-  const removeFromFavorites = async (imageId: number) => {
+  const removeFromFavorites = async (item: FavoriteItem) => {
     try {
-      console.log("🗑️ Quitando de favoritos:", imageId);
+      console.log("🗑️ Quitando de favoritos:", item);
       
-      const response = await apiService.post(`/images/${imageId}/favorite`);
+      const endpoint = item.type === 'image' 
+        ? `/images/${item.id}/favorite`
+        : `/videos/${item.id}/favorite`;
+      
+      const response = await apiService.post(endpoint);
       
       if (response.success) {
         console.log("✅ Favorito removido:", response.data);
         
         // ✅ Actualizar lista local inmediatamente
-        setFavorites(prev => prev.filter(fav => fav.imageId !== imageId));
+        setFavorites(prev => prev.filter(fav => 
+          !(fav.type === item.type && fav.id === item.id)
+        ));
       }
     } catch (error) {
       console.error("❌ Error removiendo favorito:", error);
@@ -105,9 +170,12 @@ const Favorites = () => {
       console.log("🧹 Limpiando todos los favoritos...");
       
       // Quitar cada favorito individualmente
-      const promises = favorites.map(fav => 
-        apiService.post(`/images/${fav.imageId}/favorite`)
-      );
+      const promises = favorites.map(fav => {
+        const endpoint = fav.type === 'image' 
+          ? `/images/${fav.id}/favorite`
+          : `/videos/${fav.id}/favorite`;
+        return apiService.post(endpoint);
+      });
       
       await Promise.all(promises);
       
@@ -120,11 +188,15 @@ const Favorites = () => {
     }
   };
 
-  // ✅ Helper para obtener URL de imagen
-  const getImageUrl = (imagePath: string): string => {
-    let cleanPath = imagePath;
-    if (imagePath.startsWith("uploads/")) {
-      cleanPath = imagePath.replace("uploads/", "");
+  // ✅ Helper para obtener URL de archivo
+  const getFileUrl = (item: FavoriteItem): string => {
+    const path = item.type === 'image' 
+      ? (item as FavoriteImage).imagePath 
+      : (item as FavoriteVideo).videoPath;
+    
+    let cleanPath = path;
+    if (path.startsWith("uploads/")) {
+      cleanPath = path.replace("uploads/", "");
     }
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
@@ -161,7 +233,7 @@ const Favorites = () => {
   // ✅ Filtrar favoritos
   const filteredFavorites = favorites.filter((favorite) => {
     const matchesSearch = favorite.originalFilename.toLowerCase().includes(searchQuery.toLowerCase());
-    const fileType = getFileType(favorite.mimeType);
+    const fileType = favorite.type;
     const matchesFilter = filterType === "all" || fileType === filterType;
     return matchesSearch && matchesFilter;
   });
@@ -169,16 +241,13 @@ const Favorites = () => {
   // ✅ Estadísticas reales
   const stats = {
     total: favorites.length,
-    images: favorites.filter(fav => getFileType(fav.mimeType) === 'image').length,
-    videos: favorites.filter(fav => getFileType(fav.mimeType) === 'video').length,
-    documents: favorites.filter(fav => getFileType(fav.mimeType) === 'document').length,
+    images: favorites.filter(fav => fav.type === 'image').length,
+    videos: favorites.filter(fav => fav.type === 'video').length,
+    documents: 0, // Por ahora no hay documentos
   };
 
-  const getTypeColor = (mimeType: string) => {
-    const type = getFileType(mimeType);
+  const getTypeColor = (type: string) => {
     switch (type) {
-      case "document":
-        return "text-nuvia-rose";
       case "video":
         return "text-nuvia-mauve";
       case "image":
@@ -188,11 +257,8 @@ const Favorites = () => {
     }
   };
 
-  const getTypeIcon = (mimeType: string) => {
-    const type = getFileType(mimeType);
+  const getTypeIcon = (type: string) => {
     switch (type) {
-      case "document":
-        return FileText;
       case "video":
         return Video;
       case "image":
@@ -293,10 +359,12 @@ const Favorites = () => {
           <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-nuvia-mauve">Documentos</p>
+                <p className="text-sm text-nuvia-mauve">Espacio usado</p>
                 <FileText className="w-5 h-5 text-nuvia-silver" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.documents}</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                {formatFileSize(favorites.reduce((acc, fav) => acc + fav.fileSize, 0))}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -323,7 +391,6 @@ const Favorites = () => {
               <DropdownMenuItem onClick={() => setFilterType("all")}>Todos</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setFilterType("image")}>Imágenes</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setFilterType("video")}>Vídeos</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterType("document")}>Documentos</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -343,24 +410,54 @@ const Favorites = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFavorites.map((favorite) => {
-                    const Icon = getTypeIcon(favorite.mimeType);
-                    const fileType = getFileType(favorite.mimeType);
+                  {filteredFavorites.map((favorite: FavoriteItem) => {
+                    const Icon = getTypeIcon(favorite.type);
                     
                     return (
                       <tr
-                        key={favorite.imageId}
+                        key={`${favorite.type}-${favorite.id}`}
                         className="border-b border-nuvia-peach/20 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
                       >
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-nuvia-deep/10 to-nuvia-peach/10 flex items-center justify-center">
-                              <Icon className={`w-5 h-5 ${getTypeColor(favorite.mimeType)}`} />
+                            {/* 🖼️ Miniatura según tipo de archivo */}
+                            <div className="w-12 h-12 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0">
+                              {favorite.type === "image" ? (
+                                <img 
+                                  key={`img-${favorite.id}`}
+                                  src={getFileUrl(favorite)} 
+                                  alt={favorite.originalFilename}
+                                  className="w-full h-full object-cover"
+                                  loading="eager"
+                                  onError={(e) => {
+                                    console.error('❌ Error cargando imagen:', favorite.originalFilename);
+                                    e.currentTarget.style.display = "none";
+                                    e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-peach/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🖼️</span></div>';
+                                  }}
+                                />
+                              ) : favorite.type === "video" ? (
+                                <video
+                                  key={`video-${favorite.id}`}
+                                  src={getFileUrl(favorite)}
+                                  className="w-full h-full object-cover"
+                                  muted
+                                  preload="metadata"
+                                  onError={(e) => {
+                                    console.error('❌ Error cargando video:', favorite.originalFilename);
+                                    e.currentTarget.style.display = "none";
+                                    e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🎬</span></div>';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-nuvia-deep/10 to-nuvia-silver/10 flex items-center justify-center">
+                                  <Icon className={`w-6 h-6 ${getTypeColor((favorite as FavoriteItem).type)}`} />
+                                </div>
+                              )}
                             </div>
                             <div>
                               <p className="font-medium text-nuvia-deep">{favorite.originalFilename}</p>
                               <p className="text-xs text-nuvia-mauve sm:hidden">
-                                {formatFileSize(favorite.fileSize)} • {fileType}
+                                {formatFileSize(favorite.fileSize)} • {favorite.type}
                               </p>
                             </div>
                           </div>
@@ -372,7 +469,7 @@ const Favorites = () => {
                           {formatDate(favorite.createdAt)}
                         </td>
                         <td className="p-4 text-nuvia-mauve hidden lg:table-cell capitalize">
-                          {fileType}
+                          {favorite.type}
                         </td>
                         <td className="p-4">
                           <DropdownMenu>
@@ -382,17 +479,17 @@ const Favorites = () => {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
-                              <DropdownMenuItem onClick={() => window.open(getImageUrl(favorite.imagePath), "_blank")}>
+                              <DropdownMenuItem onClick={() => window.open(getFileUrl(favorite), "_blank")}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Abrir
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => window.open(getImageUrl(favorite.imagePath), "_blank")}>
+                              <DropdownMenuItem onClick={() => window.open(getFileUrl(favorite), "_blank")}>
                                 <Download className="w-4 h-4 mr-2" />
                                 Descargar
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 className="text-destructive"
-                                onClick={() => removeFromFavorites(favorite.imageId)}
+                                onClick={() => removeFromFavorites(favorite)}
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Quitar de favoritos
