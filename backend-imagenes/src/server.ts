@@ -23,6 +23,7 @@ import imagesRouter from './routes/ImagesRoutes';
 import videosRouter from './routes/VideosRoutes';
 import statsRouter from './routes/StatsRoutes';
 import trashRouter from './routes/TrashRoutes';
+import recentsRouter from './routes/RecentsRoutes'; // 👈 NUEVO
 
 const app = express();
 
@@ -193,6 +194,7 @@ app.use('/api/images', imagesRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/trash', trashRouter);
+app.use('/api/recents', recentsRouter); // 👈 NUEVO
 
 /******************************************************
  * 🩺 Health Check
@@ -235,6 +237,14 @@ app.get('/', (_: Request, res: Response) => {
         list: 'GET /api/videos',
         getById: 'GET /api/videos/:id',
         stream: 'GET /api/video/:userId/:filename',
+      },
+      recents: {
+        list: 'GET /api/recents',
+        stats: 'GET /api/recents/stats',
+        images: 'GET /api/recents/images',
+        videos: 'GET /api/recents/videos',
+        timeline: 'GET /api/recents/timeline',
+        mostViewed: 'GET /api/recents/most-viewed',
       },
     },
     status: 'online',
