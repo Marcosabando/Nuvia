@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Favorites from "./pages/Favorites";
 import Recent from "./pages/Recent";
-import Folders from "./pages/Folders";
+import FolderView from "./pages/FolderView";
 import Downloads from "./pages/Downloads";
 import Screenshots from "./pages/Screenshots";
 import Trash from "./pages/Trash";
@@ -26,7 +26,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/recent" element={<Recent />} />
-          <Route path="/folders" element={<Folders />} />
+          <Route path="/folders/:folderId" element={<FolderView />} />
           <Route path="/downloads" element={<Downloads />} />
           <Route path="/screenshots" element={<Screenshots />} />
           <Route path="/trash" element={<Trash />} />
