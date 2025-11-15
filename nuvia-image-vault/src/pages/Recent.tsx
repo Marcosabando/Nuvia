@@ -1,5 +1,7 @@
+// 📂 UBICACIÓN: frontend/src/pages/Recent.tsx
+
 import { AppLayout } from "@/components/AppLayout";
-import { Clock, Download, Share2, Trash2, MoreVertical, TrendingUp } from "lucide-react";
+import { Clock, Download, Share2, MoreVertical, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,71 +13,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-interface RecentItem {
-  id: string;
-  name: string;
-  type: "image" | "video" | "document" | "audio";
-  size: string;
-  accessedAt: string;
-  modifiedAt: string;
-  views: number;
-}
+import { useRecent } from "@/hooks/useRecent";
 
 export default function Recent() {
   const { toast } = useToast();
   const [timeFilter, setTimeFilter] = useState<"today" | "week" | "month" | "all">("week");
+  
+  const { recentItems, stats, loading, error, getFileUrl, getRelativeTime } = useRecent(timeFilter);
 
-  // Mock data - en producción vendría de una API
-  const recentItems: RecentItem[] = [
-    {
-      id: "1",
-      name: "presentation-final.pptx",
-      type: "document",
-      size: "8.4 MB",
-      accessedAt: "Hace 30 minutos",
-      modifiedAt: "Hace 2 horas",
-      views: 12,
-    },
-    {
-      id: "2",
-      name: "meeting-recording.mp4",
-      type: "video",
-      size: "125.3 MB",
-      accessedAt: "Hace 1 hora",
-      modifiedAt: "Hace 3 horas",
-      views: 5,
-    },
-    {
-      id: "3",
-      name: "design-mockup.jpg",
-      type: "image",
-      size: "4.2 MB",
-      accessedAt: "Hace 2 horas",
-      modifiedAt: "Ayer",
-      views: 23,
-    },
-    {
-      id: "4",
-      name: "podcast-episode.mp3",
-      type: "audio",
-      size: "15.7 MB",
-      accessedAt: "Hace 3 horas",
-      modifiedAt: "Hace 2 días",
-      views: 8,
-    },
-    {
-      id: "5",
-      name: "budget-2024.xlsx",
-      type: "document",
-      size: "2.1 MB",
-      accessedAt: "Hace 5 horas",
-      modifiedAt: "Hace 1 semana",
-      views: 45,
-    },
-  ];
-
-  const handleOpen = (name: string) => {
+  const handleOpen = (name: string, path: string) => {
+    window.open(getFileUrl(path), '_blank');
     toast({
       title: "Abriendo archivo",
       description: `${name} se está abriendo...`,
@@ -88,10 +35,6 @@ export default function Recent() {
         return "🖼️";
       case "video":
         return "🎬";
-      case "document":
-        return "📄";
-      case "audio":
-        return "🎵";
       default:
         return "📁";
     }
@@ -103,14 +46,30 @@ export default function Recent() {
         return "bg-gradient-to-r from-nuvia-peach/20 to-nuvia-rose/20 text-nuvia-deep border-nuvia-peach/40";
       case "video":
         return "bg-gradient-to-r from-nuvia-rose/20 to-nuvia-mauve/20 text-nuvia-deep border-nuvia-rose/40";
-      case "document":
-        return "bg-gradient-to-r from-nuvia-mauve/20 to-nuvia-peach/20 text-nuvia-deep border-nuvia-mauve/40";
-      case "audio":
-        return "bg-gradient-to-r from-nuvia-deep/20 to-nuvia-silver/20 text-nuvia-deep border-nuvia-deep/40";
       default:
         return "bg-gradient-to-r from-nuvia-mauve/10 to-nuvia-peach/10 text-nuvia-deep border-nuvia-mauve/30";
     }
   };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex justify-center items-center h-[60vh]">
+          <p className="text-nuvia-mauve animate-pulse">Cargando recientes...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppLayout>
+        <div className="flex justify-center items-center h-[60vh]">
+          <p className="text-nuvia-rose">{error}</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -118,7 +77,7 @@ export default function Recent() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-display font-bold idebar-background text-white  font-bold bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
               Recientes
             </h1>
             <p className="text-sm sm:text-base text-white mt-1">
@@ -130,28 +89,36 @@ export default function Recent() {
             <Button
               size="sm"
               onClick={() => setTimeFilter("today")}
-              className={timeFilter === "today" ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
+              className={timeFilter === "today" 
+                ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" 
+                : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
             >
               Hoy
             </Button>
             <Button
               size="sm"
               onClick={() => setTimeFilter("week")}
-              className={timeFilter === "week" ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
+              className={timeFilter === "week" 
+                ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" 
+                : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
             >
               Esta semana
             </Button>
             <Button
               size="sm"
               onClick={() => setTimeFilter("month")}
-              className={timeFilter === "month" ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
+              className={timeFilter === "month" 
+                ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" 
+                : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
             >
               Este mes
             </Button>
             <Button
               size="sm"
               onClick={() => setTimeFilter("all")}
-              className={timeFilter === "all" ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
+              className={timeFilter === "all" 
+                ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all" 
+                : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"}
             >
               Todos
             </Button>
@@ -166,37 +133,45 @@ export default function Recent() {
                 <p className="text-sm text-nuvia-mauve">Última actividad</p>
                 <Clock className="w-5 h-5 text-nuvia-rose" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">Hace 30 min</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                {stats?.lastActivity ? getRelativeTime(stats.lastActivity) : 'Sin actividad'}
+              </p>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-white to-nuvia-rose/10 border border-nuvia-rose/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-nuvia-mauve">Más visto</p>
+                <p className="text-sm text-nuvia-mauve">Más reciente</p>
                 <TrendingUp className="w-5 h-5 text-nuvia-peach" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">budget-2024</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep truncate">
+                {stats?.mostRecent?.name || 'Sin datos'}
+              </p>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-white to-nuvia-mauve/10 border border-nuvia-mauve/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-nuvia-mauve">Total vistas</p>
+                <p className="text-sm text-nuvia-mauve">Hoy</p>
                 <span className="text-xl">📊</span>
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">93 vistas</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                {stats?.counts.today || 0} archivos
+              </p>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-nuvia-mauve">Acceso rápido</p>
+                <p className="text-sm text-nuvia-mauve">Esta semana</p>
                 <span className="text-xl">⚡</span>
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">5 archivos</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                {stats?.counts.week || 0} archivos
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -208,7 +183,7 @@ export default function Recent() {
             <div className="space-y-4">
               {recentItems.map((item, index) => (
                 <div
-                  key={item.id}
+                  key={`${item.type}-${item.id}`}
                   className="flex gap-4 group hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 p-4 rounded-lg transition-all"
                 >
                   {/* Timeline indicator */}
@@ -224,24 +199,75 @@ export default function Recent() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-nuvia-deep/10 to-nuvia-peach/10 flex items-center justify-center">
-                            <span className="text-xl">{getIcon(item.type)}</span>
+                          {/* Thumbnail de imagen/video */}
+                          <div className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
+                            {item.type === "image" ? (
+                              <img 
+                                key={`img-${item.id}`}
+                                src={getFileUrl(item.thumbnailPath || item.path)} 
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                                loading="eager"
+                                onError={(e) => {
+                                  console.error('❌ Error cargando imagen:', item.name, getFileUrl(item.thumbnailPath || item.path));
+                                  e.currentTarget.style.display = "none";
+                                  const parent = e.currentTarget.parentElement;
+                                  if (parent) {
+                                    parent.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-peach/20 to-nuvia-rose/20 flex items-center justify-center"><span class="text-2xl">🖼️</span></div>';
+                                  }
+                                }}
+                                onLoad={() => {
+                                  console.log('✅ Imagen cargada:', item.name);
+                                }}
+                              />
+                            ) : item.type === "video" ? (
+                              item.thumbnailPath ? (
+                                <img 
+                                  key={`video-thumb-${item.id}`}
+                                  src={getFileUrl(item.thumbnailPath)} 
+                                  alt={item.name}
+                                  className="w-full h-full object-cover"
+                                  loading="eager"
+                                  onError={(e) => {
+                                    console.error('❌ Error cargando thumbnail de video:', item.name, getFileUrl(item.thumbnailPath || ''));
+                                    e.currentTarget.style.display = "none";
+                                    const parent = e.currentTarget.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center"><span class="text-2xl">🎬</span></div>';
+                                    }
+                                  }}
+                                  onLoad={() => {
+                                    console.log('✅ Thumbnail de video cargado:', item.name);
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center">
+                                  <span className="text-2xl">🎬</span>
+                                </div>
+                              )
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-nuvia-deep/10 to-nuvia-peach/10 flex items-center justify-center">
+                                <span className="text-2xl">{getIcon(item.type)}</span>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <h3 
                               className="font-medium text-nuvia-deep hover:text-nuvia-rose cursor-pointer transition-colors"
-                              onClick={() => handleOpen(item.name)}
+                              onClick={() => handleOpen(item.name, item.path)}
                             >
-                              {item.name}
+                              {item.title}
                             </h3>
                             <div className="flex items-center gap-3 text-sm text-nuvia-deep mt-1">
-                              <span>{item.accessedAt}</span>
+                              <span>{getRelativeTime(item.accessedAt)}</span>
                               <span>•</span>
                               <span>{item.size}</span>
-                              <span>•</span>
-                              <span className="flex items-center gap-1">
-                                👁️ {item.views} vistas
-                              </span>
+                              {item.dimensions && (
+                                <>
+                                  <span>•</span>
+                                  <span>{item.dimensions}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -250,14 +276,19 @@ export default function Recent() {
                             {item.type}
                           </Badge>
                           <span className="text-xs text-nuvia-deep">
-                            Modificado {item.modifiedAt}
+                            Subido {getRelativeTime(item.uploadedAt)}
                           </span>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg"
+                          onClick={() => window.open(getFileUrl(item.path), '_blank')}
+                        >
                           <Download className="w-4 h-4 text-nuvia-mauve" />
                         </Button>
                         <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg">
@@ -270,7 +301,9 @@ export default function Recent() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
-                            <DropdownMenuItem>Abrir</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleOpen(item.name, item.path)}>
+                              Abrir
+                            </DropdownMenuItem>
                             <DropdownMenuItem>Duplicar</DropdownMenuItem>
                             <DropdownMenuItem>Mover a favoritos</DropdownMenuItem>
                             <DropdownMenuItem className="text-red-600">
@@ -294,7 +327,7 @@ export default function Recent() {
               <Clock className="w-12 h-12 mx-auto text-nuvia-mauve mb-4" />
               <p className="text-nuvia-mauve">No hay archivos recientes</p>
               <p className="text-sm text-nuvia-mauve/70 mt-2">
-                Los archivos que abras aparecerán aquí para un acceso rápido
+                Los archivos que subas aparecerán aquí para un acceso rápido
               </p>
             </CardContent>
           </Card>
