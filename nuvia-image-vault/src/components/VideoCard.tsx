@@ -12,19 +12,37 @@ import {
   MoreVertical,
   Trash2,
   AlertCircle,
-  FileVideo
+  FileVideo,
+  FolderPlus
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { apiService } from '@/services/api.services';
 
 interface VideoCardProps {
   video: Video;
   onFavoriteToggle: (videoId: number) => void;
   onDelete: (videoId: number) => void;
+}
+
+interface Folder {
+  id: number;
+  folderId?: number;
+  name: string;
+  description?: string;
+  color: string;
+  isSystem: boolean;
+  itemCount: number;
+  createdAt: string;
 }
 
 export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps) => {
@@ -33,7 +51,55 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
   const [videoError, setVideoError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showControls, setShowControls] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Cargar carpetas del usuario
+  useEffect(() => {
+    const fetchFolders = async () => {
+      try {
+        setFoldersLoading(true);
+        const response = await apiService.get('/folders');
+        
+        if (response.success && response.data) {
+          // Filtrar solo las carpetas del usuario (no del sistema)
+          const userFolders = response.data.filter((folder: Folder) => !folder.isSystem);
+          setFolders(userFolders);
+        }
+      } catch (error) {
+        console.error("Error cargando carpetas:", error);
+      } finally {
+        setFoldersLoading(false);
+      }
+    };
+
+    fetchFolders();
+  }, []);
+
+  // Función para añadir video a carpeta
+  const addToFolder = async (videoId: number, folderId: number) => {
+    // Validación robusta
+    if (folderId === undefined || folderId === null || isNaN(folderId)) {
+      alert("Error: ID de carpeta inválido.");
+      return;
+    }
+
+    try {
+      const response = await apiService.post(`/folders/${folderId}/videos`, {
+        videoId: videoId
+      });
+      
+      if (response.success) {
+        alert("Video añadido a la carpeta correctamente");
+      } else {
+        throw new Error(response.error || 'Error al añadir video a la carpeta');
+      }
+    } catch (error: any) {
+      console.error("Error añadiendo video a carpeta:", error);
+      alert(error.response?.data?.error || "Error al añadir video a la carpeta");
+    }
+  };
 
   const buildUploadsUrl = (path?: string | null) => {
     if (!path) {
@@ -60,25 +126,11 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
       return buildUploadsUrl(`uploads/${video.userId}/videos/${video.filename}`);
     }
 
-    console.error('❌ No se puede construir URL para el video:', video);
     return '';
   };
 
   const videoUrl = getVideoUrl();
   const thumbnailUrl = buildUploadsUrl(video.thumbnailPath);
-
-  // Debug detallado
-  useEffect(() => {
-    console.log('🎬 VideoCard Debug:', {
-      videoId: video.videoId,
-      userId: video.userId,
-      filename: video.filename,
-      videoPath: video.videoPath,
-      finalUrl: videoUrl,
-      hasFilename: !!video.filename,
-      hasVideoPath: !!video.videoPath
-    });
-  }, [video, videoUrl]);
 
   // Formatear duración de segundos a MM:SS
   const formatDuration = (seconds: number) => {
@@ -95,30 +147,21 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
     return `${mb.toFixed(1)} MB`;
   };
 
-  const handleVideoError = (e: any) => {
-    console.error('❌ Error cargando video:', {
-      videoId: video.videoId,
-      url: videoUrl,
-      error: e.nativeEvent,
-      videoElement: videoRef.current
-    });
+  const handleVideoError = () => {
     setVideoError(true);
     setIsLoading(false);
   };
 
   const handleVideoLoad = () => {
-    console.log('✅ Video cargado correctamente:', videoUrl);
     setVideoError(false);
     setIsLoading(false);
   };
 
   const handleVideoLoadStart = () => {
-    console.log('🔄 Iniciando carga del video:', videoUrl);
     setIsLoading(true);
   };
 
   const handleVideoCanPlay = () => {
-    console.log('🎯 Video listo para reproducir:', videoUrl);
     setIsLoading(false);
   };
 
@@ -135,7 +178,6 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
         await videoRef.current.play();
       }
     } catch (error) {
-      console.error('Error al reproducir video:', error);
       setVideoError(true);
     }
   };
@@ -188,9 +230,6 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
               <div className="text-center">
                 <AlertCircle className="w-10 h-10 mx-auto mb-2 text-red-500" />
                 <p className="text-red-600 font-medium text-sm mb-1">Error cargando video</p>
-                <p className="text-red-500 text-xs mb-2 opacity-75 max-w-xs break-all">
-                  URL: {videoUrl}
-                </p>
                 <div className="flex gap-2 justify-center">
                   <Button 
                     variant="outline" 
@@ -336,7 +375,68 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
                     <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => onFavoriteToggle(video.videoId)}>
+                    <Heart className={`w-4 h-4 mr-2 ${video.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                    {video.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                  </DropdownMenuItem>
+                  
+                  {/* Submenú para añadir a carpeta */}
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="flex items-center">
+                      <FolderPlus className="w-4 h-4 mr-2" />
+                      Añadir a carpeta
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent className="w-48">
+                        {foldersLoading ? (
+                          <DropdownMenuItem disabled>
+                            <div className="flex items-center">
+                              <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                              Cargando carpetas...
+                            </div>
+                          </DropdownMenuItem>
+                        ) : folders.length === 0 ? (
+                          <DropdownMenuItem disabled>
+                            No tienes carpetas
+                          </DropdownMenuItem>
+                        ) : (
+                          folders.map((folder) => {
+                            // Obtener el ID correcto de la carpeta
+                            const actualFolderId = folder.folderId || folder.id;
+
+                            // Validar que el ID sea válido
+                            if (!actualFolderId || isNaN(actualFolderId)) {
+                              return null;
+                            }
+
+                            return (
+                              <DropdownMenuItem
+                                key={actualFolderId}
+                                onClick={() => addToFolder(video.videoId, actualFolderId)}
+                                className="flex items-center justify-between"
+                              >
+                                <div className="flex items-center">
+                                  <div 
+                                    className="w-3 h-3 rounded mr-2"
+                                    style={{ backgroundColor: folder.color }}
+                                  />
+                                  <span className="truncate">{folder.name}</span>
+                                </div>
+                                {folder.itemCount > 0 && (
+                                  <Badge variant="secondary" className="text-xs ml-2">
+                                    {folder.itemCount}
+                                  </Badge>
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          }).filter(Boolean) // Filtrar elementos nulos
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     onClick={() => onDelete(video.videoId)}
                     className="text-red-600 focus:text-red-600"
@@ -367,21 +467,6 @@ export const VideoCard = ({ video, onFavoriteToggle, onDelete }: VideoCardProps)
               </span>
             </div>
           </div>
-
-          {/* Debug info - Solo en desarrollo */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-blue-600 text-xs font-mono truncate" title={videoUrl}>
-                URL: {videoUrl}
-              </p>
-              <p className="text-blue-600 text-xs mt-1">
-                ID: {video.videoId} | User: {video.userId} | Archivo: {video.filename}
-              </p>
-              <p className="text-blue-600 text-xs mt-1">
-                Ruta en BD: {video.videoPath || 'No disponible'}
-              </p>
-            </div>
-          )}
         </div>
       </CardContent>
     </Card>

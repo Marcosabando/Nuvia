@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw, FolderPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,6 +8,10 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +32,6 @@ const formatFileSize = (bytes: number): string => {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 };
 
-// ✅ Helper mejorado: Construir URL correctamente
 // ✅ Helper MEJORADO: Maneja todos los casos de rutas
 const getImageUrl = (image: any, useThumbnail: boolean = false): string => {
   console.log("🔍 Construyendo URL para imagen:", {
@@ -117,10 +120,96 @@ interface ImageGalleryProps {
   viewMode?: "grid" | "list";
 }
 
+// Interface para las carpetas
+interface Folder {
+  id: number;
+  folderId?: number; // ✅ AÑADIDO para compatibilidad
+  name: string;
+  description?: string;
+  color: string;
+  isSystem: boolean;
+  itemCount: number;
+  createdAt: string;
+}
+
 export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
   const { images, loading, error, refetch } = useImages();
   const [selectedImage, setSelectedImage] = useState<any | null>(null);
   const [optimisticUpdates, setOptimisticUpdates] = useState<Record<number, any>>({});
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(true);
+
+  // Cargar carpetas del usuario
+  useEffect(() => {
+    const fetchFolders = async () => {
+      try {
+        setFoldersLoading(true);
+        const response = await apiService.get('/folders');
+        
+        if (response.success && response.data) {
+          // Filtrar solo las carpetas del usuario (no del sistema)
+          const userFolders = response.data.filter((folder: Folder) => !folder.isSystem);
+          
+          // ✅ DEBUG DETALLADO
+          console.log("📂 TODAS las carpetas recibidas:", response.data);
+          console.log("📂 Carpetas de usuario filtradas:", userFolders);
+          console.log("📂 Estructura de la primera carpeta:", userFolders[0] ? {
+            id: userFolders[0].id,
+            folderId: userFolders[0].folderId,
+            name: userFolders[0].name,
+            keys: Object.keys(userFolders[0])
+          } : 'No hay carpetas');
+          
+          setFolders(userFolders);
+        } else {
+          console.error("❌ Respuesta de carpetas no exitosa:", response);
+        }
+      } catch (error) {
+        console.error("Error cargando carpetas:", error);
+      } finally {
+        setFoldersLoading(false);
+      }
+    };
+
+    fetchFolders();
+  }, []);
+
+  // ✅ FUNCIÓN CORREGIDA: Añadir imagen a carpeta con validación robusta
+  const addToFolder = async (imageId: number, folderId: number) => {
+    // ✅ VALIDACIÓN MÁS ROBUSTA
+    if (folderId === undefined || folderId === null || isNaN(folderId)) {
+      console.error("❌ Error: folderId inválido", {
+        imageId,
+        folderId,
+        type: typeof folderId
+      });
+      alert("Error: ID de carpeta inválido. Por favor, recarga la página e intenta nuevamente.");
+      return;
+    }
+
+    try {
+      console.log(`➕ Añadiendo imagen ${imageId} a carpeta ${folderId} (${typeof folderId})`);
+      
+      const response = await apiService.post(`/folders/${folderId}/images`, {
+        imageId: imageId
+      });
+      
+      if (response.success) {
+        console.log("✅ Imagen añadida a la carpeta:", response.data);
+        alert("Imagen añadida a la carpeta correctamente");
+      } else {
+        throw new Error(response.error || 'Error al añadir imagen a la carpeta');
+      }
+    } catch (error: any) {
+      console.error("❌ Error añadiendo imagen a carpeta:", {
+        error,
+        imageId,
+        folderId,
+        response: error.response?.data
+      });
+      alert(error.response?.data?.error || "Error al añadir imagen a la carpeta");
+    }
+  };
 
   // Toggle favorite con actualización optimista
   const toggleFavorite = async (id: number) => {
@@ -298,6 +387,78 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                         <Heart className={`w-4 h-4 mr-2 ${isFavorite ? "text-red-500 fill-current" : ""}`} />
                         {isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
                       </DropdownMenuItem>
+                      
+                      {/* Submenú para añadir a carpeta - CORREGIDO */}
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center">
+                          <FolderPlus className="w-4 h-4 mr-2" />
+                          Añadir a carpeta
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuPortal>
+                          <DropdownMenuSubContent className="w-48">
+                            {foldersLoading ? (
+                              <DropdownMenuItem disabled>
+                                <div className="flex items-center">
+                                  <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                  Cargando carpetas...
+                                </div>
+                              </DropdownMenuItem>
+                            ) : folders.length === 0 ? (
+                              <DropdownMenuItem disabled>
+                                No tienes carpetas
+                              </DropdownMenuItem>
+                            ) : (
+                              folders.map((folder) => {
+                                // ✅ OBTENER EL ID CORRECTO DE LA CARPETA
+                                const actualFolderId = folder.folderId || folder.id;
+                                
+                                console.log("📁 Renderizando carpeta en dropdown:", { 
+                                  id: folder.id, 
+                                  folderId: folder.folderId,
+                                  actualFolderId,
+                                  name: folder.name,
+                                  type: typeof actualFolderId 
+                                });
+
+                                // ✅ VALIDAR QUE EL ID SEA VÁLIDO
+                                if (!actualFolderId || isNaN(actualFolderId)) {
+                                  console.error("❌ Carpeta con ID inválido omitida:", folder);
+                                  return null;
+                                }
+
+                                return (
+                                  <DropdownMenuItem
+                                    key={actualFolderId}
+                                    onClick={() => {
+                                      console.log("🖱️ Click en carpeta:", { 
+                                        folderId: actualFolderId, 
+                                        imageId: image.id,
+                                        folderName: folder.name 
+                                      });
+                                      addToFolder(image.id, actualFolderId);
+                                    }}
+                                    className="flex items-center justify-between"
+                                  >
+                                    <div className="flex items-center">
+                                      <div 
+                                        className="w-3 h-3 rounded mr-2"
+                                        style={{ backgroundColor: folder.color }}
+                                      />
+                                      <span className="truncate">{folder.name}</span>
+                                    </div>
+                                    {folder.itemCount > 0 && (
+                                      <Badge variant="secondary" className="text-xs ml-2">
+                                        {folder.itemCount}
+                                      </Badge>
+                                    )}
+                                  </DropdownMenuItem>
+                                );
+                              }).filter(Boolean) // ✅ FILTRAR ELEMENTOS NULOS
+                            )}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuPortal>
+                      </DropdownMenuSub>
+
                       <DropdownMenuItem
                         onClick={() => window.open(getImageUrl(image, false), "_blank")}>
                         <Download className="w-4 h-4 mr-2" />
