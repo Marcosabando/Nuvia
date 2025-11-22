@@ -24,6 +24,7 @@ import statsRouter from './routes/StatsRoutes';
 import trashRouter from './routes/TrashRoutes';
 import recentsRouter from './routes/RecentsRoutes';
 import foldersRouter from './routes/Folders';
+import adminRouter from './routes/AdminRoutes';
 
 const app = express();
 
@@ -196,6 +197,7 @@ app.use('/api/stats', statsRouter);
 app.use('/api/trash', trashRouter);
 app.use('/api/recents', recentsRouter);
 app.use('/api/folders', foldersRouter);
+app.use('/api/admin', adminRouter); // ✅ Línea corregida - sin require y comentario
 
 /******************************************************
  * 🩺 Health Check
@@ -257,6 +259,18 @@ app.get('/', (_: Request, res: Response) => {
         addImage: 'POST /api/folders/:id/images',
         removeImage: 'DELETE /api/folders/:id/images/:imageId',
       },
+      admin: {
+        stats: 'GET /api/admin/stats',
+        users: 'GET /api/admin/users',
+        userDetails: 'GET /api/admin/users/:id',
+        suspendUser: 'POST /api/admin/users/:id/suspend',
+        updateStorage: 'PUT /api/admin/users/:id/storage',
+        deleteUser: 'DELETE /api/admin/users/:id',
+        export: 'GET /api/admin/export',
+        search: 'GET /api/admin/search',
+        activity: 'GET /api/admin/activity',
+        verify: 'GET /api/admin/verify',
+      }
     },
     status: 'online',
   });
