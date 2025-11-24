@@ -3,7 +3,7 @@ import { pool } from "@src/config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import path from "path";
 import fs from "fs/promises"; 
-
+import sharp from "sharp"; // ✅ USAMOS SHARP EN LUGAR DE IMAGE-SIZE
 
 // ============================================================================
 // CONSTANTS
@@ -23,13 +23,48 @@ const validateFile = (file: Express.Multer.File) => {
   }
 };
 
+// ✅ FUNCIÓN MEJORADA CON SHARP: Obtener dimensiones de la imagen
+const getImageDimensions = async (filePath: string): Promise<{ width: number; height: number }> => {
+  try {
+    console.log(`📐 Intentando obtener dimensiones para: ${filePath}`);
+    
+    // Verificar que el archivo existe
+    try {
+      await fs.access(filePath);
+      console.log(`✅ Archivo encontrado: ${filePath}`);
+    } catch (accessError) {
+      console.error(`❌ Archivo no encontrado: ${filePath}`, accessError);
+      return { width: 0, height: 0 };
+    }
+
+    // Obtener metadatos con sharp
+    const metadata = await sharp(filePath).metadata();
+    
+    console.log(`📏 Metadatos obtenidos:`, metadata);
+    
+    if (!metadata.width || !metadata.height) {
+      console.warn("⚠️ No se pudieron obtener las dimensiones de la imagen");
+      return { width: 0, height: 0 };
+    }
+    
+    console.log(`✅ Dimensiones obtenidas: ${metadata.width}x${metadata.height}`);
+    return {
+      width: metadata.width,
+      height: metadata.height
+    };
+  } catch (error) {
+    console.error("❌ Error crítico obteniendo dimensiones de la imagen:", error);
+    return { width: 0, height: 0 };
+  }
+};
+
 // 🔧 CORREGIDO: Ahora incluye la carpeta /images/
 const getRelativePath = (userId: number, filename: string, subfolder: string = 'images'): string => {
   return path.join("uploads", userId.toString(), subfolder, filename).replace(/\\/g, '/');
 };
 
 // ============================================================================
-// 📤 UPLOAD IMAGES
+// 📤 UPLOAD IMAGES - VERSIÓN MEJORADA CON DIMENSIONES
 // ============================================================================
 
 /**
@@ -37,14 +72,22 @@ const getRelativePath = (userId: number, filename: string, subfolder: string = '
  * POST /api/images/upload
  */
 export const uploadImage = async (req: Request, res: Response): Promise<void> => {
+  let fileProcessed = false;
+  
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No image uploaded" });
+      res.status(400).json({ 
+        success: false,
+        error: "No image uploaded" 
+      });
       return;
     }
 
     const userId = req.user!.userId;
     const file = req.file;
+
+    console.log(`📤 Subiendo imagen: ${file.originalname} (${file.size} bytes)`);
+    console.log(`📁 Ruta temporal: ${file.path}`);
 
     validateFile(file);
 
@@ -52,11 +95,23 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
     const relativePath = getRelativePath(userId, file.filename, 'images');
     const { title, description } = req.body;
 
+    // ✅ OBTENER DIMENSIONES DE LA IMAGEN
+    let width = 0;
+    let height = 0;
+    
+    console.log(`🔍 Obteniendo dimensiones para: ${file.originalname}`);
+    const dimensions = await getImageDimensions(file.path);
+    width = dimensions.width;
+    height = dimensions.height;
+    
+    console.log(`📐 Dimensiones finales para ${file.originalname}: ${width}x${height}`);
+
+    // ✅ INSERTAR EN BD CON DIMENSIONES
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO images 
       (userId, title, description, originalFilename, filename, imagePath, 
-       fileSize, mimeType) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       fileSize, mimeType, width, height) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         title || file.originalname,
@@ -66,8 +121,13 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
         relativePath,
         file.size,
         file.mimetype,
+        width,  // ✅ Ancho de la imagen
+        height  // ✅ Alto de la imagen
       ]
     );
+
+    fileProcessed = true;
+    console.log(`✅ Imagen subida correctamente - ID: ${result.insertId}, Dimensiones: ${width}x${height}`);
 
     res.status(201).json({
       success: true,
@@ -79,16 +139,28 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
+        width: width,   // ✅ INCLUIR EN RESPUESTA
+        height: height, // ✅ INCLUIR EN RESPUESTA
         url: `/${relativePath}`,
       },
     });
   } catch (error) {
-    console.error("Error uploading image:", error);
+    console.error("❌ Error uploading image:", error);
     res.status(500).json({
       success: false,
       error: "Error uploading image",
       details: (error as Error).message,
     });
+  } finally {
+    // Limpiar archivo temporal si es necesario
+    if (!fileProcessed && req.file) {
+      try {
+        await fs.unlink(req.file.path);
+        console.log(`🧹 Archivo temporal limpiado: ${req.file.path}`);
+      } catch (cleanupError) {
+        console.error("Error limpiando archivo temporal:", cleanupError);
+      }
+    }
   }
 };
 
@@ -98,9 +170,14 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
  */
 export const uploadMultipleImages = async (req: Request, res: Response): Promise<void> => {
   const connection = await pool.getConnection();
+  const filesToCleanup: string[] = [];
+  
   try {
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      res.status(400).json({ error: "No images uploaded" });
+      res.status(400).json({ 
+        success: false,
+        error: "No images uploaded" 
+      });
       return;
     }
 
@@ -108,19 +185,36 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     const files = req.files as Express.Multer.File[];
     const insertedImages = [];
 
+    console.log(`📤 Subiendo ${files.length} imágenes...`);
+
     await connection.beginTransaction();
 
     for (const file of files) {
+      // Guardar ruta para limpieza en caso de error
+      filesToCleanup.push(file.path);
+      
       validateFile(file);
 
       // 🔧 CORREGIDO: Ahora incluye /images/ en la ruta
       const relativePath = getRelativePath(userId, file.filename, 'images');
 
+      // ✅ OBTENER DIMENSIONES DE CADA IMAGEN
+      let width = 0;
+      let height = 0;
+      
+      console.log(`🔍 Obteniendo dimensiones para: ${file.originalname}`);
+      const dimensions = await getImageDimensions(file.path);
+      width = dimensions.width;
+      height = dimensions.height;
+      
+      console.log(`📐 Dimensiones finales para ${file.originalname}: ${width}x${height}`);
+
+      // ✅ INSERTAR EN BD CON DIMENSIONES
       const [result] = await connection.query<ResultSetHeader>(
         `INSERT INTO images 
          (userId, title, originalFilename, filename, imagePath, 
-          fileSize, mimeType)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          fileSize, mimeType, width, height)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           file.originalname,
@@ -129,6 +223,8 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
           relativePath,
           file.size,
           file.mimetype,
+          width,   // ✅ Ancho de la imagen
+          height   // ✅ Alto de la imagen
         ]
       );
 
@@ -138,11 +234,21 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
+        width: width,   // ✅ INCLUIR EN RESPUESTA
+        height: height, // ✅ INCLUIR EN RESPUESTA
         url: `/${relativePath}`,
       });
+
+      // Remover de la lista de limpieza ya que se procesó correctamente
+      const index = filesToCleanup.indexOf(file.path);
+      if (index > -1) {
+        filesToCleanup.splice(index, 1);
+      }
     }
 
     await connection.commit();
+
+    console.log(`✅ ${insertedImages.length} imágenes subidas correctamente`);
 
     res.status(201).json({
       success: true,
@@ -151,7 +257,7 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     });
   } catch (error) {
     await connection.rollback();
-    console.error("Error uploading multiple images:", error);
+    console.error("❌ Error uploading multiple images:", error);
     res.status(500).json({
       success: false,
       error: "Error uploading images",
@@ -159,6 +265,19 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     });
   } finally {
     connection.release();
+    
+    // Limpiar archivos temporales en caso de error
+    if (filesToCleanup.length > 0) {
+      console.log(`🧹 Limpiando ${filesToCleanup.length} archivos temporales...`);
+      for (const filePath of filesToCleanup) {
+        try {
+          await fs.unlink(filePath);
+          console.log(`✅ Limpiado: ${filePath}`);
+        } catch (cleanupError) {
+          console.error(`❌ Error limpiando ${filePath}:`, cleanupError);
+        }
+      }
+    }
   }
 };
 
