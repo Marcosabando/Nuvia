@@ -87,20 +87,21 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 // ✅ User login
 export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
 
-    if (!email || !password) {
+  if (!identifier || !password) {
       res.status(400).json({
         success: false,
-        error: "Email and password are required"
+        error: "Username/email and password are required"
       });
       return;
     }
 
+    // 🔥 BUSCAR por email O username
     const [users] = await pool.query<RowDataPacket[]>(
       `SELECT userId, username, email, password, role, isActive 
-       FROM users WHERE email = ?`,
-      [email]
+       FROM users WHERE email = ? OR username = ?`,
+      [identifier, identifier]
     );
 
     if (users.length === 0) {
