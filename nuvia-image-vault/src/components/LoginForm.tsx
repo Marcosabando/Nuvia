@@ -10,10 +10,10 @@ interface LoginFormProps {
 
 export default function LoginForm({ openRegister }: LoginFormProps) {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ 
-    email: "", 
-    password: "", 
-    rememberMe: false 
+  const [formData, setFormData] = useState({
+    identifier: "",
+    password: "",
+    rememberMe: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -25,17 +25,17 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
     try {
       const response = await fetch(buildUrl("/users/login"), {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
-          email: formData.email, 
-          password: formData.password 
+        body: JSON.stringify({
+          identifier: formData.identifier,
+          password: formData.password,
         }),
       });
 
       console.log("Status:", response.status);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Error del servidor: ${response.status}`);
@@ -97,20 +97,20 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
         {/* Email */}
         <div className="space-y-3">
           <label htmlFor="email" className="text-sm font-semibold block text-nuvia-deep">
-            Correo electrónico
+            Correo electrónico o nombre de usuario
           </label>
           <div className="relative group">
             <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-nuvia-mauve group-focus-within:text-nuvia-rose transition-colors" />
             <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
+              type="text"
+              id="identifier"
+              name="identifier"
+              value={formData.identifier}
               onChange={handleChange}
-              placeholder="tu@email.com"
+              placeholder="Correo o nombre de usuario"
               required
               disabled={isLoading}
-              className="w-full pl-12 pr-4 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl focus:outline-none focus:border-nuvia-rose focus:shadow-nuvia-accent transition-all duration-300 hover:border-nuvia-mauve/50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full pl-12 pr-4 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl ..."
             />
           </div>
         </div>
@@ -137,8 +137,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               disabled={isLoading}
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300 disabled:opacity-50"
-            >
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300 disabled:opacity-50">
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
@@ -163,8 +162,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
             type="button"
             onClick={handleForgotPassword}
             disabled={isLoading}
-            className="text-sm font-medium text-nuvia-rose hover:text-nuvia-peach hover:underline transition-all duration-300 disabled:opacity-50"
-          >
+            className="text-sm font-medium text-nuvia-rose hover:text-nuvia-peach hover:underline transition-all duration-300 disabled:opacity-50">
             ¿Olvidaste tu contraseña?
           </button>
         </div>
@@ -173,8 +171,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-        >
+          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
           {isLoading ? (
             <div className="flex items-center space-x-3">
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -195,8 +192,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
             type="button"
             onClick={openRegister}
             disabled={isLoading}
-            className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-          >
+            className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
             Crear cuenta nueva
           </button>
         </div>
