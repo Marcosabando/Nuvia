@@ -7,26 +7,24 @@ import { UploadZone } from "@/components/UploadZone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Images, Upload, TrendingUp, Video, Plus } from "lucide-react";
+import { Images, Upload, TrendingUp, Video } from "lucide-react";
 import { useUserStats } from "@/hooks/useUserStats";
-import { Grid3X3, List } from "lucide-react"
+import { Grid3X3, List } from "lucide-react";
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent
-} from "@/components/ui/tabs"
+} from "@/components/ui/tabs";
 
 const Home = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const { username, stats, loading, error } = useUserStats();
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState("images");
-  const [selectedCount, setSelectedCount] = useState(0);
 
   const handleUploadComplete = () => {
     setRefreshKey((prev) => prev + 1);
-    // Si estamos en la pestaña de upload, cambiar a la galería correspondiente
     if (activeTab === "upload") {
       setActiveTab("images");
     }
@@ -35,7 +33,6 @@ const Home = () => {
   const handleTabChange = (value: string) => {
     setActiveTab(value);
   };
-
 
   return (
     <AppLayout>
@@ -46,17 +43,18 @@ const Home = () => {
             <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
               Bienvenido a Nuvia{username ? `, ${username}` : ""}
             </h1>
-            <p className="text-sm sm:text-base text-white mt-1">Tu plataforma elegante de gestión multimedia</p>
+            <p className="text-sm sm:text-base text-white mt-1">
+              Tu plataforma elegante de gestión multimedia
+            </p>
           </div>
 
-          {/* Mostrar error si existe */}
           {error && (
             <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
               <p className="text-red-200 text-sm">Error cargando estadísticas: {error}</p>
             </div>
           )}
 
-          {/* Quick Stats - Responsive */}
+          {/* Quick Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
             <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
               <CardContent className="p-3 md:p-4">
@@ -141,7 +139,6 @@ const Home = () => {
                 </TabsTrigger>
               </TabsList>
 
-              {/* View Mode Toggle - Solo mostrar en galerías */}
               {(activeTab === "images" || activeTab === "videos") && (
                 <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden bg-white/50 backdrop-blur-sm">
                   <Button
@@ -162,7 +159,6 @@ const Home = () => {
               )}
             </div>
 
-            {/* Badge de estadísticas activas */}
             {(activeTab === "images" || activeTab === "videos") && (
               <Badge variant="secondary" className="bg-white/50 text-nuvia-deep border-nuvia-silver/30">
                 {activeTab === "images" 
@@ -173,7 +169,6 @@ const Home = () => {
             )}
           </div>
 
-          {/* Pestaña de Galería de Imágenes */}
           <TabsContent value="images" className="space-y-6 animate-fade-in">
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
               <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
@@ -191,7 +186,6 @@ const Home = () => {
             </Card>
           </TabsContent>
 
-          {/* Pestaña de Galería de Videos */}
           <TabsContent value="videos" className="space-y-6 animate-fade-in">
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
               <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
@@ -209,7 +203,6 @@ const Home = () => {
             </Card>
           </TabsContent>
 
-          {/* Pestaña de Subida */}
           <TabsContent value="upload" className="animate-fade-in">
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
               <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
@@ -225,7 +218,7 @@ const Home = () => {
           </TabsContent>
         </Tabs>
 
-        {/* Información de uso de almacenamiento */}
+        {/* Storage Usage */}
         <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
           <CardContent className="p-4 md:p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -235,7 +228,7 @@ const Home = () => {
                   <div
                     className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
                     style={{
-                      width: `${Math.min((stats.storageUsed / 50) * 100, 100)}%`, // Asumiendo 50GB como máximo
+                      width: `${Math.min((stats.storageUsed / stats.storageLimit) * 100, 100)}%`,
                     }}
                   />
                 </div>

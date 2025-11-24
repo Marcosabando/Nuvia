@@ -1,4 +1,4 @@
-// src/hooks/useImages.ts - VERSIÓN MEJORADA
+// src/hooks/useImages.ts - VERSIÓN LIMPIA
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
@@ -9,8 +9,8 @@ interface ImageData {
   originalFilename: string;
   filename: string;
   imagePath: string;
-  thumbnailPath?: string;  // ✅ AÑADIR
-  mediumPath?: string;      // ✅ AÑADIR
+  thumbnailPath?: string;
+  mediumPath?: string;
   fileSize: number;
   mimeType: string;
   created: string;
@@ -34,11 +34,7 @@ export const useImages = (): UseImagesReturn => {
       setLoading(true);
       setError(null);
 
-      console.log("🔄 Obteniendo imágenes del usuario...");
-      
       const response = await apiService.get('/images');
-      
-      console.log("📸 Respuesta de imágenes:", response);
 
       if (response.success && response.data) {
         const transformedImages = response.data.map((img: any) => ({
@@ -48,8 +44,8 @@ export const useImages = (): UseImagesReturn => {
           originalFilename: img.originalFilename,
           filename: img.filename,
           imagePath: img.imagePath,
-          thumbnailPath: img.thumbnailPath,  // ✅ INCLUIR
-          mediumPath: img.mediumPath,        // ✅ INCLUIR
+          thumbnailPath: img.thumbnailPath,
+          mediumPath: img.mediumPath,
           fileSize: img.fileSize,
           mimeType: img.mimeType,
           created: img.createdAt,
@@ -57,14 +53,12 @@ export const useImages = (): UseImagesReturn => {
         }));
 
         setImages(transformedImages);
-        console.log("✅ Imágenes transformadas:", transformedImages);
+
       } else {
         throw new Error(response.error || 'Error en la respuesta del servidor');
       }
 
     } catch (err: any) {
-      console.error("❌ Error cargando imágenes:", err);
-      
       if (err.response?.data?.error) {
         setError(`Error del servidor: ${err.response.data.error}`);
       } else if (err.message) {

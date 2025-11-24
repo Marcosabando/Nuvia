@@ -12,7 +12,8 @@ import {
   Plus,
   MoreVertical,
   Pencil,
-  Trash
+  Trash,
+  Shield
 } from "lucide-react";
 import { AuthService } from "@/services/auth.service";
 import { useFolders } from "@/hooks/useFolders";
@@ -104,6 +105,9 @@ export function AppSidebar() {
       alert(error.response?.data?.error || "Error al eliminar la carpeta");
     }
   };
+
+  const userRole = localStorage.getItem("userRole");
+  const isAdmin = userRole === "admin";
 
   return (
     <>
@@ -343,16 +347,33 @@ export function AppSidebar() {
         </SidebarContent>
 
         {/* FOOTER */}
-        <SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className={getNavClasses("/settings")}>
-                    <Settings className="w-5 h-5" />
-                    {!collapsed && <span>Configuración</span>}
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
+<SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
+  <SidebarMenu>
+
+    {/* BOTÓN ADMIN */}
+    {isAdmin && (
+      <SidebarMenuItem>
+        <SidebarMenuButton 
+          asChild 
+          className={getNavClasses("/admin")}
+        >
+          <NavLink to="/admin">
+            <Shield className="w-5 h-5" />
+            {!collapsed && <span>Admin</span>}
+          </NavLink>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    )}
+
+    {/* CONFIGURACIÓN */}
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuButton className={getNavClasses("/settings")}>
+            <Settings className="w-5 h-5" />
+            {!collapsed && <span>Configuración</span>}
+          </SidebarMenuButton>
+        </DropdownMenuTrigger>
 
                 <DropdownMenuContent
                   side="right"

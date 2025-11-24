@@ -23,7 +23,7 @@ const API_CONFIG = {
   UPLOADS_URL: "http://localhost:3000/uploads",
 };
 
-// Helper para formatear tamaño
+// Helper: Tamaño
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 Bytes";
   const k = 1024;
@@ -32,98 +32,56 @@ const formatFileSize = (bytes: number): string => {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 };
 
-// ✅ Helper MEJORADO: Maneja todos los casos de rutas
-const getImageUrl = (image: any, useThumbnail: boolean = false): string => {
-  console.log("🔍 Construyendo URL para imagen:", {
-    id: image.id,
-    useThumbnail,
-    imagePath: image.imagePath,
-    thumbnailPath: image.thumbnailPath,
-    mediumPath: image.mediumPath,
-    filename: image.filename,
-    userId: image.userId
-  });
-
-  // 1. PRIORIDAD: Thumbnails si se solicitan y existen
-  if (useThumbnail) {
-    if (image.thumbnailPath) {
-      const path = normalizePath(image.thumbnailPath);
-      const url = `http://localhost:3000/${path}`;
-      console.log("🎯 Usando thumbnailPath:", url);
-      return url;
-    }
-    // Si no hay thumbnailPath pero queremos thumbnail, usar medium como fallback
-    if (image.mediumPath) {
-      const path = normalizePath(image.mediumPath);
-      const url = `http://localhost:3000/${path}`;
-      console.log("🔄 Usando mediumPath como fallback para thumbnail:", url);
-      return url;
-    }
-  }
-
-  // 2. PRIORIDAD: Medium path para imágenes normales
-  if (!useThumbnail && image.mediumPath) {
-    const path = normalizePath(image.mediumPath);
-    const url = `http://localhost:3000/${path}`;
-    console.log("🎯 Usando mediumPath:", url);
-    return url;
-  }
-
-  // 3. FALLBACK: imagePath con corrección automática
-  if (image.imagePath) {
-    const path = correctImagePath(image.imagePath);
-    const url = `http://localhost:3000/${path}`;
-    console.log("🔄 Usando imagePath corregido:", url);
-    return url;
-  }
-
-  // 4. ÚLTIMO RECURSO: Construir desde userId y filename
-  const url = `${API_CONFIG.UPLOADS_URL}/${image.userId}/images/${image.filename}`;
-  console.log("⚡ URL construida desde cero:", url);
-  return url;
-};
-
-// Helper para normalizar paths
+// Helper: Normalizar paths
 const normalizePath = (path: string): string => {
-  // Remover "uploads/" duplicado si existe
-  let normalized = path.startsWith('uploads/') ? path : `uploads/${path}`;
-  
-  // Asegurar que no tenga dobles barras
-  normalized = normalized.replace(/([^:]\/)\/+/g, '$1');
-  
+  let normalized = path.startsWith("uploads/") ? path : `uploads/${path}`;
+  normalized = normalized.replace(/([^:]\/)\/+/g, "$1");
   return normalized;
 };
 
-// Helper para corregir imagePath (sin /images/)
+// Corregir imagePath
 const correctImagePath = (imagePath: string): string => {
   let path = normalizePath(imagePath);
-  
-  // Si la ruta es "uploads/2/archivo.png" pero debería ser "uploads/2/images/archivo.png"
-  if (path.startsWith('uploads/') && 
-      !path.includes('/images/') && 
-      !path.includes('/videos/') &&
-      path.split('/').length >= 3) {
-    
-    const parts = path.split('/');
+
+  if (
+    path.startsWith("uploads/") &&
+    !path.includes("/images/") &&
+    !path.includes("/videos/") &&
+    path.split("/").length >= 3
+  ) {
+    const parts = path.split("/");
     const userId = parts[1];
-    const filename = parts.slice(2).join('/');
-    
-    // Verificar si el archivo existe en la carpeta images/
+    const filename = parts.slice(2).join("/");
     path = `uploads/${userId}/images/${filename}`;
-    console.log("🛠️ ImagePath corregido:", path);
   }
-  
+
   return path;
+};
+
+// Generar URL final
+const getImageUrl = (image: any, useThumbnail: boolean = false): string => {
+  if (useThumbnail) {
+    if (image.thumbnailPath) return `http://localhost:3000/${normalizePath(image.thumbnailPath)}`;
+    if (image.mediumPath) return `http://localhost:3000/${normalizePath(image.mediumPath)}`;
+  }
+
+  if (!useThumbnail && image.mediumPath)
+    return `http://localhost:3000/${normalizePath(image.mediumPath)}`;
+
+  if (image.imagePath)
+    return `http://localhost:3000/${correctImagePath(image.imagePath)}`;
+
+  return `${API_CONFIG.UPLOADS_URL}/${image.userId}/images/${image.filename}`;
 };
 
 interface ImageGalleryProps {
   viewMode?: "grid" | "list";
 }
 
-// Interface para las carpetas
+// Carpetas
 interface Folder {
   id: number;
-  folderId?: number; // ✅ AÑADIDO para compatibilidad
+  folderId?: number;
   name: string;
   description?: string;
   color: string;
@@ -139,30 +97,15 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
 
-  // Cargar carpetas del usuario
+  // Cargar carpetas
   useEffect(() => {
     const fetchFolders = async () => {
       try {
         setFoldersLoading(true);
-        const response = await apiService.get('/folders');
-        
+        const response = await apiService.get("/folders");
+
         if (response.success && response.data) {
-          // Filtrar solo las carpetas del usuario (no del sistema)
-          const userFolders = response.data.filter((folder: Folder) => !folder.isSystem);
-          
-          // ✅ DEBUG DETALLADO
-          console.log("📂 TODAS las carpetas recibidas:", response.data);
-          console.log("📂 Carpetas de usuario filtradas:", userFolders);
-          console.log("📂 Estructura de la primera carpeta:", userFolders[0] ? {
-            id: userFolders[0].id,
-            folderId: userFolders[0].folderId,
-            name: userFolders[0].name,
-            keys: Object.keys(userFolders[0])
-          } : 'No hay carpetas');
-          
-          setFolders(userFolders);
-        } else {
-          console.error("❌ Respuesta de carpetas no exitosa:", response);
+          setFolders(response.data.filter((f: Folder) => !f.isSystem));
         }
       } catch (error) {
         console.error("Error cargando carpetas:", error);
@@ -174,119 +117,90 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     fetchFolders();
   }, []);
 
-  // ✅ FUNCIÓN CORREGIDA: Añadir imagen a carpeta con validación robusta
+  // Añadir a carpeta
   const addToFolder = async (imageId: number, folderId: number) => {
-    // ✅ VALIDACIÓN MÁS ROBUSTA
-    if (folderId === undefined || folderId === null || isNaN(folderId)) {
-      console.error("❌ Error: folderId inválido", {
-        imageId,
-        folderId,
-        type: typeof folderId
-      });
-      alert("Error: ID de carpeta inválido. Por favor, recarga la página e intenta nuevamente.");
+    if (!folderId) {
+      alert("Error: ID de carpeta inválido.");
       return;
     }
 
     try {
-      console.log(`➕ Añadiendo imagen ${imageId} a carpeta ${folderId} (${typeof folderId})`);
-      
       const response = await apiService.post(`/folders/${folderId}/images`, {
-        imageId: imageId
+        imageId,
       });
-      
+
       if (response.success) {
-        console.log("✅ Imagen añadida a la carpeta:", response.data);
-        alert("Imagen añadida a la carpeta correctamente");
+        alert("Imagen añadida correctamente.");
       } else {
-        throw new Error(response.error || 'Error al añadir imagen a la carpeta');
+        throw new Error(response.error);
       }
     } catch (error: any) {
-      console.error("❌ Error añadiendo imagen a carpeta:", {
-        error,
-        imageId,
-        folderId,
-        response: error.response?.data
-      });
       alert(error.response?.data?.error || "Error al añadir imagen a la carpeta");
     }
   };
 
-  // Toggle favorite con actualización optimista
+  // Favoritos con update optimista
   const toggleFavorite = async (id: number) => {
     try {
-      setOptimisticUpdates(prev => ({
+      setOptimisticUpdates((prev) => ({
         ...prev,
-        [id]: { isFavorite: !images.find(img => img.id === id)?.isFavorite }
+        [id]: { isFavorite: !images.find((img) => img.id === id)?.isFavorite },
       }));
 
       const response = await apiService.post(`/images/${id}/favorite`);
-      
-      if (response.success) {
-        setOptimisticUpdates(prev => {
-          const newUpdates = { ...prev };
-          delete newUpdates[id];
-          return newUpdates;
-        });
-        refetch();
-      } else {
-        setOptimisticUpdates(prev => {
-          const newUpdates = { ...prev };
-          delete newUpdates[id];
-          return newUpdates;
-        });
-      }
-    } catch (error) {
-      console.error("Error toggling favorite:", error);
-      setOptimisticUpdates(prev => {
-        const newUpdates = { ...prev };
-        delete newUpdates[id];
-        return newUpdates;
+
+      if (!response.success) throw new Error();
+
+      setOptimisticUpdates((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
+      });
+
+      refetch();
+    } catch {
+      setOptimisticUpdates((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
       });
     }
   };
 
-  // Delete con confirmación
+  // Eliminar imagen
   const deleteImage = async (id: number) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar esta imagen?")) {
-      return;
-    }
+    if (!confirm("¿Seguro que quieres eliminar esta imagen?")) return;
 
     try {
-      setOptimisticUpdates(prev => ({
+      setOptimisticUpdates((prev) => ({
         ...prev,
-        [id]: { deleted: true }
+        [id]: { deleted: true },
       }));
 
       const response = await apiService.delete(`/images/${id}`);
 
-      if (response.success) {
-        refetch();
-      } else {
-        setOptimisticUpdates(prev => {
-          const newUpdates = { ...prev };
-          delete newUpdates[id];
-          return newUpdates;
-        });
-      }
-    } catch (error) {
-      console.error("Error deleting image:", error);
-      setOptimisticUpdates(prev => {
-        const newUpdates = { ...prev };
-        delete newUpdates[id];
-        return newUpdates;
+      if (!response.success) throw new Error();
+
+      refetch();
+    } catch {
+      setOptimisticUpdates((prev) => {
+        const updated = { ...prev };
+        delete updated[id];
+        return updated;
       });
       refetch();
     }
   };
 
-  // Aplicar actualizaciones optimistas
+  // Aplicar optimistic updates
   const displayImages = images
-    .filter(img => !optimisticUpdates[img.id]?.deleted)
-    .map(img => ({
+    .filter((img) => !optimisticUpdates[img.id]?.deleted)
+    .map((img) => ({
       ...img,
-      isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite
+      isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite,
     }));
 
+  // Loading
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -298,6 +212,7 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     );
   }
 
+  // Error
   if (error) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -312,12 +227,13 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     );
   }
 
+  // Sin imágenes
   if (displayImages.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <p className="text-purple-600 mb-4">No tienes imágenes subidas aún</p>
-          <p className="text-sm text-gray-500">Sube tu primera imagen usando la pestaña "Subir"</p>
+          <p className="text-sm text-gray-500">Sube tu primera imagen desde la pestaña "Subir"</p>
         </div>
       </div>
     );
@@ -327,6 +243,7 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
       {displayImages.map((image) => {
         const isFavorite = image.isFavorite || false;
+
         return (
           <Card key={image.id} className="group hover:shadow-lg transition-shadow border overflow-hidden relative">
             <CardContent className="p-0 relative">
@@ -337,58 +254,60 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                   onError={(e) => {
-                    console.error("❌ Error cargando imagen:", {
-                      id: image.id,
-                      filename: image.filename,
-                      imagePath: image.imagePath,
-                      thumbnailPath: image.thumbnailPath,
-                      urlIntentada: e.currentTarget.src
-                    });
-                    
-                    // Intentar cargar la imagen original si el thumbnail falla
-                    if (e.currentTarget.src.includes("thumbnail") || e.currentTarget.src.includes("medium")) {
-                      console.log("🔄 Intentando cargar imagen original...");
+                    if (
+                      e.currentTarget.src.includes("thumbnail") ||
+                      e.currentTarget.src.includes("medium")
+                    ) {
                       e.currentTarget.src = getImageUrl(image, false);
                     } else {
-                      // Si también falla la original, mostrar placeholder
                       e.currentTarget.src =
                         "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23ddd' width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3EError%3C/text%3E%3C/svg%3E";
                     }
                   }}
                 />
 
+                {/* Hover overlay */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
 
+                {/* Acciones */}
                 <div
                   className="absolute top-1 right-1 md:top-2 md:right-2 z-20 flex gap-1 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                  onClick={(e) => e.stopPropagation()}>
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* FAVORITE */}
                   <Button
                     variant="secondary"
                     size="sm"
                     className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                    onClick={() => toggleFavorite(image.id)}>
+                    onClick={() => toggleFavorite(image.id)}
+                  >
                     <Heart
-                      className={`w-3 h-3 md:w-4 md:h-4 ${isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`}
+                      className={`w-3 h-3 md:w-4 md:h-4 ${
+                        isFavorite ? "text-red-500 fill-current" : "text-gray-600"
+                      }`}
                     />
                   </Button>
 
+                  {/* MENU */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="secondary"
                         size="sm"
                         className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                        onClick={(e) => e.stopPropagation()}>
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
+
                     <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
                         <Heart className={`w-4 h-4 mr-2 ${isFavorite ? "text-red-500 fill-current" : ""}`} />
                         {isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
                       </DropdownMenuItem>
-                      
-                      {/* Submenú para añadir a carpeta - CORREGIDO */}
+
+                      {/* Submenú Carpetas */}
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger className="flex items-center">
                           <FolderPlus className="w-4 h-4 mr-2" />
@@ -404,43 +323,21 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                                 </div>
                               </DropdownMenuItem>
                             ) : folders.length === 0 ? (
-                              <DropdownMenuItem disabled>
-                                No tienes carpetas
-                              </DropdownMenuItem>
+                              <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
                             ) : (
                               folders.map((folder) => {
-                                // ✅ OBTENER EL ID CORRECTO DE LA CARPETA
                                 const actualFolderId = folder.folderId || folder.id;
-                                
-                                console.log("📁 Renderizando carpeta en dropdown:", { 
-                                  id: folder.id, 
-                                  folderId: folder.folderId,
-                                  actualFolderId,
-                                  name: folder.name,
-                                  type: typeof actualFolderId 
-                                });
 
-                                // ✅ VALIDAR QUE EL ID SEA VÁLIDO
-                                if (!actualFolderId || isNaN(actualFolderId)) {
-                                  console.error("❌ Carpeta con ID inválido omitida:", folder);
-                                  return null;
-                                }
+                                if (!actualFolderId) return null;
 
                                 return (
                                   <DropdownMenuItem
                                     key={actualFolderId}
-                                    onClick={() => {
-                                      console.log("🖱️ Click en carpeta:", { 
-                                        folderId: actualFolderId, 
-                                        imageId: image.id,
-                                        folderName: folder.name 
-                                      });
-                                      addToFolder(image.id, actualFolderId);
-                                    }}
+                                    onClick={() => addToFolder(image.id, actualFolderId)}
                                     className="flex items-center justify-between"
                                   >
                                     <div className="flex items-center">
-                                      <div 
+                                      <div
                                         className="w-3 h-3 rounded mr-2"
                                         style={{ backgroundColor: folder.color }}
                                       />
@@ -453,25 +350,28 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                                     )}
                                   </DropdownMenuItem>
                                 );
-                              }).filter(Boolean) // ✅ FILTRAR ELEMENTOS NULOS
+                              })
                             )}
                           </DropdownMenuSubContent>
                         </DropdownMenuPortal>
                       </DropdownMenuSub>
 
-                      <DropdownMenuItem
-                        onClick={() => window.open(getImageUrl(image, false), "_blank")}>
+                      <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
                         <Download className="w-4 h-4 mr-2" />
                         Descargar
                       </DropdownMenuItem>
+
                       <DropdownMenuItem>
                         <Edit3 className="w-4 h-4 mr-2" />
                         Renombrar
                       </DropdownMenuItem>
+
                       <DropdownMenuSeparator />
+
                       <DropdownMenuItem
                         className="text-red-600 focus:text-red-600"
-                        onClick={() => deleteImage(image.id)}>
+                        onClick={() => deleteImage(image.id)}
+                      >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Mover a papelera
                       </DropdownMenuItem>
@@ -479,6 +379,7 @@ export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
                   </DropdownMenu>
                 </div>
 
+                {/* DIALOGO DE IMAGEN COMPLETA */}
                 <Dialog>
                   <DialogTrigger asChild>
                     <button

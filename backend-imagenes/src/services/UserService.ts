@@ -1,4 +1,4 @@
-// src/services/UserService.ts
+// src/services/UserService.ts - CORREGIDO CON LOGS
 import { Request, Response } from "express";
 import { pool } from "@src/config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -12,7 +12,6 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
   try {
     const { username, email, password } = req.body;
 
-    // Basic validations
     if (!username || !email || !password) {
       res.status(400).json({
         success: false,
@@ -29,7 +28,6 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check if user already exists
     const [existingUsers] = await pool.query<RowDataPacket[]>(
       `SELECT userId FROM users WHERE email = ? OR username = ?`,
       [email, username]
@@ -43,21 +41,19 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Insert user
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO users (username, email, password, isActive, emailVerified)
-       VALUES (?, ?, ?, TRUE, FALSE)`,
+      `INSERT INTO users (username, email, password, role, isActive, emailVerified)
+       VALUES (?, ?, ?, 'user', TRUE, FALSE)`,
       [username, email, passwordHash]
     );
 
-    // Generate tokens
     const payload = {
       userId: result.insertId,
       email,
-      username
+      username,
+      role: 'user'
     };
 
     const token = generateToken(payload);
@@ -71,15 +67,15 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
           userId: result.insertId,
           username,
           email,
+          role: 'user',
           storageUsed: 0,
-          storageLimit: 5368709120 // 5GB
+          storageLimit: 5368709120
         },
         token,
         refreshToken
       }
     });
   } catch (error) {
-    console.error("Error registering user:", error);
     res.status(500).json({
       success: false,
       error: "Error registering user",
@@ -101,9 +97,8 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find user
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT userId, username, email, password, isActive 
+      `SELECT userId, username, email, password, role, isActive 
        FROM users WHERE email = ?`,
       [email]
     );
@@ -118,7 +113,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     const user = users[0];
 
-    // Check if active
     if (!user.isActive) {
       res.status(403).json({
         success: false,
@@ -127,7 +121,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
@@ -138,17 +131,16 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Update last login
     await pool.query(
       `UPDATE users SET lastLogin = NOW() WHERE userId = ?`,
       [user.userId]
     );
 
-    // Generate tokens
     const payload = {
       userId: user.userId,
       email: user.email,
-      username: user.username
+      username: user.username,
+      role: user.role
     };
 
     const token = generateToken(payload);
@@ -161,14 +153,14 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         user: {
           userId: user.userId,
           username: user.username,
-          email: user.email
+          email: user.email,
+          role: user.role
         },
         token,
         refreshToken
       }
     });
   } catch (error) {
-    console.error("Error logging in:", error);
     res.status(500).json({
       success: false,
       error: "Error logging in",
@@ -177,14 +169,16 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-// ✅ Get authenticated user profile
-// ✅ Get authenticated user profile
+// ✅ Get authenticated user profile - CORREGIDO CON LOGS
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
 
+    // 🔍 LOG 1: Ver qué viene en req.user (del token JWT)
+    console.log("🔍 [getProfile] Usuario del token (req.user):", req.user);
+
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT userId, username, email, storageUsed, storageLimit, 
+      `SELECT userId, username, email, role, storageUsed, storageLimit, 
               isActive, emailVerified, lastLogin, createdAt 
        FROM users WHERE userId = ?`,
       [userId]
@@ -198,16 +192,21 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Get comprehensive statistics
+    const user = users[0];
+
+    // 🔍 LOG 2: Ver qué viene de la base de datos
+    console.log("🔍 [getProfile] Usuario de la BD:", {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      roleType: typeof user.role
+    });
+
     const [stats] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        -- Total images
         (SELECT COUNT(*) FROM images WHERE userId = ? AND deletedAt IS NULL) as totalImages,
-        
-        -- Total videos  
         (SELECT COUNT(*) FROM videos WHERE userId = ? AND deletedAt IS NULL) as totalVideos,
-        
-        -- Today's uploads (both images and videos)
         (
           (SELECT COUNT(*) FROM images WHERE userId = ? AND DATE(uploadDate) = CURDATE()) +
           (SELECT COUNT(*) FROM videos WHERE userId = ? AND DATE(uploadDate) = CURDATE())
@@ -216,34 +215,143 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       [userId, userId, userId, userId]
     );
 
+    const statistics = stats[0];
+
+    const responseData = {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      role: user.role, // ✅ Aseguramos que esté aquí
+      storageUsed: user.storageUsed,
+      storageLimit: user.storageLimit,
+      storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
+      isActive: user.isActive,
+      emailVerified: user.emailVerified,
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt,
+      stats: {
+        totalImages: statistics.totalImages || 0,
+        totalVideos: statistics.totalVideos || 0,
+        todayUploads: statistics.todayUploads || 0
+      }
+    };
+
+    // 🔍 LOG 3: Ver qué se va a enviar en la respuesta
+    console.log("🔍 [getProfile] Datos a enviar (responseData.role):", responseData.role);
+
+    res.json({
+      success: true,
+      data: responseData
+    });
+  } catch (error) {
+    console.error("❌ [getProfile] Error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error getting profile"
+    });
+  }
+};
+
+// ✅ Get all user data (complete information)
+export const getAllUserData = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+
+    // Get user basic info
+    const [users] = await pool.query<RowDataPacket[]>(
+      `SELECT userId, username, email, role, storageUsed, storageLimit, 
+              isActive, emailVerified, lastLogin, createdAt, updatedAt
+       FROM users WHERE userId = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+      return;
+    }
+
+    // Get all images
+    const [images] = await pool.query<RowDataPacket[]>(
+      `SELECT imageId, originalName, fileName, fileSize, mimeType, 
+              width, height, uploadDate, expiresAt, downloadCount, lastDownload
+       FROM images WHERE userId = ? AND deletedAt IS NULL
+       ORDER BY uploadDate DESC`,
+      [userId]
+    );
+
+    // Get all videos
+    const [videos] = await pool.query<RowDataPacket[]>(
+      `SELECT videoId, originalName, fileName, fileSize, mimeType,
+              duration, width, height, uploadDate, expiresAt, downloadCount, lastDownload
+       FROM videos WHERE userId = ? AND deletedAt IS NULL
+       ORDER BY uploadDate DESC`,
+      [userId]
+    );
+
+    // Get statistics
+    const [stats] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+        COUNT(DISTINCT i.imageId) as totalImages,
+        COUNT(DISTINCT v.videoId) as totalVideos,
+        COALESCE(SUM(i.fileSize), 0) + COALESCE(SUM(v.fileSize), 0) as totalStorageUsed,
+        COALESCE(SUM(i.downloadCount), 0) + COALESCE(SUM(v.downloadCount), 0) as totalDownloads,
+        (
+          SELECT COUNT(*) FROM images 
+          WHERE userId = ? AND DATE(uploadDate) = CURDATE()
+        ) as imagesUploadedToday,
+        (
+          SELECT COUNT(*) FROM videos 
+          WHERE userId = ? AND DATE(uploadDate) = CURDATE()
+        ) as videosUploadedToday
+       FROM images i
+       LEFT JOIN videos v ON v.userId = i.userId
+       WHERE i.userId = ? AND i.deletedAt IS NULL AND v.deletedAt IS NULL`,
+      [userId, userId, userId]
+    );
+
     const user = users[0];
     const statistics = stats[0];
 
     res.json({
       success: true,
       data: {
-        userId: user.userId,
-        username: user.username,
-        email: user.email,
-        storageUsed: user.storageUsed,
-        storageLimit: user.storageLimit,
-        storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
-        isActive: user.isActive,
-        emailVerified: user.emailVerified,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
-        stats: {
+        user: {
+          userId: user.userId,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          storageUsed: user.storageUsed,
+          storageLimit: user.storageLimit,
+          storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
+          isActive: user.isActive,
+          emailVerified: user.emailVerified,
+          lastLogin: user.lastLogin,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        },
+        statistics: {
           totalImages: statistics.totalImages || 0,
           totalVideos: statistics.totalVideos || 0,
-          todayUploads: statistics.todayUploads || 0
-        }
+          totalFiles: (statistics.totalImages || 0) + (statistics.totalVideos || 0),
+          totalStorageUsed: statistics.totalStorageUsed || 0,
+          totalDownloads: statistics.totalDownloads || 0,
+          uploadsToday: {
+            images: statistics.imagesUploadedToday || 0,
+            videos: statistics.videosUploadedToday || 0,
+            total: (statistics.imagesUploadedToday || 0) + (statistics.videosUploadedToday || 0)
+          }
+        },
+        images: images,
+        videos: videos
       }
     });
   } catch (error) {
-    console.error("Error getting profile:", error);
     res.status(500).json({
       success: false,
-      error: "Error getting profile"
+      error: "Error getting user data"
     });
   }
 };
@@ -262,7 +370,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if new email/username already exists
     if (email || username) {
       const [existing] = await pool.query<RowDataPacket[]>(
         `SELECT userId FROM users 
@@ -279,7 +386,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       }
     }
 
-    // Build dynamic query
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -305,7 +411,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       message: "Profile updated successfully"
     });
   } catch (error) {
-    console.error("Error updating profile:", error);
     res.status(500).json({
       success: false,
       error: "Error updating profile"
@@ -335,7 +440,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Get current password
     const [users] = await pool.query<RowDataPacket[]>(
       `SELECT password FROM users WHERE userId = ?`,
       [userId]
@@ -349,7 +453,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Verify current password
     const isValid = await bcrypt.compare(currentPassword, users[0].password);
 
     if (!isValid) {
@@ -360,10 +463,8 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Hash new password
     const newPasswordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
-    // Update
     await pool.query(
       `UPDATE users SET password = ? WHERE userId = ?`,
       [newPasswordHash, userId]
@@ -374,7 +475,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       message: "Password changed successfully"
     });
   } catch (error) {
-    console.error("Error changing password:", error);
     res.status(500).json({
       success: false,
       error: "Error changing password"
@@ -396,7 +496,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Verify password
     const [users] = await pool.query<RowDataPacket[]>(
       `SELECT password FROM users WHERE userId = ?`,
       [userId]
@@ -420,7 +519,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Delete user (cascade will delete images automatically)
     await pool.query(`DELETE FROM users WHERE userId = ?`, [userId]);
 
     res.json({
@@ -428,7 +526,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       message: "Account deleted successfully"
     });
   } catch (error) {
-    console.error("Error deleting account:", error);
     res.status(500).json({
       success: false,
       error: "Error deleting account"
@@ -440,6 +537,7 @@ export default {
   registerUser,
   loginUser,
   getProfile,
+  getAllUserData,
   updateProfile,
   changePassword,
   deleteAccount
