@@ -23,7 +23,7 @@ import videosRouter from './routes/VideosRoutes';
 import statsRouter from './routes/StatsRoutes';
 import trashRouter from './routes/TrashRoutes';
 import recentsRouter from './routes/RecentsRoutes';
-import foldersRouter from './routes/Folders';
+import foldersRouter from './routes/FoldersRoutes';
 import adminRouter from './routes/AdminRoutes';
 
 const app = express();

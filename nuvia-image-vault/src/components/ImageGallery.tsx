@@ -1,427 +1,834 @@
 import { useState, useEffect } from "react";
-import { MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw, FolderPlus } from "lucide-react";
+import {
+  MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw,
+  FolderPlus, X, Calendar, Eye, EyeOff, Grid3X3, List, Search, Filter, Upload,
+  ChevronLeft, ChevronRight
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuPortal,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuSub,
+  DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { useImages } from "@/hooks/useImages";
 import { apiService } from "@/services/api.services";
+import { useToast } from "@/hooks/use-toast";
 
-// Config API
-const API_CONFIG = {
-  UPLOADS_URL: "http://localhost:3000/uploads",
-};
+const API_BASE = "http://localhost:3000";
 
-// Helper: Tamaño
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 Bytes";
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+  return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
 };
 
-// Helper: Normalizar paths
-const normalizePath = (path: string): string => {
-  let normalized = path.startsWith("uploads/") ? path : `uploads/${path}`;
-  normalized = normalized.replace(/([^:]\/)\/+/g, "$1");
-  return normalized;
-};
+const normalizePath = (path: string): string => 
+  (path.startsWith("uploads/") ? path : `uploads/${path}`).replace(/([^:]\/)\/+/g, "$1");
 
-// Corregir imagePath
-const correctImagePath = (imagePath: string): string => {
-  let path = normalizePath(imagePath);
-
-  if (
-    path.startsWith("uploads/") &&
-    !path.includes("/images/") &&
-    !path.includes("/videos/") &&
-    path.split("/").length >= 3
-  ) {
-    const parts = path.split("/");
-    const userId = parts[1];
-    const filename = parts.slice(2).join("/");
-    path = `uploads/${userId}/images/${filename}`;
+const getImageUrl = (image: any, useThumbnail = false): string => {
+  const pathKey = useThumbnail 
+    ? (image.thumbnailPath || image.mediumPath) 
+    : (image.mediumPath || image.imagePath);
+  
+  if (pathKey) {
+    let path = normalizePath(pathKey);
+    if (!path.includes("/images/") && !path.includes("/videos/") && path.split("/").length >= 3) {
+      const [, userId, ...rest] = path.split("/");
+      path = `uploads/${userId}/images/${rest.join("/")}`;
+    }
+    return `${API_BASE}/${path}`;
   }
-
-  return path;
+  return `${API_BASE}/uploads/${image.userId}/images/${image.filename}`;
 };
 
-// Generar URL final
-const getImageUrl = (image: any, useThumbnail: boolean = false): string => {
-  if (useThumbnail) {
-    if (image.thumbnailPath) return `http://localhost:3000/${normalizePath(image.thumbnailPath)}`;
-    if (image.mediumPath) return `http://localhost:3000/${normalizePath(image.mediumPath)}`;
-  }
-
-  if (!useThumbnail && image.mediumPath)
-    return `http://localhost:3000/${normalizePath(image.mediumPath)}`;
-
-  if (image.imagePath)
-    return `http://localhost:3000/${correctImagePath(image.imagePath)}`;
-
-  return `${API_CONFIG.UPLOADS_URL}/${image.userId}/images/${image.filename}`;
-};
-
-interface ImageGalleryProps {
-  viewMode?: "grid" | "list";
-}
-
-// Carpetas
 interface Folder {
   id: number;
   folderId?: number;
   name: string;
-  description?: string;
   color: string;
   isSystem: boolean;
   itemCount: number;
-  createdAt: string;
 }
 
-export default function ImageGallery({ viewMode = "grid" }: ImageGalleryProps) {
+export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" | "list" }) {
+  const [currentViewMode, setCurrentViewMode] = useState<'grid' | 'list'>(viewMode);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(20); // 5 columnas × 4 filas = 20 imágenes por página
+  
   const { images, loading, error, refetch } = useImages();
-  const [selectedImage, setSelectedImage] = useState<any | null>(null);
+  const [selectedImage, setSelectedImage] = useState<any>(null);
   const [optimisticUpdates, setOptimisticUpdates] = useState<Record<number, any>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
+  const [renameModal, setRenameModal] = useState<{ open: boolean; image: any; name: string }>({
+    open: false, image: null, name: ""
+  });
+  const [isRenaming, setIsRenaming] = useState(false);
+  const { toast } = useToast();
 
-  // Cargar carpetas
   useEffect(() => {
-    const fetchFolders = async () => {
-      try {
-        setFoldersLoading(true);
-        const response = await apiService.get("/folders");
-
-        if (response.success && response.data) {
-          setFolders(response.data.filter((f: Folder) => !f.isSystem));
-        }
-      } catch (error) {
-        console.error("Error cargando carpetas:", error);
-      } finally {
-        setFoldersLoading(false);
-      }
-    };
-
-    fetchFolders();
+    apiService.get("/folders").then(res => {
+      if (res.success) setFolders(res.data.filter((f: Folder) => !f.isSystem));
+    }).finally(() => setFoldersLoading(false));
   }, []);
 
-  // Añadir a carpeta
+  const showToast = (success: boolean, message: string) => {
+    toast({
+      title: success ? "✅ Éxito" : "❌ Error",
+      description: message,
+      ...(success ? { className: "bg-green-50 border-green-200 text-green-800" } : { variant: "destructive" })
+    });
+  };
+
   const addToFolder = async (imageId: number, folderId: number) => {
-    if (!folderId) {
-      alert("Error: ID de carpeta inválido.");
-      return;
-    }
-
+    if (!folderId || isNaN(folderId)) return showToast(false, "ID de carpeta inválido");
     try {
-      const response = await apiService.post(`/folders/${folderId}/images`, {
-        imageId,
-      });
-
-      if (response.success) {
-        alert("Imagen añadida correctamente.");
-      } else {
-        throw new Error(response.error);
-      }
-    } catch (error: any) {
-      alert(error.response?.data?.error || "Error al añadir imagen a la carpeta");
+      const res = await apiService.post(`/folders/${folderId}/images`, { imageId });
+      showToast(res.success, res.success ? "Imagen añadida a la carpeta" : res.error);
+    } catch (e: any) {
+      showToast(false, e.response?.data?.error || "Error al añadir imagen");
     }
   };
 
-  // Favoritos con update optimista
+  const renameImage = async () => {
+    if (!renameModal.name.trim()) return showToast(false, "El nombre no puede estar vacío");
+    setIsRenaming(true);
+    try {
+      const res = await apiService.patch(`/images/${renameModal.image.id}/title`, { title: renameModal.name.trim() });
+      if (res.success) {
+        showToast(true, "Imagen renombrada");
+        setRenameModal({ open: false, image: null, name: "" });
+        refetch();
+      } else throw new Error(res.error);
+    } catch (e: any) {
+      showToast(false, e.response?.data?.error || "Error al renombrar");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
   const toggleFavorite = async (id: number) => {
+    const current = images.find(img => img.id === id)?.isFavorite;
+    setOptimisticUpdates(p => ({ ...p, [id]: { isFavorite: !current } }));
     try {
-      setOptimisticUpdates((prev) => ({
-        ...prev,
-        [id]: { isFavorite: !images.find((img) => img.id === id)?.isFavorite },
-      }));
-
-      const response = await apiService.post(`/images/${id}/favorite`);
-
-      if (!response.success) throw new Error();
-
-      setOptimisticUpdates((prev) => {
-        const updated = { ...prev };
-        delete updated[id];
-        return updated;
-      });
-
+      await apiService.post(`/images/${id}/favorite`);
       refetch();
-    } catch {
-      setOptimisticUpdates((prev) => {
-        const updated = { ...prev };
-        delete updated[id];
-        return updated;
-      });
+    } finally {
+      setOptimisticUpdates(p => { const n = { ...p }; delete n[id]; return n; });
     }
   };
 
-  // Eliminar imagen
   const deleteImage = async (id: number) => {
-    if (!confirm("¿Seguro que quieres eliminar esta imagen?")) return;
-
+    if (!confirm("¿Eliminar esta imagen?")) return;
+    setOptimisticUpdates(p => ({ ...p, [id]: { deleted: true } }));
+    setSelectedImage(null);
     try {
-      setOptimisticUpdates((prev) => ({
-        ...prev,
-        [id]: { deleted: true },
-      }));
-
-      const response = await apiService.delete(`/images/${id}`);
-
-      if (!response.success) throw new Error();
-
+      await apiService.delete(`/images/${id}`);
       refetch();
     } catch {
-      setOptimisticUpdates((prev) => {
-        const updated = { ...prev };
-        delete updated[id];
-        return updated;
-      });
-      refetch();
+      setOptimisticUpdates(p => { const n = { ...p }; delete n[id]; return n; });
     }
   };
 
-  // Aplicar optimistic updates
   const displayImages = images
-    .filter((img) => !optimisticUpdates[img.id]?.deleted)
-    .map((img) => ({
-      ...img,
-      isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite,
-    }));
+    .filter(img => !optimisticUpdates[img.id]?.deleted)
+    .map(img => ({ ...img, isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite }));
 
-  // Loading
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-purple-600">Cargando imágenes...</p>
-        </div>
-      </div>
-    );
-  }
+  // Filtrar imágenes según búsqueda y favoritos
+  const filteredImages = displayImages.filter(image => {
+    const matchesSearch = image.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         image.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFavorites = !favoritesOnly || image.isFavorite;
+    return matchesSearch && matchesFavorites;
+  });
 
-  // Error
+  // Paginación
+  const totalPages = Math.ceil(filteredImages.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedImages = filteredImages.slice(startIndex, startIndex + itemsPerPage);
+
+  // Resetear página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, favoritesOnly, currentViewMode]);
+
   if (error) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <p className="text-red-500 mb-4">{error}</p>
-          <Button onClick={refetch} variant="outline">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Reintentar
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Sin imágenes
-  if (displayImages.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <p className="text-purple-600 mb-4">No tienes imágenes subidas aún</p>
-          <p className="text-sm text-gray-500">Sube tu primera imagen desde la pestaña "Subir"</p>
-        </div>
+      <div className="text-center py-8">
+        <p className="text-red-500 mb-4">{error}</p>
+        <Button onClick={refetch} variant="outline">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Reintentar
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
-      {displayImages.map((image) => {
-        const isFavorite = image.isFavorite || false;
+    <>
+      <div className="space-y-6">
+        {/* Header con controles */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-nuvia-deep/40 w-4 h-4" />
+              <Input
+                placeholder="Buscar imágenes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-white/50 border-nuvia-silver/30"
+              />
+            </div>
+            
+            <Button
+              variant={favoritesOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFavoritesOnly(!favoritesOnly)}
+              className={`whitespace-nowrap border-nuvia-silver/30 ${
+                favoritesOnly 
+                  ? 'bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white' 
+                  : 'text-white'
+              }`}
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              Favoritos
+            </Button>
+          </div>
 
-        return (
-          <Card key={image.id} className="group hover:shadow-lg transition-shadow border overflow-hidden relative">
-            <CardContent className="p-0 relative">
-              <div className="aspect-square bg-gray-100 relative overflow-hidden">
-                <img
-                  src={getImageUrl(image, true)}
-                  alt={image.originalFilename}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                  onError={(e) => {
-                    if (
-                      e.currentTarget.src.includes("thumbnail") ||
-                      e.currentTarget.src.includes("medium")
-                    ) {
-                      e.currentTarget.src = getImageUrl(image, false);
-                    } else {
-                      e.currentTarget.src =
-                        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23ddd' width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3EError%3C/text%3E%3C/svg%3E";
-                    }
-                  }}
-                />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={refetch}
+              disabled={loading}
+              className="border-nuvia-silver/30 text-white"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
 
-                {/* Hover overlay */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
+            <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden">
+              <Button
+                variant={currentViewMode === 'grid' ? 'default' : 'ghost'}
+                size="icon"
+                className="w-9 h-9 rounded-none"
+                onClick={() => setCurrentViewMode('grid')}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={currentViewMode === 'list' ? 'default' : 'ghost'}
+                size="icon"
+                className="w-9 h-9 rounded-none"
+                onClick={() => setCurrentViewMode('list')}
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
 
-                {/* Acciones */}
-                <div
-                  className="absolute top-1 right-1 md:top-2 md:right-2 z-20 flex gap-1 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* FAVORITE */}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                    onClick={() => toggleFavorite(image.id)}
-                  >
-                    <Heart
-                      className={`w-3 h-3 md:w-4 md:h-4 ${
-                        isFavorite ? "text-red-500 fill-current" : "text-gray-600"
-                      }`}
-                    />
-                  </Button>
-
-                  {/* MENU */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="h-7 w-7 md:h-8 md:w-8 p-0 bg-white/90 hover:bg-white"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
-                        <Heart className={`w-4 h-4 mr-2 ${isFavorite ? "text-red-500 fill-current" : ""}`} />
-                        {isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-                      </DropdownMenuItem>
-
-                      {/* Submenú Carpetas */}
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger className="flex items-center">
-                          <FolderPlus className="w-4 h-4 mr-2" />
-                          Añadir a carpeta
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuPortal>
-                          <DropdownMenuSubContent className="w-48">
-                            {foldersLoading ? (
-                              <DropdownMenuItem disabled>
-                                <div className="flex items-center">
-                                  <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                                  Cargando carpetas...
+        {/* Grid de Imágenes */}
+        {loading && filteredImages.length === 0 ? (
+          <div className={
+            currentViewMode === 'grid' 
+              ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
+              : "space-y-4"
+          }>
+            {Array.from({ length: 20 }).map((_, i) => (
+              currentViewMode === 'list' ? (
+                <div key={i} className="animate-pulse flex items-center gap-4 p-4">
+                  <div className="w-20 h-20 bg-nuvia-silver/30 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-nuvia-silver/30 rounded w-3/4" />
+                    <div className="h-3 bg-nuvia-silver/30 rounded w-1/2" />
+                    <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+                  </div>
+                </div>
+              ) : (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-square bg-nuvia-silver/30 rounded-xl mb-3" />
+                  <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
+                  <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+                </div>
+              )
+            ))}
+          </div>
+        ) : filteredImages.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 bg-nuvia-peach/20 rounded-full flex items-center justify-center">
+              <Upload className="w-8 h-8 text-nuvia-mauve" />
+            </div>
+            <h3 className="text-lg font-semibold text-nuvia-deep mb-2">
+              No hay imágenes
+            </h3>
+            <p className="text-nuvia-deep/60 mb-4">
+              Comienza subiendo tu primera imagen
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className={
+              currentViewMode === 'grid' 
+                ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
+                : "space-y-4"
+            }>
+              {paginatedImages.map(image => {
+                const displayName = image.title || image.originalFilename;
+                
+                if (currentViewMode === 'list') {
+                  // Vista de lista
+                  return (
+                    <Card key={image.id} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
+                      <CardContent className="p-3 sm:p-4">
+                        <div className="flex items-center gap-3 sm:gap-4">
+                          {/* Imagen pequeña a la izquierda */}
+                          <div 
+                            className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-lg relative overflow-hidden cursor-pointer"
+                            onClick={() => setSelectedImage(image)}
+                          >
+                            <img
+                              src={getImageUrl(image, true)}
+                              alt={displayName}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                const src = e.currentTarget.src;
+                                if (src.includes("thumbnail") || src.includes("medium")) {
+                                  e.currentTarget.src = getImageUrl(image, false);
+                                } else {
+                                  e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23ddd' width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3EError%3C/text%3E%3C/svg%3E";
+                                }
+                              }}
+                            />
+                            {image.isFavorite && (
+                              <div className="absolute top-1 left-1 z-10 pointer-events-none">
+                                <div className="bg-red-500 rounded-md px-1 py-0.5 shadow-sm">
+                                  <Heart className="w-2 h-2 text-white fill-current" />
                                 </div>
-                              </DropdownMenuItem>
-                            ) : folders.length === 0 ? (
-                              <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
-                            ) : (
-                              folders.map((folder) => {
-                                const actualFolderId = folder.folderId || folder.id;
-
-                                if (!actualFolderId) return null;
-
-                                return (
-                                  <DropdownMenuItem
-                                    key={actualFolderId}
-                                    onClick={() => addToFolder(image.id, actualFolderId)}
-                                    className="flex items-center justify-between"
-                                  >
-                                    <div className="flex items-center">
-                                      <div
-                                        className="w-3 h-3 rounded mr-2"
-                                        style={{ backgroundColor: folder.color }}
-                                      />
-                                      <span className="truncate">{folder.name}</span>
-                                    </div>
-                                    {folder.itemCount > 0 && (
-                                      <Badge variant="secondary" className="text-xs ml-2">
-                                        {folder.itemCount}
-                                      </Badge>
-                                    )}
-                                  </DropdownMenuItem>
-                                );
-                              })
+                              </div>
                             )}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuPortal>
-                      </DropdownMenuSub>
+                          </div>
 
-                      <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Descargar
-                      </DropdownMenuItem>
+                          {/* Información de la imagen */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-2 gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-sm font-semibold text-nuvia-deep truncate mb-1">
+                                  {displayName}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-nuvia-deep/60">
+                                  <span>{formatFileSize(image.fileSize)}</span>
+                                  {image.width && image.height && (
+                                    <span>{image.width}×{image.height}</span>
+                                  )}
+                                  <span className="capitalize">{image.mimeType?.split("/")[1]}</span>
+                                </div>
+                              </div>
+                              
+                              {/* Botones de acción en vista lista */}
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  variant="secondary" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleFavorite(image.id);
+                                  }}
+                                >
+                                  <Heart className={`w-3 h-3 ${image.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
+                                </Button>
+                                
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button 
+                                      variant="secondary" 
+                                      size="sm" 
+                                      className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                    >
+                                      <MoreHorizontal className="w-3 h-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48 z-[9999]">
+                                    <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
+                                      <Heart className={`w-4 h-4 mr-2 ${image.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                                      {image.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <FolderPlus className="w-4 h-4 mr-2" />
+                                        Añadir a carpeta
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuPortal>
+                                        <DropdownMenuSubContent className="w-48">
+                                          {foldersLoading ? (
+                                            <DropdownMenuItem disabled>Cargando...</DropdownMenuItem>
+                                          ) : folders.length === 0 ? (
+                                            <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
+                                          ) : (
+                                            folders.map(folder => {
+                                              const fid = folder.folderId || folder.id;
+                                              if (!fid || isNaN(fid)) return null;
+                                              return (
+                                                <DropdownMenuItem 
+                                                  key={fid} 
+                                                  onClick={() => addToFolder(image.id, fid)}
+                                                >
+                                                  <div className="w-3 h-3 rounded mr-2" style={{ backgroundColor: folder.color }} />
+                                                  <span className="truncate flex-1">{folder.name}</span>
+                                                  {folder.itemCount > 0 && (
+                                                    <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
+                                                  )}
+                                                </DropdownMenuItem>
+                                              );
+                                            })
+                                          )}
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
+                                    </DropdownMenuSub>
+                                    
+                                    <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
+                                      <Download className="w-4 h-4 mr-2" />
+                                      Descargar
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuItem onClick={() => setRenameModal({ open: true, image, name: displayName })}>
+                                      <Edit3 className="w-4 h-4 mr-2" />
+                                      Renombrar
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuSeparator />
+                                    
+                                    <DropdownMenuItem className="text-red-600" onClick={() => deleteImage(image.id)}>
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Mover a papelera
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </div>
+                            
+                            {/* Información adicional - Solo en desktop */}
+                            <div className="hidden sm:flex items-center gap-4 text-xs text-nuvia-deep/60">
+                              <span>Subido: {new Date(image.createdAt).toLocaleDateString("es-ES")}</span>
+                              {image.isPublic ? (
+                                <span className="flex items-center gap-1">
+                                  <Eye className="w-3 h-3 text-green-500" />
+                                  Pública
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  <EyeOff className="w-3 h-3 text-nuvia-deep/40" />
+                                  Privada
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
 
-                      <DropdownMenuItem>
-                        <Edit3 className="w-4 h-4 mr-2" />
-                        Renombrar
-                      </DropdownMenuItem>
-
-                      <DropdownMenuSeparator />
-
-                      <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600"
-                        onClick={() => deleteImage(image.id)}
+                // Vista de grid (5 columnas)
+                return (
+                  <Card key={image.id} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
+                    <CardContent className="p-0 relative">
+                      {/* Imagen clickeable */}
+                      <div 
+                        className="aspect-square bg-gray-50 relative overflow-hidden cursor-pointer" 
+                        onClick={() => setSelectedImage(image)}
                       >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Mover a papelera
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                {/* DIALOGO DE IMAGEN COMPLETA */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <button
-                      className="absolute inset-0 w-full h-full pointer-events-auto"
-                      onClick={() => setSelectedImage(image)}
-                    />
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[90vh] p-2 md:p-6">
-                    <div className="relative">
-                      <img
-                        src={getImageUrl(image, false)}
-                        alt={image.originalFilename}
-                        className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
-                      />
-                      <div className="mt-4 text-sm text-gray-600">
-                        <p>
-                          <strong>Nombre:</strong> {image.originalFilename}
-                        </p>
-                        <p>
-                          <strong>Tamaño:</strong> {formatFileSize(image.fileSize)}
-                        </p>
-                        <p>
-                          <strong>Tipo:</strong> {image.mimeType}
-                        </p>
+                        <img
+                          src={getImageUrl(image, true)}
+                          alt={displayName}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                          onError={(e) => {
+                            const src = e.currentTarget.src;
+                            if (src.includes("thumbnail") || src.includes("medium")) {
+                              e.currentTarget.src = getImageUrl(image, false);
+                            } else {
+                              e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23ddd' width='200' height='200'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3EError%3C/text%3E%3C/svg%3E";
+                            }
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                        
+                        {/* Badge favorito */}
+                        {image.isFavorite && (
+                          <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                            <div className="bg-red-500 rounded-md px-1.5 py-1 shadow-sm">
+                              <Heart className="w-3 h-3 text-white fill-current" />
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Botones de acción */}
+                        <div 
+                          className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(image.id);
+                            }}
+                          >
+                            <Heart className={`w-3 h-3 ${image.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
+                          </Button>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                variant="secondary" 
+                                size="sm" 
+                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreHorizontal className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
+                                <Heart className={`w-4 h-4 mr-2 ${image.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                                {image.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <FolderPlus className="w-4 h-4 mr-2" />
+                                  Añadir a carpeta
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                  <DropdownMenuSubContent className="w-48">
+                                    {foldersLoading ? (
+                                      <DropdownMenuItem disabled>Cargando...</DropdownMenuItem>
+                                    ) : folders.length === 0 ? (
+                                      <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
+                                    ) : (
+                                      folders.map(folder => {
+                                        const fid = folder.folderId || folder.id;
+                                        if (!fid || isNaN(fid)) return null;
+                                        return (
+                                          <DropdownMenuItem 
+                                            key={fid} 
+                                            onClick={() => addToFolder(image.id, fid)}
+                                          >
+                                            <div className="w-3 h-3 rounded mr-2" style={{ backgroundColor: folder.color }} />
+                                            <span className="truncate flex-1">{folder.name}</span>
+                                            {folder.itemCount > 0 && (
+                                              <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
+                                            )}
+                                          </DropdownMenuItem>
+                                        );
+                                      })
+                                    )}
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                              </DropdownMenuSub>
+                              
+                              <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Descargar
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuItem onClick={() => setRenameModal({ open: true, image, name: displayName })}>
+                                <Edit3 className="w-4 h-4 mr-2" />
+                                Renombrar
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuSeparator />
+                              
+                              <DropdownMenuItem className="text-red-600" onClick={() => deleteImage(image.id)}>
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Mover a papelera
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
+                      
+                      {/* Info de la imagen */}
+                      <div className="p-3 bg-white border-t border-nuvia-silver/30">
+                        <p className="text-sm font-medium truncate text-nuvia-deep mb-1">{displayName}</p>
+                        <div className="flex justify-between items-center text-xs text-nuvia-deep/60">
+                          <span>{formatFileSize(image.fileSize)}</span>
+                          {image.width && image.height && (
+                            <span>{image.width}×{image.height}</span>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
 
-              {isFavorite && (
-                <div className="absolute top-1 left-1 md:top-2 md:left-2">
-                  <Badge variant="destructive" className="text-xs px-1.5 py-0.5">
-                    <Heart className="w-2.5 h-2.5 md:w-3 md:h-3 mr-1 fill-current" />
-                    <span className="hidden sm:inline">Favorito</span>
-                  </Badge>
+            {/* Paginación - Solo mostrar si hay más de una página */}
+            {totalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-nuvia-silver/30 gap-4">
+                <div className="text-sm text-nuvia-deep/60 text-center sm:text-left">
+                  Mostrando {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredImages.length)} de {filteredImages.length} imágenes
                 </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="border-nuvia-silver/30"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`w-8 h-8 ${
+                            currentPage === pageNum 
+                              ? '' 
+                              : 'border-nuvia-silver/30'
+                          }`}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="border-nuvia-silver/30"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Modal Vista Previa */}
+      <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+        <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-y-auto">
+          {selectedImage && (
+            <div className="flex flex-col md:flex-row min-h-full">
+              {/* Imagen */}
+              <div className="flex-1 flex items-center justify-center p-4 min-h-[40vh] md:min-h-[60vh]">
+                <img
+                  src={getImageUrl(selectedImage, false)}
+                  alt={selectedImage.title || selectedImage.originalFilename}
+                  className="max-w-full max-h-[50vh] md:max-h-[80vh] object-contain rounded-xl"
+                  onError={(e) => { e.currentTarget.src = getImageUrl(selectedImage, true); }}
+                />
+              </div>
+              
+              {/* Panel info */}
+              <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
+                {/* Header con botón cerrar */}
+                <div className="p-4 border-b border-nuvia-silver/30 flex items-start justify-between sticky top-0 bg-white/95 z-10">
+                  <div className="flex-1 min-w-0 pr-2">
+                    <h3 className="text-lg font-semibold text-nuvia-deep break-words">
+                      {selectedImage.title || selectedImage.originalFilename}
+                    </h3>
+                    {selectedImage.title && selectedImage.title !== selectedImage.originalFilename && (
+                      <p className="text-sm text-nuvia-deep/60 mt-1 break-words">Original: {selectedImage.originalFilename}</p>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setSelectedImage(null)} 
+                    className="flex-shrink-0"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+                
+                {/* Contenido scrolleable */}
+                <div className="p-4 space-y-4">
+                  {/* Archivo */}
+                  <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
+                    <h4 className="font-semibold text-nuvia-deep">Archivo</h4>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Tamaño</span>
+                      <span>{formatFileSize(selectedImage.fileSize)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Tipo</span>
+                      <span className="capitalize">{selectedImage.mimeType?.split("/")[1]}</span>
+                    </div>
+                    {selectedImage.width && selectedImage.height && (
+                      <div className="flex justify-between">
+                        <span className="text-nuvia-deep/60">Dimensiones</span>
+                        <span>{selectedImage.width} × {selectedImage.height} px</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Metadatos */}
+                  <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
+                    <h4 className="font-semibold text-nuvia-deep flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Metadatos
+                    </h4>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Subida</span>
+                      <span>{new Date(selectedImage.createdAt).toLocaleDateString("es-ES")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Estado</span>
+                      <span className="flex items-center gap-1">
+                        {selectedImage.isFavorite ? (
+                          <>
+                            <Heart className="w-3 h-3 text-red-500 fill-current" />
+                            Favorita
+                          </>
+                        ) : (
+                          "Normal"
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Visibilidad</span>
+                      <span className="flex items-center gap-1">
+                        {selectedImage.isPublic ? (
+                          <>
+                            <Eye className="w-3 h-3 text-green-500" />
+                            Pública
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3 h-3 text-nuvia-deep/40" />
+                            Privada
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Acciones */}
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-nuvia-deep">Acciones</h4>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full justify-start border-nuvia-silver/30" 
+                      onClick={() => window.open(getImageUrl(selectedImage, false), "_blank")}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Descargar
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full justify-start border-nuvia-silver/30" 
+                      onClick={() => { 
+                        setSelectedImage(null); 
+                        setRenameModal({ open: true, image: selectedImage, name: selectedImage.title || selectedImage.originalFilename }); 
+                      }}
+                    >
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Renombrar
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30" 
+                      onClick={() => deleteImage(selectedImage.id)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Mover a papelera
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Renombrar */}
+      <Dialog open={renameModal.open} onOpenChange={(open) => !open && setRenameModal({ open: false, image: null, name: "" })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-nuvia-mauve" />
+              Renombrar imagen
+            </DialogTitle>
+            <DialogDescription>Cambia el nombre de tu imagen.</DialogDescription>
+          </DialogHeader>
+          {renameModal.image && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-nuvia-silver/10 rounded-lg border border-nuvia-silver/30">
+                <img src={getImageUrl(renameModal.image, true)} alt="" className="w-12 h-12 object-cover rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">{renameModal.image.title || renameModal.image.originalFilename}</p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(renameModal.image.fileSize)}</p>
+                </div>
+              </div>
+              <Input
+                value={renameModal.name}
+                onChange={(e) => setRenameModal(p => ({ ...p, name: e.target.value }))}
+                placeholder="Nuevo nombre..."
+                autoFocus
+                className="border-nuvia-silver/30"
+                onKeyDown={(e) => e.key === "Enter" && renameImage()}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameModal({ open: false, image: null, name: "" })} disabled={isRenaming} className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button onClick={renameImage} disabled={!renameModal.name.trim() || isRenaming} className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white">
+              {isRenaming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Renombrando...
+                </>
+              ) : (
+                "Renombrar"
               )}
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
