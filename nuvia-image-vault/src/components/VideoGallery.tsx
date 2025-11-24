@@ -127,16 +127,32 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     }
   };
 
-  const handleDelete = async (videoId: number) => {
-    if (confirm('¿Estás seguro de que quieres eliminar este video?')) {
-      try {
-        await videoApi.deleteVideo(videoId);
-        refetch();
-      } catch (err) {
-        console.error('Error deleting video:', err);
-      }
+const handleSoftDelete = async (videoId: number) => {
+  if (!confirm('¿Seguro que quieres mover este video a la papelera?')) return;
+
+  try {
+    const res = await fetch(`/api/videos/${videoId}/soft-delete`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        // Si usas token:
+        // 'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Error al mover el video a la papelera');
     }
-  };
+
+    alert(data.message);
+    refetch(); // actualiza la lista de videos
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo mover el video a la papelera');
+  }
+};
 
   // Función para construir URLs - CORREGIDA
   const buildUploadsUrl = (path?: string | null) => {
@@ -541,254 +557,20 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
           </p>
         </div>
       ) : (
-        <>
-          <div className={
-            currentViewMode === 'grid' 
-              ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
-              : "space-y-4"
-          }>
-            {paginatedVideos.map(video => {
-              const displayName = video.title || video.originalFilename;
-              const thumbnailUrl = getThumbnailUrl(video);
-              
-              if (currentViewMode === 'list') {
-                // VISTA DE LISTA - CORREGIDA
-                return (
-                  <Card key={video.videoId} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
-                    <CardContent className="p-3 sm:p-4">
-                      <div className="flex items-center gap-3 sm:gap-4">
-                        {/* Thumbnail pequeña a la izquierda - CORREGIDA */}
-                        <div 
-                          className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-lg relative overflow-hidden cursor-pointer"
-                          onClick={() => setSelectedVideo(video)}
-                        >
-                          <img
-                            src={thumbnailUrl}
-                            alt={displayName}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <Play className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          
-                          {/* Duración */}
-                          {video.duration && (
-                            <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded">
-                              {formatDuration(video.duration)}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Información del video */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-2 gap-2">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-sm font-semibold text-nuvia-deep truncate mb-1">
-                                {displayName}
-                              </h3>
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-nuvia-deep/60">
-                                <span>{formatFileSize(video.fileSize)}</span>
-                                <span>{formatDuration(video.duration)}</span>
-                                {video.width && video.height && (
-                                  <span>{video.width}×{video.height}</span>
-                                )}
-                                <span className="capitalize">{video.mimeType?.split("/")[1] || 'MP4'}</span>
-                              </div>
-                            </div>
-                            
-                            {/* Botones de acción en vista lista */}
-                            <div className="flex items-center gap-1">
-                              <Button 
-                                variant="secondary" 
-                                size="sm" 
-                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                                onClick={() => handleFavoriteToggle(video.videoId)}
-                              >
-                                <Heart className={`w-3 h-3 ${video.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
-                              </Button>
-                              
-                              <Button 
-                                variant="secondary" 
-                                size="sm" 
-                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                                onClick={() => window.open(getVideoUrl(video), "_blank")}
-                              >
-                                <Download className="w-3 h-3" />
-                              </Button>
-
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button 
-                                    variant="secondary" 
-                                    size="sm" 
-                                    className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                                  >
-                                    <MoreVertical className="w-3 h-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-48">
-                                  <DropdownMenuItem onClick={() => handleFavoriteToggle(video.videoId)}>
-                                    <Heart className={`w-4 h-4 mr-2 ${video.isFavorite ? "text-red-500 fill-current" : ""}`} />
-                                    {video.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-                                  </DropdownMenuItem>
-                                  
-                                  <DropdownMenuSub>
-                                    <DropdownMenuSubTrigger>
-                                      <FolderPlus className="w-4 h-4 mr-2" />
-                                      Añadir a carpeta
-                                    </DropdownMenuSubTrigger>
-                                    <DropdownMenuPortal>
-                                      <DropdownMenuSubContent className="w-48">
-                                        {foldersLoading ? (
-                                          <DropdownMenuItem disabled>
-                                            <div className="flex items-center">
-                                              <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                                              Cargando carpetas...
-                                            </div>
-                                          </DropdownMenuItem>
-                                        ) : folders.length === 0 ? (
-                                          <DropdownMenuItem disabled>
-                                            No tienes carpetas
-                                          </DropdownMenuItem>
-                                        ) : (
-                                          folders.map((folder) => {
-                                            const actualFolderId = folder.folderId || folder.id;
-                                            if (!actualFolderId || isNaN(actualFolderId)) return null;
-
-                                            return (
-                                              <DropdownMenuItem
-                                                key={actualFolderId}
-                                                onClick={() => addToFolder(video.videoId, actualFolderId)}
-                                                className="flex items-center justify-between"
-                                              >
-                                                <div className="flex items-center">
-                                                  <div 
-                                                    className="w-3 h-3 rounded mr-2"
-                                                    style={{ backgroundColor: folder.color }}
-                                                  />
-                                                  <span className="truncate">{folder.name}</span>
-                                                </div>
-                                                {folder.itemCount > 0 && (
-                                                  <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
-                                                )}
-                                              </DropdownMenuItem>
-                                            );
-                                          }).filter(Boolean)
-                                        )}
-                                      </DropdownMenuSubContent>
-                                    </DropdownMenuPortal>
-                                  </DropdownMenuSub>
-                                  
-                                  <DropdownMenuItem onClick={() => window.open(getVideoUrl(video), "_blank")}>
-                                    <Download className="w-4 h-4 mr-2" />
-                                    Descargar
-                                  </DropdownMenuItem>
-                                  
-                                  <DropdownMenuSeparator />
-                                  
-                                  <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(video.videoId)}>
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Mover a papelera
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                          
-                          {/* Información adicional - Solo en desktop */}
-                          <div className="hidden sm:flex items-center gap-4 text-xs text-nuvia-deep/60">
-                            <span>Subido: {new Date(video.createdAt).toLocaleDateString("es-ES")}</span>
-                            {video.isPublic ? (
-                              <span className="flex items-center gap-1">
-                                <Eye className="w-3 h-3 text-green-500" />
-                                Público
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                <EyeOff className="w-3 h-3 text-nuvia-deep/40" />
-                                Privado
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              }
-
-              // VISTA DE GRID (usando el VideoCard unificado)
-              return (
-                <VideoCard
-                  key={video.videoId}
-                  video={video}
-                />
-              );
-            })}
-          </div>
-
-          {/* Paginación - Solo mostrar si hay más de una página */}
-          {totalPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-nuvia-silver/30 gap-4">
-              <div className="text-sm text-nuvia-deep/60 text-center sm:text-left">
-                Mostrando {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredVideos.length)} de {filteredVideos.length} videos
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="border-nuvia-silver/30"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`w-8 h-8 ${
-                          currentPage === pageNum 
-                            ? '' 
-                            : 'border-nuvia-silver/30'
-                        }`}
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="border-nuvia-silver/30"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
+        <div className={
+          currentViewMode === 'grid' 
+            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+            : "space-y-4"
+        }>
+          {videos.map((video) => (
+            <VideoCard
+              key={video.videoId}
+              video={video}
+              onFavoriteToggle={handleFavoriteToggle}
+              onDelete={handleSoftDelete}
+            />
+          ))}
+        </div>
       )}
 
       {/* Modal Vista Previa - UNIFICADO */}
