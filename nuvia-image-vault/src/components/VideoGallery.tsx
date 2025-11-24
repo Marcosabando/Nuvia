@@ -33,16 +33,32 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     }
   };
 
-  const handleDelete = async (videoId: number) => {
-    if (confirm('¿Estás seguro de que quieres eliminar este video?')) {
-      try {
-        await videoApi.deleteVideo(videoId);
-        refetch();
-      } catch (err) {
-        console.error('Error deleting video:', err);
-      }
+const handleSoftDelete = async (videoId: number) => {
+  if (!confirm('¿Seguro que quieres mover este video a la papelera?')) return;
+
+  try {
+    const res = await fetch(`/api/videos/${videoId}/soft-delete`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        // Si usas token:
+        // 'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Error al mover el video a la papelera');
     }
-  };
+
+    alert(data.message);
+    refetch(); // actualiza la lista de videos
+  } catch (err) {
+    console.error(err);
+    alert('No se pudo mover el video a la papelera');
+  }
+};
 
   if (error) {
     return (
@@ -147,7 +163,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
               key={video.videoId}
               video={video}
               onFavoriteToggle={handleFavoriteToggle}
-              onDelete={handleDelete}
+              onDelete={handleSoftDelete}
             />
           ))}
         </div>
