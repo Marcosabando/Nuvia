@@ -1,4 +1,4 @@
-// src/hooks/useUserStats.ts - VERSIÓN ACTUALIZADA
+// src/hooks/useUserStats.ts - VERSIÓN CON LOGS DE DEBUGGING
 import { useEffect, useState } from "react";
 import { apiService } from '@/services/api.services';
 
@@ -14,6 +14,7 @@ interface StatsData {
 interface UserStats {
   username: string;
   email: string;
+  role: "user" | "admin" | "moderator";
   stats: StatsData;
   loading: boolean;
   error: string | null;
@@ -22,11 +23,12 @@ interface UserStats {
 export const useUserStats = (): UserStats => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"user" | "admin" | "moderator">("user");
   const [stats, setStats] = useState<StatsData>({
     totalImages: 0,
     todayUploads: 0,
     storageUsed: 0,
-    storageLimit: 50, // 5GB por defecto
+    storageLimit: 50,
     storagePercentage: 0,
     totalVideos: 0,
   });
@@ -39,46 +41,58 @@ export const useUserStats = (): UserStats => {
         setLoading(true);
         setError(null);
 
-        console.log("🔄 Iniciando petición de perfil de usuario...");
+        console.log("🔄 [useUserStats] Iniciando petición de perfil...");
 
-        // ✅ Usar el endpoint /users/profile que ahora incluye todas las estadísticas
         const response = await apiService.get('/users/profile');
         
-        console.log("📊 Respuesta de perfil:", response);
-
+        console.log("📦 [useUserStats] Respuesta RAW completa:", response);
+        console.log("📊 [useUserStats] response.data:", response.data);
+        console.log("👤 [useUserStats] response.data.role:", response.data?.role);
+        console.log("🔍 [useUserStats] Tipo de role:", typeof response.data?.role);
+        
         if (response.success && response.data) {
           const userData = response.data;
           
-          // Establecer datos del usuario
-          setUsername(userData.username || "");
-          setEmail(userData.email || "");
+          console.log("✅ [useUserStats] userData completo:", userData);
+          console.log("✅ [useUserStats] userData.role:", userData.role);
           
-          // Calcular estadísticas - ahora vienen directamente del backend
+          // Extraer los datos
+          const extractedUsername = userData.username || "";
+          const extractedEmail = userData.email || "";
+          const extractedRole = userData.role || "user";
+          
+          console.log("📤 [useUserStats] Valores extraídos:", {
+            username: extractedUsername,
+            email: extractedEmail,
+            role: extractedRole,
+            roleType: typeof extractedRole
+          });
+          
+          setUsername(extractedUsername);
+          setEmail(extractedEmail);
+          setRole(extractedRole);
+          
+          // Calcular estadísticas
           const storageUsedGB = parseFloat((userData.storageUsed / 1024 / 1024 / 1024).toFixed(2));
           const storageLimitGB = parseFloat((userData.storageLimit / 1024 / 1024 / 1024).toFixed(2));
-
+          
           setStats({
             totalImages: userData.stats?.totalImages || 0,
-            todayUploads: userData.stats?.todayUploads || 0, // ✅ Ahora viene del backend
+            todayUploads: userData.stats?.todayUploads || 0,
             storageUsed: storageUsedGB,
             storageLimit: storageLimitGB,
             storagePercentage: parseFloat(userData.storagePercentage) || 0,
-            totalVideos: userData.stats?.totalVideos || 0, // ✅ Ahora viene del backend
+            totalVideos: userData.stats?.totalVideos || 0,
           });
-
-          console.log("✅ Datos de usuario cargados correctamente", {
-            totalImages: userData.stats?.totalImages,
-            todayUploads: userData.stats?.todayUploads,
-            totalVideos: userData.stats?.totalVideos
-          });
+          
+          console.log("✅ [useUserStats] Estado actualizado. Role final:", extractedRole);
         } else {
           throw new Error(response.error || 'Error en la respuesta del servidor');
         }
 
       } catch (err: any) {
-        console.error("❌ Error cargando datos del usuario:", err);
+        console.error("❌ [useUserStats] Error cargando datos:", err);
         
-        // Manejar diferentes tipos de errores
         if (err.response?.data?.error) {
           setError(`Error del servidor: ${err.response.data.error}`);
         } else if (err.message) {
@@ -94,5 +108,8 @@ export const useUserStats = (): UserStats => {
     fetchUserData();
   }, []);
 
-  return { username, email, stats, loading, error };
+  // 🔍 Log final del estado retornado
+  console.log("🎯 [useUserStats] Estado retornado:", { username, email, role });
+
+  return { username, email, role, stats, loading, error };
 };

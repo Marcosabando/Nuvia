@@ -12,6 +12,8 @@ import Screenshots from "./pages/Screenshots";
 import Trash from "./pages/Trash";
 import NotFound from "./pages/NotFound";
 import Home from "./pages/Home";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Admin from "./pages/Admin";
 // import Login from "./pages/Login"
 
 const queryClient = new QueryClient();
@@ -31,8 +33,7 @@ const App = () => (
           <Route path="/screenshots" element={<Screenshots />} />
           <Route path="/trash" element={<Trash />} />
           <Route path="/home" element={<Home />} />
-          {/* <Route path="/login" element={<Login />} /> */}
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/admin" element={ <ProtectedRoute requiredRole="admin"> <Admin /> </ProtectedRoute> }/>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

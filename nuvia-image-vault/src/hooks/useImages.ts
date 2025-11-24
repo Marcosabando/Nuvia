@@ -1,4 +1,5 @@
 // src/hooks/useImages.ts - INTERFAZ ACTUALIZADA
+// src/hooks/useImages.ts - VERSIÓN LIMPIA
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
@@ -39,11 +40,7 @@ export const useImages = (): UseImagesReturn => {
       setLoading(true);
       setError(null);
 
-      console.log("🔄 Obteniendo imágenes del usuario...");
-      
       const response = await apiService.get('/images');
-      
-      console.log("📸 Respuesta de imágenes:", response);
 
       if (response.success && response.data) {
         const transformedImages = response.data.map((img: any) => ({
@@ -67,14 +64,12 @@ export const useImages = (): UseImagesReturn => {
         }));
 
         setImages(transformedImages);
-        console.log("✅ Imágenes transformadas:", transformedImages);
+
       } else {
         throw new Error(response.error || 'Error en la respuesta del servidor');
       }
 
     } catch (err: any) {
-      console.error("❌ Error cargando imágenes:", err);
-      
       if (err.response?.data?.error) {
         setError(`Error del servidor: ${err.response.data.error}`);
       } else if (err.message) {

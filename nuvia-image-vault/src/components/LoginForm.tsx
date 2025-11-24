@@ -1,3 +1,4 @@
+// 👇 CÓDIGO COMPLETO YA MODIFICADO
 import React, { useState } from "react";
 import { Lock, Mail, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -44,17 +45,18 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
       console.log("Respuesta completa del servidor:", data);
 
       if (data.success) {
-        // Guardar token y datos del usuario
+        // 🔥 GUARDAR AUTENTICACIÓN
         localStorage.setItem("authToken", data.data.token);
+        localStorage.setItem("userRole", data.data.user.role);
         localStorage.setItem("user", JSON.stringify(data.data.user));
-        
+
         if (formData.rememberMe) {
           localStorage.setItem("rememberMe", "true");
         } else {
           localStorage.removeItem("rememberMe");
         }
-        
-        // Redirigir a la página home
+
+        // Redirigir al home
         navigate("/home");
       } else {
         alert(data.error || "Credenciales inválidas");
