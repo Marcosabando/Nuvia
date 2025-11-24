@@ -1,4 +1,4 @@
-// src/hooks/useImages.ts - VERSIÓN MEJORADA
+// src/hooks/useImages.ts - INTERFAZ ACTUALIZADA
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
@@ -6,15 +6,20 @@ interface ImageData {
   id: number;
   userId: number;
   title: string;
+  description?: string; // ✅ AÑADIR ESTA LÍNEA
   originalFilename: string;
   filename: string;
   imagePath: string;
-  thumbnailPath?: string;  // ✅ AÑADIR
-  mediumPath?: string;      // ✅ AÑADIR
+  thumbnailPath?: string;
+  mediumPath?: string;
   fileSize: number;
   mimeType: string;
-  created: string;
+  width?: number;
+  height?: number;
   isFavorite?: boolean;
+  isPublic?: boolean;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 interface UseImagesReturn {
@@ -45,15 +50,20 @@ export const useImages = (): UseImagesReturn => {
           id: img.imageId,
           userId: img.userId,
           title: img.title,
+          description: img.description, // ✅ INCLUIR DESCRIPTION
           originalFilename: img.originalFilename,
           filename: img.filename,
           imagePath: img.imagePath,
-          thumbnailPath: img.thumbnailPath,  // ✅ INCLUIR
-          mediumPath: img.mediumPath,        // ✅ INCLUIR
+          thumbnailPath: img.thumbnailPath,
+          mediumPath: img.mediumPath,
           fileSize: img.fileSize,
           mimeType: img.mimeType,
-          created: img.createdAt,
-          isFavorite: img.isFavorite
+          width: img.width,
+          height: img.height,
+          isFavorite: img.isFavorite,
+          isPublic: img.isPublic,
+          createdAt: img.createdAt,
+          updatedAt: img.updatedAt
         }));
 
         setImages(transformedImages);
