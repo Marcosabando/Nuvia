@@ -10,10 +10,7 @@ import logger from 'jet-logger';
 
 // Importaciones propias
 import ENV from '@src/common/constants/ENV';
-import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { NodeEnvs } from '@src/common/constants';
-import { RouteError } from '@src/common/util/route-errors';
-import { testConnection } from '@src/config/database';
 
 // Rutas
 import authRouter from './routes/auth';
@@ -55,10 +52,12 @@ app.use(
   '/api/',
   rateLimit({
     windowMs: parseInt(ENV.RateLimitWindowMs || '900000'),
-    max: parseInt(ENV.RateLimitMaxRequests || '100'),
+    max: parseInt(ENV.RateLimitMaxRequests || '2000'),
     message: { error: 'Demasiadas peticiones desde esta IP.' },
   })
 );
+
+
 
 // Logger
 if (ENV.NodeEnv === NodeEnvs.Dev) app.use(morgan('dev'));
