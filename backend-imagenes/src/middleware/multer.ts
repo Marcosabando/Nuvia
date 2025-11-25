@@ -1,4 +1,4 @@
-// src/middleware/multer.ts - VERSIÓN CORREGIDA CON ESTRUCTURA POR USUARIO
+// src/middleware/multer.ts - VERSIÓN CORREGIDA CON CARPETA DE PERFIL
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -39,7 +39,7 @@ interface AuthRequest extends Request {
 }
 
 // ✅ CONFIGURACIÓN CORREGIDA: Estructura por usuario con subcarpetas
-const getStorage = (fileType: 'image' | 'video') => {
+const getStorage = (fileType: 'image' | 'video' | 'profile') => {
   return multer.diskStorage({
     destination: (req: Request, file, cb) => {
       const authReq = req as AuthRequest;
@@ -55,11 +55,20 @@ const getStorage = (fileType: 'image' | 'video') => {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
 
-      // ✅ ESTRUCTURA: uploads/userId/images/ y uploads/userId/videos/
+      // ✅ ESTRUCTURA CORREGIDA: 
+      // - uploads/userId/images/
+      // - uploads/userId/videos/  
+      // - uploads/userId/profile/  ← NUEVA CARPETA PARA IMÁGENES DE PERFIL
       const userDir = path.join(uploadsDir, userId.toString());
-      const typeDir = path.join(userDir, fileType === 'image' ? 'images' : 'videos');
+      
+      let typeDir: string;
+      if (fileType === 'profile') {
+        typeDir = path.join(userDir, 'profile');
+      } else {
+        typeDir = path.join(userDir, fileType === 'image' ? 'images' : 'videos');
+      }
 
-      // Crear directorios recursivamente: uploads/userId/images|videos/
+      // Crear directorios recursivamente
       if (!fs.existsSync(userDir)) {
         fs.mkdirSync(userDir, { recursive: true });
         console.log('📁 Directorio de usuario creado:', userDir);
@@ -101,7 +110,33 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
   }
 };
 
-// ✅ CONFIGURACIÓN PARA IMÁGENES
+// ✅ CONFIGURACIÓN PARA IMÁGENES DE PERFIL
+export const uploadProfileImage = multer({
+  storage: getStorage('profile'),
+  fileFilter: (req, file, cb) => {
+    const imageMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/heic'
+    ];
+
+    if (imageMimeTypes.includes(file.mimetype)) {
+      console.log('✅ Imagen de perfil aceptada:', file.mimetype);
+      cb(null, true);
+    } else {
+      console.log('❌ Tipo de imagen de perfil no permitido:', file.mimetype);
+      cb(new Error(`Tipo de imagen de perfil no permitido: ${file.mimetype}`));
+    }
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB máximo para imágenes de perfil
+    files: 1 // Solo una imagen de perfil a la vez
+  }
+});
+
+// ✅ CONFIGURACIÓN PARA IMÁGENES NORMALES
 export const uploadImage = multer({
   storage: getStorage('image'),
   fileFilter: (req, file, cb) => {
@@ -151,11 +186,69 @@ export const uploadVideo = multer({
   },
   limits: {
     fileSize: MAX_VIDEO_SIZE,
-    files: 5 // Menos videos que imágenes por petición
+    files: 5
   }
 });
 
-// Middleware para subida única de imágenes
+// ✅ MIDDLEWARE ESPECÍFICO PARA IMÁGENES DE PERFIL
+export const uploadSingleProfileImage = (req: Request, res: Response, next: NextFunction) => {
+  console.log('🖼️ Iniciando upload de imagen de perfil...');
+  
+  const uploadMiddleware = uploadProfileImage.single('profileImage');
+  
+  uploadMiddleware(req, res, async (err: any) => {
+    if (err) {
+      console.error('❌ Error en upload de imagen de perfil:', err.message);
+      return next(err);
+    }
+
+    if (req.file) {
+      console.log('📁 Imagen de perfil procesada:', {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        path: req.file.path,
+        destination: req.file.destination
+      });
+
+      // Convertir HEIC a JPEG si es necesario
+      if (req.file.mimetype === 'image/heic') {
+        console.log('🔄 Convirtiendo HEIC a JPEG para imagen de perfil...');
+        const oldPath = req.file.path;
+        const newPath = oldPath.replace(/\.heic$/i, '.jpg');
+
+        try {
+          await sharp(oldPath).jpeg({ quality: 90 }).toFile(newPath);
+          fs.unlinkSync(oldPath);
+          
+          req.file.path = newPath;
+          req.file.filename = path.basename(newPath);
+          req.file.mimetype = 'image/jpeg';
+          
+          console.log('✅ HEIC convertido a JPEG para imagen de perfil:', newPath);
+        } catch (error) {
+          console.error('❌ Error convirtiendo HEIC a JPEG para imagen de perfil:', error);
+          return next(new Error('Error convirtiendo HEIC a JPEG'));
+        }
+      }
+
+      // Crear versiones optimizadas para imagen de perfil
+      try {
+        await createProfileImageVersions(req.file);
+      } catch (error) {
+        console.error('❌ Error creando versiones de imagen de perfil:', error);
+        // No bloqueamos el upload por error en optimización
+      }
+    } else {
+      console.log('📁 No se recibió imagen de perfil');
+    }
+
+    next();
+  });
+};
+
+// Middleware para subida única de imágenes normales
 export const uploadSingleImage = (req: Request, res: Response, next: NextFunction) => {
   console.log('🖼️ Iniciando upload de imagen...');
   
@@ -320,7 +413,56 @@ export const uploadMultipleVideos = (req: Request, res: Response, next: NextFunc
   });
 };
 
-// Función para crear thumbnails de imágenes
+// ✅ FUNCIÓN PARA CREAR VERSIONES DE IMAGEN DE PERFIL
+const createProfileImageVersions = async (file: Express.Multer.File): Promise<void> => {
+  if (!file.mimetype.startsWith('image/')) return;
+
+  const fileDir = path.dirname(file.path);
+  const fileName = path.basename(file.path, path.extname(file.path));
+  
+  // Crear versión grande (500x500)
+  const largePath = path.join(fileDir, `${fileName}-large.jpg`);
+  await sharp(file.path)
+    .resize(500, 500, {
+      fit: 'cover',
+      position: 'center'
+    })
+    .jpeg({ quality: 90 })
+    .toFile(largePath);
+
+  // Crear versión mediana (200x200)
+  const mediumPath = path.join(fileDir, `${fileName}-medium.jpg`);
+  await sharp(file.path)
+    .resize(200, 200, {
+      fit: 'cover',
+      position: 'center'
+    })
+    .jpeg({ quality: 85 })
+    .toFile(mediumPath);
+
+  // Crear versión pequeña/thumbnail (80x80)
+  const thumbPath = path.join(fileDir, `${fileName}-thumb.jpg`);
+  await sharp(file.path)
+    .resize(80, 80, {
+      fit: 'cover',
+      position: 'center'
+    })
+    .jpeg({ quality: 80 })
+    .toFile(thumbPath);
+
+  // Agregar paths al objeto file
+  (file as any).largePath = largePath;
+  (file as any).mediumPath = mediumPath;
+  (file as any).thumbPath = thumbPath;
+
+  console.log('✅ Versiones de imagen de perfil creadas:', { 
+    largePath, 
+    mediumPath, 
+    thumbPath 
+  });
+};
+
+// Función para crear thumbnails de imágenes normales
 const createImageThumbnails = async (file: Express.Multer.File): Promise<void> => {
   if (!file.mimetype.startsWith('image/')) return;
 
@@ -365,14 +507,15 @@ const createImageThumbnails = async (file: Express.Multer.File): Promise<void> =
   console.log('✅ Thumbnails creados:', { thumbnailPath, mediumPath });
 };
 
-// Función helper para crear directorios de usuario
+// ✅ FUNCIÓN HELPER PARA CREAR DIRECTORIOS DE USUARIO (INCLUYENDO PERFIL)
 export const createUserDirectories = (userId: number): void => {
   const basePath = path.join(process.cwd(), 'uploads', userId.toString());
   const directories = [
     path.join(basePath, 'images'),
     path.join(basePath, 'images', 'thumbnails'),
     path.join(basePath, 'images', 'medium'),
-    path.join(basePath, 'videos')
+    path.join(basePath, 'videos'),
+    path.join(basePath, 'profile') // ← NUEVO DIRECTORIO PARA PERFIL
   ];
 
   directories.forEach(dir => {
@@ -381,6 +524,41 @@ export const createUserDirectories = (userId: number): void => {
       console.log('📁 Directorio creado:', dir);
     }
   });
+};
+
+// ✅ FUNCIÓN PARA OBTENER LA RUTA PÚBLICA DE LA IMAGEN DE PERFIL
+export const getProfileImagePublicPath = (userId: number, filename: string): string => {
+  return `/uploads/${userId}/profile/${filename}`;
+};
+
+// ✅ FUNCIÓN PARA ELIMINAR IMÁGENES DE PERFIL ANTERIORES
+export const cleanupOldProfileImages = async (userId: number, keepFilename?: string): Promise<void> => {
+  try {
+    const profileDir = path.join(process.cwd(), 'uploads', userId.toString(), 'profile');
+    
+    if (!fs.existsSync(profileDir)) {
+      return;
+    }
+
+    const files = fs.readdirSync(profileDir);
+    
+    for (const file of files) {
+      // No eliminar el archivo que queremos mantener
+      if (keepFilename && file === keepFilename) {
+        continue;
+      }
+      
+      const filePath = path.join(profileDir, file);
+      try {
+        fs.unlinkSync(filePath);
+        console.log('🧹 Imagen de perfil anterior eliminada:', filePath);
+      } catch (error) {
+        console.error('❌ Error eliminando imagen de perfil anterior:', filePath, error);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error en limpieza de imágenes de perfil:', error);
+  }
 };
 
 // Función para limpiar archivos temporales
@@ -404,7 +582,15 @@ export const handleUploadError = (error: any, req: Request, res: Response, next:
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       const isVideo = error.message.includes('video');
-      const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+      const isProfile = error.message.includes('profile');
+      
+      let maxSize: number;
+      if (isProfile) {
+        maxSize = 10 * 1024 * 1024; // 10MB para perfil
+      } else {
+        maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+      }
+      
       return res.status(413).json({
         success: false,
         error: `El archivo es demasiado grande. Tamaño máximo: ${maxSize / 1024 / 1024}MB`

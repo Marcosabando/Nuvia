@@ -25,6 +25,7 @@ import trashRouter from './routes/TrashRoutes';
 import recentsRouter from './routes/RecentsRoutes';
 import foldersRouter from './routes/FoldersRoutes';
 import adminRouter from './routes/AdminRoutes';
+import profileRouter from './routes/ProfileRoutes'; // ✅ NUEVA RUTA AÑADIDA
 
 const app = express();
 
@@ -197,7 +198,8 @@ app.use('/api/stats', statsRouter);
 app.use('/api/trash', trashRouter);
 app.use('/api/recents', recentsRouter);
 app.use('/api/folders', foldersRouter);
-app.use('/api/admin', adminRouter); // ✅ Línea corregida - sin require y comentario
+app.use('/api/admin', adminRouter);
+app.use('/api/profile', profileRouter);
 
 /******************************************************
  * 🩺 Health Check
@@ -212,7 +214,7 @@ app.get('/health', (_: Request, res: Response) => {
 });
 
 /******************************************************
- * 📜 Documentación raíz
+ * 📜 Documentación raíz (ACTUALIZADA)
  ******************************************************/
 app.get('/', (_: Request, res: Response) => {
   res.json({
@@ -227,6 +229,18 @@ app.get('/', (_: Request, res: Response) => {
       users: {
         login: 'POST /api/users/login',
         register: 'POST /api/users/register',
+      },
+      profile: { 
+        getProfile: 'GET /api/profile',
+        getStats: 'GET /api/profile/stats',
+        updateProfile: 'PUT /api/profile',
+        updateImage: 'POST /api/profile/image',
+        updateUsername: 'PATCH /api/profile/username',
+        updateEmail: 'PATCH /api/profile/email',
+        updateBio: 'PATCH /api/profile/bio',
+        updateLocation: 'PATCH /api/profile/location',
+        updatePassword: 'PATCH /api/profile/password',
+        deleteAccount: 'DELETE /api/profile',
       },
       images: {
         upload: 'POST /api/images/upload',
