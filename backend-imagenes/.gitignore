@@ -1,37 +1,56 @@
-# Node modules (se instalan con npm o bun)
+# -------------------------
+# 📦 NODE & DEPENDENCIAS
+# -------------------------
 node_modules/
-
-# Distribución / compilación
-dist/
-dist-ssr/
-temp/
-
-# Logs
-logs/
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Archivos de entorno y configuración sensible
-.env
-.env.*    # por ejemplo: .env.dev, .env.prod
-config.js # si contiene credenciales privadas
+# -------------------------
+# 🏗️ BUILD / DIST / TEMP
+# -------------------------
+dist/
+dist-ssr/
+temp/
+*.tsbuildinfo
 
-# Sistema operativo
+# -------------------------
+# 🔐 ENTORNOS Y CONFIGS PRIVADAS
+# -------------------------
+.env
+.env.*
+config.js    # solo si contiene claves
+config/*.local.*
+
+# -------------------------
+# 💾 UPLOADS & ARCHIVOS DE USUARIO
+# -------------------------
+# Ignorar todo lo subido por usuarios (muy recomendable)
+uploads/
+# Pero mantener la carpeta vacía en el repo:
+!uploads/.gitkeep
+
+# Si tienes subcarpetas temporales internas:
+uploads/temp/
+uploads/*.db
+
+# -------------------------
+# 🖥️ SISTEMA OPERATIVO
+# -------------------------
 .DS_Store
 Thumbs.db
 
-# Dependencias y archivos de IDE
+# -------------------------
+# 🛠️ IDEs / TOOLS
+# -------------------------
 .vscode/
 !.vscode/extensions.json
 .idea/
 
-# TypeScript
-*.tsbuildinfo
-
-# Subidas locales que sí quieres compartir
-# Si quieres que tu compañero tenga las imágenes, no ignores uploads/
-# uploads/
+# -------------------------
+# 🔧 VARIOS
+# -------------------------
+logs/
+*.log
