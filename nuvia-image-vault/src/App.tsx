@@ -14,6 +14,7 @@ import NotFound from "./pages/NotFound";
 import Home from "./pages/Home";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Admin from "./pages/Admin";
+import Profile from "./pages/Profile"; // ✅ Solo perfil personal
 // import Login from "./pages/Login"
 
 const queryClient = new QueryClient();
@@ -33,12 +34,29 @@ const App = () => (
           <Route path="/screenshots" element={<Screenshots />} />
           <Route path="/trash" element={<Trash />} />
           <Route path="/home" element={<Home />} />
-          <Route path="/admin" element={ <ProtectedRoute requiredRole="admin"> <Admin /> </ProtectedRoute> }/>
+          
+          {/* ✅ RUTA ÚNICA DE PERFIL */}
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/admin" 
+            element={ 
+              <ProtectedRoute requiredRole="admin">
+                <Admin />
+              </ProtectedRoute> 
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
-
 export default App;
