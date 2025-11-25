@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation, NavLink, useNavigate } from "react-router-dom";
-import { 
-  Images, 
-  Heart, 
-  Trash2, 
+import {
+  Images,
+  Heart,
+  Trash2,
   Clock,
   Folder,
   Settings,
@@ -13,7 +13,7 @@ import {
   MoreVertical,
   Pencil,
   Trash,
-  Shield
+  Shield,
 } from "lucide-react";
 import { AuthService } from "@/services/auth.service";
 import { useFolders } from "@/hooks/useFolders";
@@ -51,45 +51,49 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const mainItems = [
-  { title: "Todos los archivos", url: "/home", icon: Images, count: 0 },
-  { title: "Favoritos", url: "/favorites", icon: Heart, count: 0 },
-  { title: "Recientes", url: "/recent", icon: Clock, count: 0 },
+const MAIN_ITEMS = [
+  { title: "Todos los archivos", url: "/home", icon: Images },
+  { title: "Favoritos", url: "/favorites", icon: Heart },
+  { title: "Recientes", url: "/recent", icon: Clock },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
   const navigate = useNavigate();
-  const currentPath = location.pathname;
   const collapsed = state === "collapsed";
 
-  // Gestión de carpetas
-  const { 
-    systemFolders, 
-    userFolders, 
-    loading, 
-    createFolder, 
-    deleteFolder 
-  } = useFolders();
+  // Precargar imagen del logo
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/nuvia-color.png";
+  }, []);
 
-  // Estados para diálogos
+  // Gestión de carpetas
+  const { systemFolders, userFolders, loading, createFolder, deleteFolder } = useFolders();
+
+  // Estados
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
 
-  const isActive = (path: string) => currentPath === path;
+  // Memoizar rol de usuario
+  const isAdmin = useMemo(() => localStorage.getItem("userRole") === "admin", []);
+
+  // Funciones auxiliares
+  const isActive = (path: string) => location.pathname === path;
 
   const getNavClasses = (path: string) => {
-    const baseClasses =
-      "w-full justify-start gap-3 h-10 transition-all duration-smooth";
+    const base = "w-full justify-start gap-3 h-10 transition-all duration-200";
     return isActive(path)
-      ? `${baseClasses} bg-primary text-primary-foreground shadow-md`
-      : `${baseClasses} hover:bg-muted-hover text-muted-foreground hover:text-foreground`;
+      ? `${base} bg-primary text-primary-foreground shadow-md`
+      : `${base} hover:bg-orange-100/50 dark:hover:bg-orange-900/30 text-muted-foreground hover:text-foreground`;
   };
 
+  // Handlers
   const handleCreateFolder = async (data: any) => {
     try {
       await createFolder(data);
+      setCreateDialogOpen(false);
     } catch (error) {
       console.error("Error al crear carpeta:", error);
       throw error;
@@ -106,24 +110,30 @@ export function AppSidebar() {
     }
   };
 
-  const userRole = localStorage.getItem("userRole");
-  const isAdmin = userRole === "admin";
-
   return (
     <>
       <Sidebar className="border-r border-border/50 bg-gradient-to-br from-orange-100/90 to-peach-100/80 dark:from-orange-950/50 dark:to-peach-950/40 backdrop-blur-sm">
         {/* HEADER */}
-        <SidebarHeader className="p-6 border-b border-orange-200/30 dark:border-orange-900/30">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center shadow-lg shadow-orange-400/30">
-              <Images className="w-5 h-5 text-white" />
+        <SidebarHeader className="p-6 border-b border-orange-200/30 dark:border-orange-900/30 bg-gradient-to-r from-orange-50/50 to-transparent dark:from-orange-950/30 dark:to-transparent">
+          <div className="flex items-center gap-4">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-orange-400/20 to-pink-400/20 rounded-xl blur-md transition-opacity group-hover:opacity-75" />
+              <img
+                src="/nuvia-color.png"
+                alt="Nuvia"
+                loading="eager"
+                decoding="sync"
+                className="relative w-11 h-11 drop-shadow-lg transition-all duration-300 group-hover:drop-shadow-2xl group-hover:-translate-y-0.5"
+                style={{ imageRendering: 'crisp-edges' }}
+              />
             </div>
+
             {!collapsed && (
-              <div>
-                <h1 className="text-xl font-display font-bold nuvia-gradient-text">
+              <div className="flex flex-col gap-0.5">
+                <h1 className="text-2xl font-display font-bold nuvia-gradient-text tracking-tight leading-none">
                   Nuvia
                 </h1>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[11px] text-orange-500/80 dark:text-orange-300/70 font-semibold uppercase tracking-wider">
                   Gestión Multimedia
                 </p>
               </div>
@@ -136,27 +146,18 @@ export function AppSidebar() {
           {/* Biblioteca */}
           <SidebarGroup>
             {!collapsed && (
-              <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-2">
                 Biblioteca
               </SidebarGroupLabel>
             )}
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
-                {mainItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
+                {MAIN_ITEMS.map((item) => (
+                  <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild>
                       <NavLink to={item.url} className={getNavClasses(item.url)}>
-                        <item.icon className="w-5 h-5" />
-                        {!collapsed && (
-                          <>
-                            <span className="flex-1">{item.title}</span>
-                            {item.count > 0 && (
-                              <Badge variant="secondary" className="text-xs">
-                                {item.count}
-                              </Badge>
-                            )}
-                          </>
-                        )}
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                        {!collapsed && <span className="flex-1">{item.title}</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -169,7 +170,7 @@ export function AppSidebar() {
           {systemFolders.length > 0 && (
             <SidebarGroup>
               {!collapsed && (
-                <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-2">
                   Sistema
                 </SidebarGroupLabel>
               )}
@@ -178,19 +179,15 @@ export function AppSidebar() {
                   {systemFolders.map((folder) => (
                     <SidebarMenuItem key={folder.id}>
                       <SidebarMenuButton asChild>
-                        <NavLink 
-                          to={`/folders/${folder.id}`} 
-                          className={getNavClasses(`/folders/${folder.id}`)}
-                        >
-                          <Folder 
-                            className="w-5 h-5" 
-                            style={{ color: folder.color }}
-                          />
+                        <NavLink
+                          to={`/folders/${folder.id}`}
+                          className={getNavClasses(`/folders/${folder.id}`)}>
+                          <Folder className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
                           {!collapsed && (
                             <>
-                              <span className="flex-1">{folder.name}</span>
+                              <span className="flex-1 truncate">{folder.name}</span>
                               {folder.itemCount > 0 && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="text-xs ml-auto">
                                   {folder.itemCount}
                                 </Badge>
                               )}
@@ -207,117 +204,96 @@ export function AppSidebar() {
 
           {/* Mis Carpetas */}
           <SidebarGroup>
-            {!collapsed && (
-              <div className="flex items-center justify-between mb-2">
+            {!collapsed ? (
+              <div className="flex items-center justify-between mb-2 px-2">
                 <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   Mis Carpetas
                 </SidebarGroupLabel>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 hover:bg-orange-200/50"
+                  className="h-6 w-6 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
                   onClick={() => setCreateDialogOpen(true)}
-                  title="Crear carpeta"
-                >
+                  title="Crear carpeta">
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
-            )}
-            {collapsed && (
+            ) : (
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-full h-10 hover:bg-orange-200/50"
+                className="w-full h-10 hover:bg-orange-200/50 dark:hover:bg-orange-900/30 mb-2"
                 onClick={() => setCreateDialogOpen(true)}
-                title="Crear carpeta"
-              >
+                title="Crear carpeta">
                 <Plus className="h-5 w-5" />
               </Button>
             )}
+
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
-  {loading ? (
-    <div className="text-sm text-muted-foreground px-3 py-2">
-      Cargando...
-    </div>
-  ) : userFolders.length === 0 ? (
-    !collapsed && (
-      <div className="text-sm text-muted-foreground px-3 py-2">
-        No hay carpetas
-      </div>
-    )
-  ) : (
-    <>
-      {userFolders.map((folder) => {
-        console.log("📁 Carpeta en sidebar - ID:", folder.id, "Nombre:", folder.name, "Tipo:", typeof folder.id);
-        return (
-          <SidebarMenuItem key={folder.id}>
-            <div className="flex items-center gap-1 w-full">
-              <SidebarMenuButton asChild className="flex-1">
-                <NavLink 
-                  to={`/folders/${folder.id}`} 
-                  className={getNavClasses(`/folders/${folder.id}`)}
-                  onClick={(e) => {
-                    console.log("🖱️ CLIC EN CARPETA:");
-                    console.log("   📍 ID:", folder.id);
-                    console.log("   📝 Nombre:", folder.name);
-                    console.log("   🔗 URL destino:", `/folders/${folder.id}`);
-                    console.log("   🎯 Evento:", e);
-                  }}
-                >
-                  <Folder 
-                    className="w-5 h-5" 
-                    style={{ color: folder.color }}
-                  />
-                  {!collapsed && (
-                    <>
-                      <span className="flex-1 truncate">{folder.name}</span>
-                      {folder.itemCount > 0 && (
-                        <Badge variant="secondary" className="text-xs">
-                          {folder.itemCount}
-                        </Badge>
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              </SidebarMenuButton>
+                {loading ? (
+                  <div className="text-sm text-muted-foreground px-3 py-2">Cargando...</div>
+                ) : userFolders.length === 0 ? (
+                  !collapsed && (
+                    <div className="text-sm text-muted-foreground px-3 py-2">No hay carpetas</div>
+                  )
+                ) : (
+                  userFolders.map((folder) => (
+                    <SidebarMenuItem key={folder.id}>
+                      <div className="flex items-center gap-1 w-full">
+                        <SidebarMenuButton asChild className="flex-1">
+                          <NavLink
+                            to={`/folders/${folder.id}`}
+                            className={getNavClasses(`/folders/${folder.id}`)}>
+                            <Folder
+                              className="w-5 h-5 flex-shrink-0"
+                              style={{ color: folder.color }}
+                            />
+                            {!collapsed && (
+                              <>
+                                <span className="flex-1 truncate">{folder.name}</span>
+                                {folder.itemCount > 0 && (
+                                  <Badge variant="secondary" className="text-xs ml-auto">
+                                    {folder.itemCount}
+                                  </Badge>
+                                )}
+                              </>
+                            )}
+                          </NavLink>
+                        </SidebarMenuButton>
 
-              {/* Menú de opciones */}
-              {!collapsed && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => navigate(`/folders/${folder.id}/edit`)}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Editar
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setFolderToDelete(folder.id)}
-                      className="text-red-600"
-                    >
-                      <Trash className="mr-2 h-4 w-4" />
-                      Eliminar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          </SidebarMenuItem>
-        );
-      })}
-    </>
-  )}
+                        {/* Menú de opciones */}
+                        {!collapsed && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 flex-shrink-0 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
+                                onClick={(e) => e.stopPropagation()}>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => navigate(`/folders/${folder.id}/edit`)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setFolderToDelete(folder.id)}
+                                className="text-red-600 focus:text-red-600">
+                                <Trash className="mr-2 h-4 w-4" />
+                                Eliminar
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    </SidebarMenuItem>
+                  ))
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -329,15 +305,8 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
                     <NavLink to="/trash" className={getNavClasses("/trash")}>
-                      <Trash2 className="w-5 h-5" />
-                      {!collapsed && (
-                        <>
-                          <span className="flex-1">Papelera</span>
-                          <Badge variant="destructive" className="text-xs">
-                            0
-                          </Badge>
-                        </>
-                      )}
+                      <Trash2 className="w-5 h-5 flex-shrink-0" />
+                      {!collapsed && <span className="flex-1">Papelera</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -347,52 +316,47 @@ export function AppSidebar() {
         </SidebarContent>
 
         {/* FOOTER */}
-<SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
-  <SidebarMenu>
+        <SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
+          <SidebarMenu className="space-y-1">
+            {/* Admin */}
+            {isAdmin && (
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink to="/admin" className={getNavClasses("/admin")}>
+                    <Shield className="w-5 h-5 flex-shrink-0" />
+                    {!collapsed && <span>Admin</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
 
-    {/* BOTÓN ADMIN */}
-    {isAdmin && (
-      <SidebarMenuItem>
-        <SidebarMenuButton 
-          asChild 
-          className={getNavClasses("/admin")}
-        >
-          <NavLink to="/admin">
-            <Shield className="w-5 h-5" />
-            {!collapsed && <span>Admin</span>}
-          </NavLink>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    )}
-
-    {/* CONFIGURACIÓN */}
-    <SidebarMenuItem>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuButton className={getNavClasses("/settings")}>
-            <Settings className="w-5 h-5" />
-            {!collapsed && <span>Configuración</span>}
-          </SidebarMenuButton>
-        </DropdownMenuTrigger>
+            {/* Configuración */}
+            <SidebarMenuItem>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SidebarMenuButton>
+                    <Settings className="w-5 h-5 flex-shrink-0" />
+                    {!collapsed && <span>Configuración</span>}
+                  </SidebarMenuButton>
+                </DropdownMenuTrigger>
 
                 <DropdownMenuContent
                   side="right"
-                  align="start"
-                  className="w-48 bg-white dark:bg-neutral-900 border border-border/50 shadow-lg rounded-xl"
-                >
+                  align="end"
+                  className="w-48 bg-white dark:bg-neutral-900 border border-border/50 shadow-lg rounded-xl">
                   <DropdownMenuItem
                     onClick={() => navigate("/profile")}
-                    className="flex items-center gap-2 cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/40"
-                  >
-                    <User className="w-4 h-4" />
+                    className="cursor-pointer">
+                    <User className="mr-2 w-4 h-4" />
                     <span>Mi Perfil</span>
                   </DropdownMenuItem>
 
+                  <DropdownMenuSeparator />
+
                   <DropdownMenuItem
                     onClick={() => AuthService.logout()}
-                    className="flex items-center gap-2 cursor-pointer text-red-500 hover:bg-red-100 dark:hover:bg-red-950/40"
-                  >
-                    <LogOut className="w-4 h-4" />
+                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40">
+                    <LogOut className="mr-2 w-4 h-4" />
                     <span>Cerrar sesión</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -402,18 +366,14 @@ export function AppSidebar() {
         </SidebarFooter>
       </Sidebar>
 
-      {/* Diálogo crear carpeta */}
+      {/* Diálogos */}
       <CreateFolderDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onCreateFolder={handleCreateFolder}
       />
 
-      {/* Diálogo confirmar eliminación */}
-      <AlertDialog 
-        open={folderToDelete !== null} 
-        onOpenChange={() => setFolderToDelete(null)}
-      >
+      <AlertDialog open={folderToDelete !== null} onOpenChange={() => setFolderToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar carpeta?</AlertDialogTitle>
@@ -425,8 +385,7 @@ export function AppSidebar() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => folderToDelete && handleDeleteFolder(folderToDelete)}
-              className="bg-red-600 hover:bg-red-700"
-            >
+              className="bg-red-600 hover:bg-red-700">
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -435,5 +394,3 @@ export function AppSidebar() {
     </>
   );
 }
-
-export default AppSidebar;
