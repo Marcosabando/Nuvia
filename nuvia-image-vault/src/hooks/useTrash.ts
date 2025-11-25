@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
+import { useToast } from "@/hooks/use-toast";
 
 interface TrashItem {
   id: number;
@@ -28,21 +29,17 @@ export const useTrash = (): UseTrashReturn => {
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const fetchTrashItems = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      console.log("🗑️ Obteniendo elementos de la papelera...");
-      
       const response = await apiService.get('/trash');
-      
-      console.log("📦 Respuesta de papelera:", response);
 
       if (response.success && response.data) {
         setTrashItems(response.data);
-        console.log("✅ Elementos de papelera cargados:", response.data.length);
       } else {
         throw new Error(response.error || 'Error en la respuesta del servidor');
       }
@@ -64,54 +61,72 @@ export const useTrash = (): UseTrashReturn => {
 
   const restoreItem = async (id: number) => {
     try {
-      console.log("♻️ Restaurando elemento:", id);
-      
       const response = await apiService.post(`/trash/${id}/restore`, {});
       
       if (response.success) {
-        console.log("✅ Elemento restaurado correctamente");
-        await fetchTrashItems(); // Recargar lista
+        toast({
+          title: "✅ Restaurado",
+          description: "El elemento ha sido restaurado correctamente",
+        });
+        await fetchTrashItems();
       } else {
         throw new Error(response.error || 'Error al restaurar');
       }
     } catch (err: any) {
       console.error("❌ Error restaurando elemento:", err);
+      toast({
+        title: "❌ Error",
+        description: "No se pudo restaurar el elemento",
+        variant: "destructive",
+      });
       throw err;
     }
   };
 
   const permanentDelete = async (id: number) => {
     try {
-      console.log("🔥 Eliminando permanentemente:", id);
-      
       const response = await apiService.delete(`/trash/${id}`);
       
       if (response.success) {
-        console.log("✅ Elemento eliminado permanentemente");
-        await fetchTrashItems(); // Recargar lista
+        toast({
+          title: "🗑️ Eliminado",
+          description: "El elemento ha sido eliminado permanentemente",
+        });
+        await fetchTrashItems();
       } else {
         throw new Error(response.error || 'Error al eliminar');
       }
     } catch (err: any) {
       console.error("❌ Error eliminando elemento:", err);
+      toast({
+        title: "❌ Error",
+        description: "No se pudo eliminar el elemento",
+        variant: "destructive",
+      });
       throw err;
     }
   };
 
   const emptyTrash = async () => {
     try {
-      console.log("🗑️ Vaciando papelera...");
-      
       const response = await apiService.delete('/trash/empty');
       
       if (response.success) {
-        console.log("✅ Papelera vaciada correctamente");
-        await fetchTrashItems(); // Recargar lista
+        toast({
+          title: "✅ Papelera vaciada",
+          description: "Todos los elementos han sido eliminados permanentemente",
+        });
+        await fetchTrashItems();
       } else {
         throw new Error(response.error || 'Error al vaciar papelera');
       }
     } catch (err: any) {
       console.error("❌ Error vaciando papelera:", err);
+      toast({
+        title: "❌ Error",
+        description: "No se pudo vaciar la papelera",
+        variant: "destructive",
+      });
       throw err;
     }
   };

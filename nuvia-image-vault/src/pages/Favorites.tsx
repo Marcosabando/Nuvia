@@ -65,16 +65,11 @@ const Favorites = () => {
         setLoading(true);
         setError(null);
         
-        console.log("🔄 Obteniendo favoritos (imágenes + videos)...");
-        
         // ✅ Obtener imágenes favoritas
         const imagesResponse = await apiService.get('/images?favorites=true');
-        console.log("📸 Imágenes favoritas:", imagesResponse);
 
         // ✅ Obtener videos favoritos
         const videosResponse = await apiService.get('/videos?favorites=true');
-        console.log("🎬 Videos favoritos:", videosResponse);
-
         const allFavorites: FavoriteItem[] = [];
 
         // Agregar imágenes favoritas
@@ -123,7 +118,6 @@ const Favorites = () => {
         );
 
         setFavorites(allFavorites);
-        console.log("✅ Total favoritos cargados:", allFavorites.length);
         
       } catch (err: any) {
         console.error("❌ Error cargando favoritos:", err);

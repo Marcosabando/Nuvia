@@ -121,7 +121,6 @@ router.delete("/:id/trash", ImageService.moveToTrash);
  * Restaurar imagen desde papelera
  * POST /api/images/:id/restore
  */
-router.post("/:id/restore", TrashService.restoreImage);
 
 /**
  * Mover imagen a papelera (soft delete)
@@ -133,7 +132,6 @@ router.delete("/:id", TrashService.softDeleteImage);
  * DELETE /api/images/:id/permanent
  * ⚠️ ACCIÓN IRREVERSIBLE
  */
-router.delete("/:id/permanent", TrashService.deleteImagePermanently);
 
 // ============================================================================
 // EXPORTAR ROUTER

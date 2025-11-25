@@ -535,16 +535,21 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
 
 // ✅ Soft delete (move to trash)
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
+  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET deletedAt = CURRENT_TIMESTAMP WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
+    await connection.beginTransaction();
+
+    // 1️⃣ Obtener información del video ANTES de marcarlo como eliminado
+    const [videos] = await connection.query<RowDataPacket[]>(
+      `SELECT * FROM videos WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
       [videoId, userId]
     );
 
-    if (result.affectedRows === 0) {
+    if (videos.length === 0) {
+      await connection.rollback();
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -552,16 +557,76 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       return;
     }
 
+    const video = videos[0];
+
+    // 2️⃣ Marcar como eliminado en la tabla videos
+    await connection.query<ResultSetHeader>(
+      `UPDATE videos SET deletedAt = CURRENT_TIMESTAMP WHERE videoId = ? AND userId = ?`,
+      [videoId, userId]
+    );
+
+    // 3️⃣ Construir la ruta completa correctamente
+    let fullPath = video.videoPath;
+    if (!fullPath.startsWith("uploads/")) {
+      fullPath = `uploads/${fullPath}`;
+    }
+
+    // Asegurar que incluye /videos/ si no está presente
+    if (!fullPath.includes("/videos/")) {
+      const parts = fullPath.split("/");
+      if (parts.length >= 3) {
+        parts.splice(2, 0, "videos");
+        fullPath = parts.join("/");
+      }
+    }
+
+    console.log(`📁 Ruta de video guardada en trash:`, fullPath);
+
+    // 4️⃣ Construir metadata
+    const metadata = JSON.stringify({
+      width: video.width,
+      height: video.height,
+      duration: video.duration,
+      title: video.title,
+      fps: video.fps,
+      bitrate: video.bitrate,
+      codec: video.codec
+    });
+
+    // 5️⃣ Insertar en la tabla trash
+    await connection.query(
+      `INSERT INTO trash 
+       (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        'video',
+        videoId,
+        video.originalFilename || video.filename,
+        fullPath,
+        video.fileSize,
+        video.mimeType,
+        metadata,
+      ]
+    );
+
+    await connection.commit();
+
     res.json({
       success: true,
       message: "Video moved to trash",
+      data: { videoId }
     });
   } catch (error) {
-    console.error("Error soft deleting video:", error);
+    await connection.rollback();
+    console.error("Error moving video to trash:", error);
     res.status(500).json({ 
       success: false,
-      error: "Error moving video to trash" 
+      error: "Error moving video to trash",
+      details: (error as Error).message 
     });
+  } finally {
+    connection.release();
   }
 };
 

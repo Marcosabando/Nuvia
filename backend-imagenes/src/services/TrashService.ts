@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import { RowDataPacket, ResultSetHeader, PoolConnection } from "mysql2/promise";
 import fs from "fs/promises";
 import pool from "@src/config/database";
 
@@ -38,7 +38,7 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
 
     const params: any[] = [userId];
 
-    if (itemType && ['image', 'video', 'document', 'folder'].includes(itemType)) {
+    if (itemType && ["image", "video", "document", "folder"].includes(itemType)) {
       query += ` AND itemType = ?`;
       params.push(itemType);
     }
@@ -52,7 +52,7 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
     let countQuery = `SELECT COUNT(*) as total FROM trash WHERE userId = ?`;
     const countParams: any[] = [userId];
 
-    if (itemType && ['image', 'video', 'document', 'folder'].includes(itemType)) {
+    if (itemType && ["image", "video", "document", "folder"].includes(itemType)) {
       countQuery += ` AND itemType = ?`;
       countParams.push(itemType);
     }
@@ -122,7 +122,150 @@ export const getTrashStats = async (req: Request, res: Response): Promise<void> 
 };
 
 // ============================================================================
-// 🗑️ SOFT DELETE (TRASH) - IMÁGENES
+// 🛠️ HELPER FUNCTIONS
+// ============================================================================
+/**
+ * Helper: Move item to trash
+ */
+const moveToTrash = async (
+  connection: PoolConnection,
+  userId: number,
+  table: "images" | "videos",
+  id: number,
+  pathColumn: "imagePath" | "videoPath",
+  type: "image" | "video"
+): Promise<void> => {
+  // Get item info
+  const idColumn = table === "images" ? "imageId" : "videoId";
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT * FROM ${table} WHERE ${idColumn} = ? AND userId = ? AND deletedAt IS NULL`,
+    [id, userId]
+  );
+
+  if (rows.length === 0) {
+    throw new Error(`${type} not found`);
+  }
+
+  const item = rows[0];
+
+  // Mark as deleted
+  await connection.query(
+    `UPDATE ${table} SET deletedAt = CURRENT_TIMESTAMP WHERE ${idColumn} = ? AND userId = ?`,
+    [id, userId]
+  );
+
+  // 🔥 CORRECCIÓN: Usar directamente el path de la base de datos
+  let fullPath = item[pathColumn];
+  
+  console.log(`📁 Path original de BD para ${type}:`, fullPath);
+  
+  // Si ya tiene el formato correcto (uploads/userId/type/filename), usarlo directamente
+  // Si no, construirlo
+  if (!fullPath.startsWith('uploads/')) {
+    fullPath = `uploads/${userId}/${type}s/${item.filename}`;
+  }
+
+  console.log(`✅ Path final guardado en trash para ${type}:`, fullPath);
+
+  // Build metadata based on type
+  const metadata = JSON.stringify(
+    type === "image"
+      ? { 
+          width: item.width, 
+          height: item.height, 
+          title: item.title 
+        }
+      : { 
+          width: item.width, 
+          height: item.height, 
+          duration: item.duration, 
+          title: item.title,
+          fps: item.fps,
+          bitrate: item.bitrate,
+          codec: item.codec
+        }
+  );
+
+  // Insert into trash
+  await connection.query(
+    `INSERT INTO trash 
+     (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      type,
+      id,
+      item.originalFilename || item.filename,
+      fullPath, // 🔥 Path corregido
+      item.fileSize,
+      item.mimeType,
+      metadata,
+    ]
+  );
+
+  console.log(`✅ ${type} movido a trash correctamente:`, {
+    itemId: id,
+    originalName: item.originalFilename || item.filename,
+    savedPath: fullPath
+  });
+};
+
+/**
+ * Helper: Restore item from trash
+ */
+const restoreFromTrash = async (
+  connection: PoolConnection,
+  userId: number,
+  itemType: "image" | "video",
+  itemId: number
+): Promise<void> => {
+  const table = itemType === "image" ? "images" : "videos";
+  const idColumn = table === "images" ? "imageId" : "videoId";
+
+  // Restore in original table
+  await connection.query(
+    `UPDATE ${table} SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP 
+     WHERE ${idColumn} = ? AND userId = ?`,
+    [itemId, userId]
+  );
+
+  // Remove from trash
+  await connection.query(
+    `DELETE FROM trash WHERE itemType = ? AND itemId = ? AND userId = ?`,
+    [itemType, itemId, userId]
+  );
+};
+
+/**
+ * Helper: Delete trash item permanently
+ */
+const deleteTrashItem = async (connection: PoolConnection, item: RowDataPacket): Promise<void> => {
+  const table = item.itemType === "image" ? "images" : "videos";
+  const idColumn = table === "images" ? "imageId" : "videoId";
+
+  // Delete from original table
+  await connection.query(
+    `DELETE FROM ${table} WHERE ${idColumn} = ? AND userId = ?`,
+    [item.itemId, item.userId]
+  );
+
+  // Delete from trash
+  await connection.query(
+    `DELETE FROM trash WHERE trashId = ?`,
+    [item.trashId]
+  );
+
+  // Delete physical file
+  try {
+    await fs.unlink(item.originalPath);
+    console.log(`✅ Archivo eliminado: ${item.originalPath}`);
+  } catch (err) {
+    console.warn(`⚠️ No se pudo eliminar archivo: ${item.originalPath}`, err);
+  }
+};
+
+// ============================================================================
+// 🗑️ SOFT DELETE (TRASH) - IMAGES & VIDEOS
 // ============================================================================
 
 /**
@@ -136,86 +279,13 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
     const imageId = parseInt(req.params.id);
 
     await connection.beginTransaction();
-
-    // Get image info
-    const [images] = await connection.query<RowDataPacket[]>(
-      `SELECT imageId, title, originalFilename, filename, imagePath, fileSize, mimeType, width, height
-       FROM images 
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [imageId, userId]
-    );
-
-    if (images.length === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Image not found",
-      });
-      return;
-    }
-
-    const image = images[0];
-
-    // Mark as deleted in images table
-    await connection.query(
-      `UPDATE images 
-       SET deletedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ?`,
-      [imageId, userId]
-    );
-
-    // ✅ CONSTRUIR RUTA COMPLETA CON /images/
-    let fullPath = image.imagePath;
-    
-    // Si no empieza con 'uploads/', agregarlo
-    if (!fullPath.startsWith('uploads/')) {
-      fullPath = `uploads/${fullPath}`;
-    }
-    
-    // ✅ Si la ruta no incluye '/images/', insertarlo después del userId
-    // Ejemplo: "uploads/2/archivo.png" → "uploads/2/images/archivo.png"
-    if (!fullPath.includes('/images/') && !fullPath.includes('/videos/')) {
-      const parts = fullPath.split('/');
-      if (parts.length >= 3) {
-        // parts = ["uploads", "2", "archivo.png"]
-        parts.splice(2, 0, 'images'); // Insertar 'images' después de userId
-        fullPath = parts.join('/');
-      }
-    }
-
-    console.log('📁 Ruta de imagen guardada en trash:', fullPath);
-
-    // Add to trash table
-    const metadata = JSON.stringify({
-      width: image.width,
-      height: image.height,
-      title: image.title,
-    });
-
-    await connection.query(
-      `INSERT INTO trash 
-       (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
-       VALUES (?, 'image', ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        imageId,
-        image.originalFilename || image.filename,
-        fullPath,  // ✅ Usar la ruta corregida
-        image.fileSize,
-        image.mimeType,
-        metadata,
-      ]
-    );
-
+    await moveToTrash(connection, userId, "images", imageId, "imagePath", "image");
     await connection.commit();
 
     res.json({
       success: true,
       message: "Image moved to trash",
-      data: {
-        imageId,
-        originalName: image.originalFilename || image.filename,
-      },
+      data: { imageId },
     });
   } catch (error) {
     await connection.rollback();
@@ -230,10 +300,6 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
   }
 };
 
-// ============================================================================
-// 🗑️ SOFT DELETE (TRASH) - VIDEOS
-// ============================================================================
-
 /**
  * Move video to trash (soft delete)
  * DELETE /api/videos/:id
@@ -245,83 +311,13 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
     const videoId = parseInt(req.params.id);
 
     await connection.beginTransaction();
-
-    // Get video info
-    const [videos] = await connection.query<RowDataPacket[]>(
-      `SELECT videoId, title, originalFilename, filename, videoPath, fileSize, mimeType, duration, width, height
-       FROM videos 
-       WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [videoId, userId]
-    );
-
-    if (videos.length === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Video not found",
-      });
-      return;
-    }
-
-    const video = videos[0];
-
-    // Mark as deleted
-    await connection.query(
-      `UPDATE videos 
-       SET deletedAt = CURRENT_TIMESTAMP
-       WHERE videoId = ? AND userId = ?`,
-      [videoId, userId]
-    );
-
-    // ✅ CONSTRUIR RUTA COMPLETA CON /videos/
-    let fullPath = video.videoPath;
-    
-    if (!fullPath.startsWith('uploads/')) {
-      fullPath = `uploads/${fullPath}`;
-    }
-    
-    // ✅ Insertar '/videos/' si no existe
-    if (!fullPath.includes('/videos/') && !fullPath.includes('/images/')) {
-      const parts = fullPath.split('/');
-      if (parts.length >= 3) {
-        parts.splice(2, 0, 'videos'); // Insertar 'videos' después de userId
-        fullPath = parts.join('/');
-      }
-    }
-
-    console.log('📁 Ruta de video guardada en trash:', fullPath);
-
-    const metadata = JSON.stringify({
-      duration: video.duration,
-      width: video.width,
-      height: video.height,
-      title: video.title,
-    });
-
-    await connection.query(
-      `INSERT INTO trash 
-       (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
-       VALUES (?, 'video', ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        videoId,
-        video.originalFilename || video.filename,
-        fullPath,
-        video.fileSize,
-        video.mimeType,
-        metadata,
-      ]
-    );
-
+    await moveToTrash(connection, userId, "videos", videoId, "videoPath", "video");
     await connection.commit();
 
     res.json({
       success: true,
       message: "Video moved to trash",
-      data: {
-        videoId,
-        originalName: video.originalFilename || video.filename,
-      },
+      data: { videoId },
     });
   } catch (error) {
     await connection.rollback();
@@ -336,248 +332,8 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
   }
 };
 
-/**
- * Restore image from trash
- * POST /api/images/:id/restore
- */
-export const restoreImage = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
-  try {
-    const userId = req.user!.userId;
-    const imageId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-
-    // Restore image
-    const [result] = await connection.query<ResultSetHeader>(
-      `UPDATE images 
-       SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NOT NULL`,
-      [imageId, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Image not found in trash",
-      });
-      return;
-    }
-
-    // Remove from trash table
-    await connection.query(
-      `DELETE FROM trash WHERE itemType = 'image' AND itemId = ? AND userId = ?`,
-      [imageId, userId]
-    );
-
-    await connection.commit();
-
-    res.json({
-      success: true,
-      message: "Image restored successfully",
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Error restoring image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error restoring image",
-    });
-  } finally {
-    connection.release();
-  }
-};
-
-/**
- * Restore video from trash
- * POST /api/videos/:id/restore
- */
-export const restoreVideo = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
-  try {
-    const userId = req.user!.userId;
-    const videoId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-
-    // Restore video
-    const [result] = await connection.query<ResultSetHeader>(
-      `UPDATE videos 
-       SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP
-       WHERE videoId = ? AND userId = ? AND deletedAt IS NOT NULL`,
-      [videoId, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Video not found in trash",
-      });
-      return;
-    }
-
-    // Remove from trash table
-    await connection.query(
-      `DELETE FROM trash WHERE itemType = 'video' AND itemId = ? AND userId = ?`,
-      [videoId, userId]
-    );
-
-    await connection.commit();
-
-    res.json({
-      success: true,
-      message: "Video restored successfully",
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Error restoring video:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error restoring video",
-    });
-  } finally {
-    connection.release();
-  }
-};
-
-/**
- * Delete image permanently
- * DELETE /api/images/:id/permanent
- */
-export const deleteImagePermanently = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
-  try {
-    const userId = req.user!.userId;
-    const imageId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-
-    // Get image info
-    const [images] = await connection.query<RowDataPacket[]>(
-      `SELECT imagePath 
-       FROM images 
-       WHERE imageId = ? AND userId = ?`,
-      [imageId, userId]
-    );
-
-    if (images.length === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Image not found",
-      });
-      return;
-    }
-
-    const imagePath = images[0].imagePath;
-
-    // Delete from DB
-    await connection.query(`DELETE FROM images WHERE imageId = ? AND userId = ?`, [imageId, userId]);
-
-    // Remove from trash table
-    await connection.query(
-      `DELETE FROM trash WHERE itemType = 'image' AND itemId = ? AND userId = ?`,
-      [imageId, userId]
-    );
-
-    await connection.commit();
-
-    // Delete physical file
-    try {
-      await fs.unlink(imagePath);
-      console.log(`✅ File deleted: ${imagePath}`);
-    } catch (fsError) {
-      console.error("Error deleting file:", fsError);
-      // Don't fail if file doesn't exist
-    }
-
-    res.json({
-      success: true,
-      message: "Image permanently deleted",
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Error permanently deleting image:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error permanently deleting image",
-    });
-  } finally {
-    connection.release();
-  }
-};
-
-/**
- * Delete video permanently
- * DELETE /api/videos/:id/permanent
- */
-export const deleteVideoPermanently = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
-  try {
-    const userId = req.user!.userId;
-    const videoId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-
-    // Get video info
-    const [videos] = await connection.query<RowDataPacket[]>(
-      `SELECT videoPath 
-       FROM videos 
-       WHERE videoId = ? AND userId = ?`,
-      [videoId, userId]
-    );
-
-    if (videos.length === 0) {
-      await connection.rollback();
-      res.status(404).json({
-        success: false,
-        error: "Video not found",
-      });
-      return;
-    }
-
-    const videoPath = videos[0].videoPath;
-
-    // Delete from DB
-    await connection.query(`DELETE FROM videos WHERE videoId = ? AND userId = ?`, [videoId, userId]);
-
-    // Remove from trash table
-    await connection.query(
-      `DELETE FROM trash WHERE itemType = 'video' AND itemId = ? AND userId = ?`,
-      [videoId, userId]
-    );
-
-    await connection.commit();
-
-    // Delete physical file
-    try {
-      await fs.unlink(videoPath);
-      console.log(`✅ Video file deleted: ${videoPath}`);
-    } catch (fsError) {
-      console.error("Error deleting video file:", fsError);
-      // Don't fail if file doesn't exist
-    }
-
-    res.json({
-      success: true,
-      message: "Video permanently deleted",
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Error permanently deleting video:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error permanently deleting video",
-    });
-  } finally {
-    connection.release();
-  }
-};
-
 // ============================================================================
-// ♻️ RESTORE ITEMS - Para papelera general
+// ♻️ RESTORE ITEMS
 // ============================================================================
 
 /**
@@ -610,23 +366,7 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
     const item = trashItems[0];
 
     // Restore based on type
-    if (item.itemType === 'image') {
-      await connection.query(
-        `UPDATE images SET deletedAt = NULL WHERE imageId = ? AND userId = ?`,
-        [item.itemId, userId]
-      );
-    } else if (item.itemType === 'video') {
-      await connection.query(
-        `UPDATE videos SET deletedAt = NULL WHERE videoId = ? AND userId = ?`,
-        [item.itemId, userId]
-      );
-    }
-
-    // Remove from trash
-    await connection.query(
-      `DELETE FROM trash WHERE trashId = ? AND userId = ?`,
-      [trashId, userId]
-    );
+    await restoreFromTrash(connection, userId, item.itemType, item.itemId);
 
     await connection.commit();
 
@@ -685,22 +425,7 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
 
       const item = trashItems[0];
 
-      if (item.itemType === 'image') {
-        await connection.query(
-          `UPDATE images SET deletedAt = NULL WHERE imageId = ? AND userId = ?`,
-          [item.itemId, userId]
-        );
-      } else if (item.itemType === 'video') {
-        await connection.query(
-          `UPDATE videos SET deletedAt = NULL WHERE videoId = ? AND userId = ?`,
-          [item.itemId, userId]
-        );
-      }
-
-      await connection.query(
-        `DELETE FROM trash WHERE trashId = ? AND userId = ?`,
-        [trashId, userId]
-      );
+      await restoreFromTrash(connection, userId, item.itemType, item.itemId);
 
       restoredCount++;
     }
@@ -757,35 +482,10 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
 
     const item = trashItems[0];
 
-    // Delete from original table
-    if (item.itemType === 'image') {
-      await connection.query(
-        `DELETE FROM images WHERE imageId = ? AND userId = ?`,
-        [item.itemId, userId]
-      );
-    } else if (item.itemType === 'video') {
-      await connection.query(
-        `DELETE FROM videos WHERE videoId = ? AND userId = ?`,
-        [item.itemId, userId]
-      );
-    }
-
-    // Remove from trash
-    await connection.query(
-      `DELETE FROM trash WHERE trashId = ? AND userId = ?`,
-      [trashId, userId]
-    );
+    // Delete permanently
+    await deleteTrashItem(connection, item);
 
     await connection.commit();
-
-    // Delete physical file
-    try {
-      await fs.unlink(item.originalPath);
-      console.log(`✅ File deleted: ${item.originalPath}`);
-    } catch (fsError) {
-      console.error("Error deleting physical file:", fsError);
-      // Don't fail if file doesn't exist
-    }
 
     res.json({
       success: true,
@@ -830,30 +530,9 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    let deletedCount = 0;
-
+    // Delete all items
     for (const item of trashItems) {
-      // Delete from original table
-      if (item.itemType === 'image') {
-        await connection.query(
-          `DELETE FROM images WHERE imageId = ? AND userId = ?`,
-          [item.itemId, userId]
-        );
-      } else if (item.itemType === 'video') {
-        await connection.query(
-          `DELETE FROM videos WHERE videoId = ? AND userId = ?`,
-          [item.itemId, userId]
-        );
-      }
-
-      // Delete physical file
-      try {
-        await fs.unlink(item.originalPath);
-      } catch (fsError) {
-        console.error(`Error deleting file ${item.originalPath}:`, fsError);
-      }
-
-      deletedCount++;
+      await deleteTrashItem(connection, item);
     }
 
     // Clear trash table
@@ -866,8 +545,8 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
 
     res.json({
       success: true,
-      message: `Trash emptied successfully`,
-      data: { deletedCount },
+      message: "Trash emptied successfully",
+      data: { deletedCount: trashItems.length },
     });
   } catch (error) {
     await connection.rollback();
@@ -908,27 +587,9 @@ export const cleanExpiredTrash = async (): Promise<void> => {
 
     console.log(`🗑️ Eliminando ${expiredItems.length} elementos expirados...`);
 
+    // Delete all expired items
     for (const item of expiredItems) {
-      // Delete from original table
-      if (item.itemType === 'image') {
-        await connection.query(
-          `DELETE FROM images WHERE imageId = ? AND userId = ?`,
-          [item.itemId, item.userId]
-        );
-      } else if (item.itemType === 'video') {
-        await connection.query(
-          `DELETE FROM videos WHERE videoId = ? AND userId = ?`,
-          [item.itemId, item.userId]
-        );
-      }
-
-      // Delete physical file
-      try {
-        await fs.unlink(item.originalPath);
-        console.log(`✅ Archivo eliminado: ${item.originalPath}`);
-      } catch (fsError) {
-        console.warn(`⚠️ No se pudo eliminar archivo: ${item.originalPath}`, fsError);
-      }
+      await deleteTrashItem(connection, item);
     }
 
     // Remove expired items from trash
