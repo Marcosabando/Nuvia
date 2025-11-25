@@ -22,6 +22,7 @@ import trashRouter from './routes/TrashRoutes';
 import recentsRouter from './routes/RecentsRoutes';
 import foldersRouter from './routes/FoldersRoutes';
 import adminRouter from './routes/AdminRoutes';
+import profileRouter from './routes/ProfileRoutes'; // ✅ NUEVA RUTA AÑADIDA
 
 const app = express();
 
@@ -155,6 +156,7 @@ app.use('/api/trash', trashRouter);
 app.use('/api/recents', recentsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/profile', profileRouter);
 
 /******************************************************
  * 🩺 Health Check
@@ -162,7 +164,86 @@ app.use('/api/admin', adminRouter);
 app.get('/health', (_: Request, res: Response) => {
   res.json({
     status: 'OK',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+  });
+});
+
+/******************************************************
+ * 📜 Documentación raíz (ACTUALIZADA)
+ ******************************************************/
+app.get('/', (_: Request, res: Response) => {
+  res.json({
+    message: 'API de Gestión de Imágenes - Nuvia',
+    version: '1.0.0',
+    documentation: {
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        refresh: 'POST /api/auth/refresh',
+      },
+      users: {
+        login: 'POST /api/users/login',
+        register: 'POST /api/users/register',
+      },
+      profile: { 
+        getProfile: 'GET /api/profile',
+        getStats: 'GET /api/profile/stats',
+        updateProfile: 'PUT /api/profile',
+        updateImage: 'POST /api/profile/image',
+        updateUsername: 'PATCH /api/profile/username',
+        updateEmail: 'PATCH /api/profile/email',
+        updateBio: 'PATCH /api/profile/bio',
+        updateLocation: 'PATCH /api/profile/location',
+        updatePassword: 'PATCH /api/profile/password',
+        deleteAccount: 'DELETE /api/profile',
+      },
+      images: {
+        upload: 'POST /api/images/upload',
+        uploadMultiple: 'POST /api/images/upload-multiple',
+        list: 'GET /api/images',
+        getById: 'GET /api/images/:id',
+        delete: 'DELETE /api/images/:id',
+      },
+      videos: {
+        upload: 'POST /api/videos/upload',
+        list: 'GET /api/videos',
+        getById: 'GET /api/videos/:id',
+        stream: 'GET /api/video/:userId/:filename',
+      },
+      recents: {
+        list: 'GET /api/recents',
+        stats: 'GET /api/recents/stats',
+        images: 'GET /api/recents/images',
+        videos: 'GET /api/recents/videos',
+        timeline: 'GET /api/recents/timeline',
+        mostViewed: 'GET /api/recents/most-viewed',
+      },
+      folders: {
+        list: 'GET /api/folders',
+        getById: 'GET /api/folders/:id',
+        content: 'GET /api/folders/:id/content',
+        create: 'POST /api/folders',
+        update: 'PATCH /api/folders/:id',
+        delete: 'DELETE /api/folders/:id',
+        addImage: 'POST /api/folders/:id/images',
+        removeImage: 'DELETE /api/folders/:id/images/:imageId',
+      },
+      admin: {
+        stats: 'GET /api/admin/stats',
+        users: 'GET /api/admin/users',
+        userDetails: 'GET /api/admin/users/:id',
+        suspendUser: 'POST /api/admin/users/:id/suspend',
+        updateStorage: 'PUT /api/admin/users/:id/storage',
+        deleteUser: 'DELETE /api/admin/users/:id',
+        export: 'GET /api/admin/export',
+        search: 'GET /api/admin/search',
+        activity: 'GET /api/admin/activity',
+        verify: 'GET /api/admin/verify',
+      }
+    },
+    status: 'online',
   });
 });
 
