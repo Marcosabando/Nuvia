@@ -28,6 +28,7 @@ import { useTrash } from "@/hooks/useTrash";
 const Trash = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
   const {
     trashItems,
     loading,
@@ -38,12 +39,10 @@ const Trash = () => {
     emptyTrash,
   } = useTrash();
 
-  // 🔍 Filtrado de búsqueda
   const filteredItems = trashItems.filter((item) =>
     item.originalName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // ✅ Selección de ítems
   const toggleItemSelection = (id: number) => {
     setSelectedItems((prev) =>
       prev.includes(id)
@@ -60,43 +59,15 @@ const Trash = () => {
     }
   };
 
-  // 🎨 Colores por tipo
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "document":
-        return "text-nuvia-rose";
-      case "video":
-        return "text-nuvia-mauve";
-      case "image":
-        return "text-nuvia-peach";
-      case "folder":
-        return "text-nuvia-deep";
-      default:
-        return "text-muted-foreground";
+  const getTrashItemUrl = (item: any): string => {
+    if (!item?.originalPath) return "";
+    let path = item.originalPath.trim();
+    if (!path.startsWith('uploads/')) {
+      path = `uploads/${path}`;
     }
+    return `http://localhost:3000/${path}`;
   };
 
-  // 🖼️ Helper para construir URLs correctas
-const getTrashItemUrl = (item: any): string => {
-  if (!item?.originalPath) {
-    console.error('Sin originalPath:', item);
-    return "";
-  }
-
-  let path = item.originalPath.trim();
-
-  // Asegurar que empiece con "uploads/"
-  if (!path.startsWith('uploads/')) {
-    path = `uploads/${path}`;
-  }
-
-  const url = `http://localhost:3000/${path}`;
-  console.log('URL generada:', url);
-  return url;
-};
-
-console.log("DATOS CRUDO DE LA API:", JSON.stringify(trashItems, null, 2));
-  // 🕒 Días restantes
   const getDaysLeftBadge = (permanentDeleteAt: string) => {
     const days = Math.max(
       0,
@@ -127,20 +98,22 @@ console.log("DATOS CRUDO DE LA API:", JSON.stringify(trashItems, null, 2));
     }
   };
 
-  // 📊 Tamaño total
   const totalSize = trashItems.reduce(
     (acc, item) => acc + (item.fileSize || 0),
     0
   );
   const formattedSize = (totalSize / (1024 * 1024)).toFixed(2) + " MB";
 
-  // 🧹 Vaciar papelera
   const handleEmptyTrash = async () => {
     await emptyTrash();
     setSelectedItems([]);
   };
 
-  // 🌀 Loading y errores
+  const handlePermanentDelete = async (id: number) => {
+    await permanentDelete(id);
+    setDeleteItemId(null);
+  };
+
   if (loading) {
     return (
       <AppLayout>
@@ -302,33 +275,28 @@ console.log("DATOS CRUDO DE LA API:", JSON.stringify(trashItems, null, 2));
                         />
                       </td>
                       <td className="p-4 flex items-center gap-3 text-nuvia-deep">
-                        {/* 🔹 Vista previa según tipo */}
                         {item.itemType === "image" ? (
-  <img
-    key={`img-${item.id}`}  // 🔥 Key único
-    src={getTrashItemUrl(item)}
-    alt={item.originalName}
-    className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
-    loading="eager"  // 🔥 Carga inmediata
-    onError={(e) => {
-      console.error('❌ Error cargando:', item.originalName, getTrashItemUrl(item));
-      e.currentTarget.style.display = "none";
-    }}
-    onLoad={() => {
-      console.log('✅ Cargada:', item.originalName);
-    }}
-  />
-) : item.itemType === "video" ? (
-  <video
-    key={`video-${item.id}`}  // 🔥 Key único
-    src={getTrashItemUrl(item)}
-    className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
-    muted
-    preload="metadata"  // 🔥 Precarga metadatos
-  />
-) : (
-  <Archive className="w-10 h-10 text-nuvia-silver/50" />
-)}
+                          <img
+                            key={`img-${item.id}`}
+                            src={getTrashItemUrl(item)}
+                            alt={item.originalName}
+                            className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
+                            loading="eager"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : item.itemType === "video" ? (
+                          <video
+                            key={`video-${item.id}`}
+                            src={getTrashItemUrl(item)}
+                            className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
+                            muted
+                            preload="metadata"
+                          />
+                        ) : (
+                          <Archive className="w-10 h-10 text-nuvia-silver/50" />
+                        )}
 
                         <span className="truncate max-w-[200px]">
                           {item.originalName}
@@ -351,14 +319,37 @@ console.log("DATOS CRUDO DE LA API:", JSON.stringify(trashItems, null, 2));
                           >
                             <RotateCcw className="w-4 h-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-nuvia-rose hover:text-nuvia-rose"
-                            onClick={() => permanentDelete(item.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-nuvia-rose hover:text-nuvia-rose"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  ¿Eliminar permanentemente?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Esta acción no se puede deshacer. El elemento "{item.originalName}" será eliminado permanentemente.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-nuvia-rose text-white hover:bg-nuvia-rose/90"
+                                  onClick={() => handlePermanentDelete(item.id)}
+                                >
+                                  Eliminar
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </td>
                     </tr>

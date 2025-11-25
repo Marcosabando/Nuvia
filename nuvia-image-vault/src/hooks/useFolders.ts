@@ -25,66 +25,16 @@ export const useFolders = (): UseFoldersReturn => {
   const [userFolders, setUserFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchFolders = async () => {
-    try {
-      setLoading(true);
-      console.log("🔄 Obteniendo carpetas...");
-      
-      const response = await apiService.get('/folders');
-      console.log("📂 Respuesta completa de carpetas:", response);
-      
-      if (response.success && response.data) {
-        // ✅ Mapeo robusto para diferentes estructuras de datos
-        const folders: Folder[] = response.data.map((item: any) => {
-          // Intentar obtener el ID de diferentes formas
-          const id = item.id || item.folderId || generateFallbackId(item.name);
-          
-          console.log(`📁 Procesando carpeta: ${item.name}`, {
-            originalId: item.id,
-            folderId: item.folderId,
-            finalId: id
-          });
-          
-          return {
-            id: id,
-            name: item.name,
-            description: item.description,
-            color: item.color || '#6B7280', // Color por defecto
-            isSystem: item.isSystem || false,
-            itemCount: item.itemCount || 0,
-            createdAt: item.createdAt || new Date().toISOString()
-          };
-        });
-
-        console.log("✅ Carpetas procesadas:", folders);
-        
-        setSystemFolders(folders.filter(folder => folder.isSystem));
-        setUserFolders(folders.filter(folder => !folder.isSystem));
-      } else {
-        console.error("❌ Error en respuesta de carpetas:", response.error);
-        // Crear carpetas de ejemplo para testing
-        createSampleFolders();
-      }
-    } catch (error) {
-      console.error('❌ Error fetching folders:', error);
-      // Crear carpetas de ejemplo en caso de error
-      createSampleFolders();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Función para generar IDs de respaldo
   const generateFallbackId = (name: string): number => {
-    return Math.abs(name.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0);
-      return a & a;
-    }, 0));
+    return Math.abs(
+      name.split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0)
+    );
   };
 
-  // Carpeta de ejemplo para testing
   const createSampleFolders = () => {
-    console.log("🛠️ Creando carpetas de ejemplo...");
     const sampleFolders: Folder[] = [
       {
         id: 1,
@@ -105,39 +55,66 @@ export const useFolders = (): UseFoldersReturn => {
         createdAt: new Date().toISOString()
       }
     ];
-    
+
     setSystemFolders([]);
     setUserFolders(sampleFolders);
   };
 
+  const fetchFolders = async () => {
+    try {
+      setLoading(true);
+
+      const response = await apiService.get('/folders');
+
+      if (response.success && response.data) {
+        const folders: Folder[] = response.data.map((item: any) => {
+          const id = item.id || item.folderId || generateFallbackId(item.name);
+
+          return {
+            id,
+            name: item.name,
+            description: item.description,
+            color: item.color || '#6B7280',
+            isSystem: item.isSystem || false,
+            itemCount: item.itemCount || 0,
+            createdAt: item.createdAt || new Date().toISOString()
+          };
+        });
+
+        setSystemFolders(folders.filter(f => f.isSystem));
+        setUserFolders(folders.filter(f => !f.isSystem));
+      } else {
+        createSampleFolders();
+      }
+    } catch {
+      createSampleFolders();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const createFolder = async (data: any) => {
-    console.log("📝 Creando carpeta:", data);
     try {
       const response = await apiService.post('/folders', data);
       if (response.success) {
-        console.log("✅ Carpeta creada:", response.data);
         await fetchFolders();
       } else {
         throw new Error(response.error || 'Error creating folder');
       }
     } catch (error) {
-      console.error("❌ Error creando carpeta:", error);
       throw error;
     }
   };
 
   const deleteFolder = async (folderId: number) => {
-    console.log("🗑️ Eliminando carpeta:", folderId);
     try {
       const response = await apiService.delete(`/folders/${folderId}`);
       if (response.success) {
-        console.log("✅ Carpeta eliminada");
         await fetchFolders();
       } else {
         throw new Error(response.error || 'Error deleting folder');
       }
     } catch (error) {
-      console.error("❌ Error eliminando carpeta:", error);
       throw error;
     }
   };
