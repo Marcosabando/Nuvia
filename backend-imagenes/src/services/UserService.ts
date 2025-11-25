@@ -89,7 +89,8 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { identifier, password } = req.body;
 
-  if (!identifier || !password) {
+    // Validar que vengan los campos necesarios
+    if (!identifier || !password) {
       res.status(400).json({
         success: false,
         error: "Username/email and password are required"
