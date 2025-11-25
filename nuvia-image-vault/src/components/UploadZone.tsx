@@ -193,15 +193,15 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       }
 
       // Verificar tamaño (10MB máximo)
-      const oversizedFiles = mediaFiles.filter((file) => file.size > 10 * 1024 * 1024);
-      if (oversizedFiles.length > 0) {
-        toast({
-          title: "Archivos demasiado grandes",
-          description: "El tamaño máximo por archivo es 10MB",
-          variant: "destructive",
-        });
-        return;
-      }
+     const oversizedFiles = mediaFiles.filter((file) => file.size > 3 * 1024 * 1024 * 1024);
+if (oversizedFiles.length > 0) {
+  toast({
+    title: "Archivos demasiado grandes",
+    description: "El tamaño máximo por archivo es 3GB",
+    variant: "destructive",
+  });
+  return;
+}
 
       const newUploadFiles: UploadFile[] = mediaFiles.map((file) => ({
         id: Math.random().toString(36).substr(2, 9),

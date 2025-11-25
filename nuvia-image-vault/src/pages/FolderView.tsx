@@ -15,7 +15,9 @@ import {
   Eye,
   ArrowLeft,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Settings,
+  Edit3
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -24,9 +26,18 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { apiService } from "@/services/api.services";
 import { API_CONFIG } from "@/config/api.config";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface FolderItem {
   id: number;
@@ -54,6 +65,12 @@ const FolderView = () => {
   const [folderInfo, setFolderInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Estados para los modales
+  const [deleteFolderModalOpen, setDeleteFolderModalOpen] = useState(false);
+  const [deleteItemModalOpen, setDeleteItemModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<FolderItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Obtener contenido de la carpeta
   useEffect(() => {
@@ -84,7 +101,7 @@ const FolderView = () => {
               type: 'image',
               itemId: img.imageId,
               userId: img.userId,
-              title: img.title,
+              title: img.title || img.originalFilename,
               originalFilename: img.originalFilename,
               filename: img.filename,
               filePath: img.imagePath,
@@ -104,7 +121,7 @@ const FolderView = () => {
               type: 'video',
               itemId: vid.videoId,
               userId: vid.userId,
-              title: vid.title,
+              title: vid.title || vid.originalFilename,
               originalFilename: vid.originalFilename,
               filename: vid.filename,
               filePath: vid.videoPath,
@@ -137,26 +154,73 @@ const FolderView = () => {
     fetchFolderContent();
   }, [folderId]);
 
+  // Función para abrir modal de eliminar archivo
+  const openDeleteItemModal = (item: FolderItem) => {
+    setItemToDelete(item);
+    setDeleteItemModalOpen(true);
+  };
+
   // Función para quitar archivo de la carpeta
-  const removeFromFolder = async (item: FolderItem) => {
+  const removeFromFolder = async () => {
+    if (!itemToDelete || !folderId) return;
+
     try {
-      if (!folderId) return;
+      setIsDeleting(true);
       
-      const endpoint = item.type === 'image' 
-        ? `/folders/${folderId}/images/${item.itemId}`
-        : `/folders/${folderId}/videos/${item.itemId}`;
+      const endpoint = itemToDelete.type === 'image' 
+        ? `/folders/${folderId}/images/${itemToDelete.itemId}`
+        : `/folders/${folderId}/videos/${itemToDelete.itemId}`;
       
       const response = await apiService.delete(endpoint);
       
       if (response.success) {
         // Actualizar lista local inmediatamente
         setFolderItems(prev => prev.filter(fav => 
-          !(fav.type === item.type && fav.id === item.id)
+          !(fav.type === itemToDelete.type && fav.id === itemToDelete.id)
         ));
+        
+        // Cerrar modal
+        setDeleteItemModalOpen(false);
+        setItemToDelete(null);
+        
+        // Mostrar notificación de éxito
+        // (asumiendo que tienes un sistema de toast)
+        console.log("✅ Archivo eliminado de la carpeta correctamente");
+      } else {
+        throw new Error(response.error || 'Error al eliminar el archivo');
       }
     } catch (error) {
       console.error("Error removiendo archivo:", error);
       alert("Error al quitar el archivo de la carpeta");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Función para eliminar carpeta completa
+  const deleteFolder = async () => {
+    if (!folderId) return;
+
+    try {
+      setIsDeleting(true);
+      
+      const response = await apiService.delete(`/folders/${folderId}`);
+      
+      if (response.success) {
+        // Redirigir al home después de eliminar
+        navigate("/home");
+        
+        // Mostrar notificación de éxito
+        console.log("✅ Carpeta eliminada correctamente");
+      } else {
+        throw new Error(response.error || 'Error al eliminar la carpeta');
+      }
+    } catch (error) {
+      console.error("Error eliminando carpeta:", error);
+      alert("Error al eliminar la carpeta");
+    } finally {
+      setIsDeleting(false);
+      setDeleteFolderModalOpen(false);
     }
   };
 
@@ -193,7 +257,11 @@ const FolderView = () => {
 
   // Filtrar archivos
   const filteredItems = folderItems.filter((item) => {
-    const matchesSearch = item.originalFilename.toLowerCase().includes(searchQuery.toLowerCase());
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = 
+      item.title.toLowerCase().includes(searchLower) || 
+      item.originalFilename.toLowerCase().includes(searchLower);
+    
     const matchesFilter = filterType === "all" || item.type === filterType;
     return matchesSearch && matchesFilter;
   });
@@ -297,15 +365,39 @@ const FolderView = () => {
             </div>
           </div>
           
-          {/* Botón Volver a la derecha */}
-          <Button 
-            onClick={() => navigate("/home")}
-            variant="outline" 
-            className="gap-2 shrink-0"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Volver
-          </Button>
+          {/* Botones de acción de la carpeta */}
+          <div className="flex items-center gap-2 shrink-0">
+            <Button 
+              onClick={() => navigate("/home")}
+              variant="outline" 
+              className="gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </Button>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-10 w-10">
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
+                <DropdownMenuItem>
+                  <Edit3 className="w-4 h-4 mr-2" />
+                  Editar carpeta
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteFolderModalOpen(true)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Eliminar carpeta
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -404,12 +496,11 @@ const FolderView = () => {
                       >
                         <td className="p-4">
                           <div className="flex items-center gap-3">
-                            {/* Miniatura según tipo de archivo */}
                             <div className="w-12 h-12 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0">
                               {item.type === "image" ? (
                                 <img 
                                   src={getFileUrl(item)} 
-                                  alt={item.originalFilename}
+                                  alt={item.title}
                                   className="w-full h-full object-cover"
                                   loading="lazy"
                                   onError={(e) => {
@@ -435,10 +526,15 @@ const FolderView = () => {
                               )}
                             </div>
                             <div>
-                              <p className="font-medium text-nuvia-deep">{item.originalFilename}</p>
+                              <p className="font-medium text-nuvia-deep">{item.title}</p>
                               <p className="text-xs text-nuvia-mauve sm:hidden">
                                 {formatFileSize(item.fileSize)} • {item.type}
                               </p>
+                              {item.title !== item.originalFilename && (
+                                <p className="text-xs text-nuvia-silver mt-1">
+                                  Original: {item.originalFilename}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -468,8 +564,8 @@ const FolderView = () => {
                                 Descargar
                               </DropdownMenuItem>
                               <DropdownMenuItem 
-                                className="text-destructive"
-                                onClick={() => removeFromFolder(item)}
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => openDeleteItemModal(item)}
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Quitar de carpeta
@@ -507,6 +603,98 @@ const FolderView = () => {
           </Card>
         )}
       </div>
+
+      {/* ✅ MODAL PARA ELIMINAR CARPETA */}
+      <Dialog open={deleteFolderModalOpen} onOpenChange={setDeleteFolderModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Eliminar carpeta
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres eliminar la carpeta <strong>"{folderInfo?.name}"</strong>?
+              <br /><br />
+              <span className="text-destructive font-medium">
+                Esta acción no se puede deshacer. Se eliminarán {stats.total} archivos de esta carpeta.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteFolderModalOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={deleteFolder}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Eliminar carpeta
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ MODAL PARA ELIMINAR ARCHIVO DE CARPETA */}
+      <Dialog open={deleteItemModalOpen} onOpenChange={setDeleteItemModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Quitar de la carpeta
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres quitar <strong>"{itemToDelete?.title}"</strong> de esta carpeta?
+              <br /><br />
+              <span className="text-destructive font-medium">
+                El archivo no se eliminará, solo se quitará de esta carpeta.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteItemModalOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={removeFromFolder}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Quitando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Quitar archivo
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
