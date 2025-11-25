@@ -2,8 +2,11 @@
 import auth from "@src/middleware/auth";
 import { Router } from "express";
 import * as VideoService from "@src/services/VideoService";
+import * as TrashService from "@src/services/TrashService"; // ✅ Añadir esta importación
 import { uploadMultipleVideos, uploadSingle, uploadSingleVideo } from "@src/middleware/multer";
+
 const router = Router();
+
 // ============================================================================
 // 🔒 TODAS LAS RUTAS REQUIEREN AUTENTICACIÓN
 // ============================================================================
@@ -43,8 +46,8 @@ router.get("/:id", VideoService.getVideoById);
 // 🗑️ ELIMINAR / RESTAURAR VIDEOS
 // ============================================================================
 
-router.delete("/:id", VideoService.deleteVideo);
-router.patch("/:id/soft-delete", VideoService.softDeleteVideo);
+router.delete("/:id", VideoService.deleteVideo); // Hard delete
+router.patch("/:id/soft-delete", TrashService.softDeleteVideo); // ✅ Cambiar a TrashService
 router.patch("/:id/restore", VideoService.restoreVideo);
 
 // ============================================================================
