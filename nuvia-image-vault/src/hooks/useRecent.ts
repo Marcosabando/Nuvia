@@ -40,15 +40,13 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-  // Helper para obtener el token correctamente
+  // Obtener token
   const getAuthToken = (): string | null => {
-    // Intentar obtener el token de diferentes fuentes
-    const token = localStorage.getItem('token') || 
-                  localStorage.getItem('authToken') || 
-                  sessionStorage.getItem('token');
-    
-    console.log('🔑 Token encontrado:', token ? 'Sí' : 'No');
-    return token;
+    return (
+      localStorage.getItem('token') ||
+      localStorage.getItem('authToken') ||
+      sessionStorage.getItem('token')
+    );
   };
 
   // Obtener items recientes
@@ -58,18 +56,15 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
       setError(null);
 
       const token = getAuthToken();
-      
       if (!token) {
         setError('No hay sesión activa. Por favor, inicia sesión.');
         setLoading(false);
         return;
       }
 
-      console.log('📡 Llamando a /api/recents con token');
-      
       const response = await axios.get(`${API_URL}/recents`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         params: {
@@ -78,14 +73,10 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
         }
       });
 
-      console.log('✅ Respuesta recibida:', response.data);
-
       if (response.data.success) {
         setRecentItems(response.data.data);
       }
     } catch (err: any) {
-      console.error('❌ Error fetching recent items:', err);
-      
       if (err.response?.status === 401) {
         setError('Sesión expirada. Por favor, inicia sesión nuevamente.');
       } else {
@@ -100,38 +91,25 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
   const fetchStats = async () => {
     try {
       const token = getAuthToken();
-      
-      if (!token) {
-        console.log('⚠️ No hay token para obtener estadísticas');
-        return;
-      }
+      if (!token) return;
 
-      console.log('📡 Llamando a /api/recents/stats con token');
-      
       const response = await axios.get(`${API_URL}/recents/stats`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
 
-      console.log('✅ Estadísticas recibidas:', response.data);
-
       if (response.data.success) {
         setStats(response.data.data);
       }
-    } catch (err: any) {
-      console.error('❌ Error fetching stats:', err);
-      
-      if (err.response?.status === 401) {
-        console.log('⚠️ Token inválido o expirado');
-      }
+    } catch {
+      // Silenciado porque las estadísticas no son críticas
     }
   };
 
   useEffect(() => {
     const token = getAuthToken();
-    
     if (token) {
       fetchRecentItems();
       fetchStats();
@@ -143,7 +121,6 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
 
   // Helper: Obtener URL completa del archivo
   const getFileUrl = (path: string): string => {
-    // Eliminar /api de la URL base para construir la URL del archivo
     const baseUrl = API_URL.replace('/api', '');
     return `${baseUrl}/${path}`;
   };
@@ -161,10 +138,12 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
     if (diffMins < 60) return `Hace ${diffMins} minuto${diffMins > 1 ? 's' : ''}`;
     if (diffHours < 24) return `Hace ${diffHours} hora${diffHours > 1 ? 's' : ''}`;
     if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+
     if (diffDays < 30) {
       const weeks = Math.floor(diffDays / 7);
       return `Hace ${weeks} semana${weeks > 1 ? 's' : ''}`;
     }
+
     return past.toLocaleDateString('es-ES');
   };
 
