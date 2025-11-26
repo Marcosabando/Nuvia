@@ -558,7 +558,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
             ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
             : "space-y-4"
         }>
-          {filteredVideos.map((video) => (
+          {paginatedVideos.map((video) => (
             <VideoCard
               key={video.videoId}
               video={video}

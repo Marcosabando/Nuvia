@@ -34,15 +34,12 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
         }),
       });
 
-      console.log("Status:", response.status);
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Error del servidor: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log("Respuesta completa del servidor:", data);
 
       if (data.success) {
         // 🔥 GUARDAR AUTENTICACIÓN

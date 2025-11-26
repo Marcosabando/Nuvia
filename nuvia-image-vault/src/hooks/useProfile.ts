@@ -67,11 +67,9 @@ export const useProfile = (): UseProfileReturn => {
       setLoading(true);
       setError(null);
 
-      console.log('🔄 [useProfile] Obteniendo perfil...');
 
       // Obtener perfil del usuario
       const profileResponse = await apiService.get('/profile');
-      console.log('📦 [useProfile] Respuesta perfil:', profileResponse);
 
       if (profileResponse.success && profileResponse.data) {
         const transformedProfile: ProfileData = {
@@ -95,16 +93,13 @@ export const useProfile = (): UseProfileReturn => {
           updatedAt: profileResponse.data.updatedAt
         };
 
-        console.log('✅ [useProfile] Perfil transformado:', transformedProfile);
         setProfile(transformedProfile);
       } else {
         throw new Error(profileResponse.error || 'Error en la respuesta del perfil');
       }
 
       // Obtener estadísticas del usuario
-      console.log('🔄 [useProfile] Obteniendo estadísticas...');
       const statsResponse = await apiService.get('/profile/stats');
-      console.log('📊 [useProfile] Respuesta estadísticas:', statsResponse);
 
       if (statsResponse.success && statsResponse.data) {
         const transformedStats: UserStats = {
@@ -131,7 +126,6 @@ export const useProfile = (): UseProfileReturn => {
           lastLogin: statsResponse.data.lastLogin
         };
 
-        console.log('✅ [useProfile] Stats transformados:', transformedStats);
         setStats(transformedStats);
       }
 
@@ -153,8 +147,6 @@ export const useProfile = (): UseProfileReturn => {
   // ✅ Función para actualizar imagen de perfil
   const updateProfileImage = async (file: File): Promise<{ success: boolean; error?: string }> => {
     try {
-      console.log('🖼️ [useProfile] Subiendo imagen de perfil...', file.name);
-      
       const formData = new FormData();
       formData.append('profileImage', file);
 
@@ -163,8 +155,6 @@ export const useProfile = (): UseProfileReturn => {
           'Content-Type': 'multipart/form-data',
         },
       });
-
-      console.log('📤 [useProfile] Respuesta subida:', response);
 
       if (response.success) {
         // Actualizar el perfil local con la nueva imagen
@@ -182,8 +172,6 @@ export const useProfile = (): UseProfileReturn => {
             profileImagePath: response.data.profileImagePath
           });
         }
-
-        console.log('✅ [useProfile] Imagen actualizada correctamente');
         return { success: true };
       } else {
         console.error('❌ [useProfile] Error en respuesta:', response.error);
