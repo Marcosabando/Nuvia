@@ -10,10 +10,6 @@ const ProtectedRoute = ({ children, requiredRole }: Props) => {
   const token = localStorage.getItem("authToken");
   const userRole = localStorage.getItem("userRole");
 
-  console.log("🔐 ProtectedRoute - Token:", token ? "✅ Existe" : "❌ No existe");
-  console.log("🔐 ProtectedRoute - Role:", userRole);
-  console.log("🔐 ProtectedRoute - Required Role:", requiredRole);
-
   // Si no hay token → Redirigir a login
   if (!token) {
     console.log("❌ No hay token, redirigiendo a /");
@@ -26,7 +22,6 @@ const ProtectedRoute = ({ children, requiredRole }: Props) => {
     return <Navigate to="/home" replace />;
   }
 
-  console.log("✅ Acceso permitido");
   return <>{children}</>;
 };
 

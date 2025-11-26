@@ -145,9 +145,6 @@ const Trash = () => {
             <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
               Papelera
             </h1>
-            <p className="text-sm sm:text-base text-white/80 mt-1">
-              Los elementos se eliminarán permanentemente después de 30 días
-            </p>
           </div>
 
           <AlertDialog>

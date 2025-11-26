@@ -426,7 +426,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                   
                   <DropdownMenuSeparator />
                   
-                  <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(video.videoId)}>
+                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
                     <Trash2 className="w-4 h-4 mr-2" />
                     Mover a papelera
                   </DropdownMenuItem>
@@ -463,13 +463,6 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
       </div>
     );
   }
-
-  // Filtrar videos según búsqueda y favoritos
-  const filteredVideos = videos.filter((video) => {
-    const matchesSearch = video.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFavorites = !favoritesOnly || video.isFavorite;
-    return matchesSearch && matchesFavorites;
-  });
 
   return (
     <div className="space-y-6">
@@ -565,12 +558,10 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
             ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
             : "space-y-4"
         }>
-          {filteredVideos.map((video) => (
+          {paginatedVideos.map((video) => (
             <VideoCard
               key={video.videoId}
               video={video}
-              onFavoriteToggle={handleFavoriteToggle}
-              onDelete={handleSoftDelete}
             />
           ))}
         </div>
@@ -711,7 +702,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                       className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30" 
                       onClick={() => {
                         setSelectedVideo(null);
-                        handleDelete(selectedVideo.videoId);
+                        handleSoftDelete(selectedVideo.videoId);
                       }}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
