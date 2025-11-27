@@ -7,15 +7,10 @@ import { UploadZone } from "@/components/UploadZone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Images, Upload, TrendingUp, Video } from "lucide-react";
+import { Images, Upload, TrendingUp, Video, Dock } from "lucide-react";
 import { useUserStats } from "@/hooks/useUserStats";
 import { Grid3X3, List } from "lucide-react";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent
-} from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const Home = () => {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -44,9 +39,7 @@ const Home = () => {
               <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
                 Bienvenido a Nuvia{username ? `, ${username}` : ""}
               </h1>
-              <p className="text-sm sm:text-base text-white/80 mt-1">
-                Tu plataforma elegante de gestión multimedia
-              </p>
+              <p className="text-sm sm:text-base text-white/80 mt-1">Tu plataforma elegante de gestión multimedia</p>
             </div>
 
             {error && (
@@ -65,9 +58,7 @@ const Home = () => {
                       <Images className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.totalImages}
-                  </p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalImages}</p>
                 </CardContent>
               </Card>
 
@@ -79,9 +70,7 @@ const Home = () => {
                       <Upload className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.todayUploads}
-                  </p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.todayUploads}</p>
                 </CardContent>
               </Card>
 
@@ -107,9 +96,7 @@ const Home = () => {
                       <Video className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.totalVideos}
-                  </p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalVideos}</p>
                 </CardContent>
               </Card>
             </div>
@@ -119,55 +106,38 @@ const Home = () => {
           <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
-                <TabsList className="grid w-full sm:w-fit grid-cols-3 bg-white/80 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
+                <TabsList className="flex flex-wrap w-full sm:w-auto bg-white/80 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
                   <TabsTrigger
                     value="images"
-                    className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                     <Images className="w-4 h-4" />
                     Imágenes
                   </TabsTrigger>
+
                   <TabsTrigger
                     value="videos"
-                    className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                     <Video className="w-4 h-4" />
                     Videos
                   </TabsTrigger>
+
                   <TabsTrigger
-                    value="upload"
-                    className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
-                    <Upload className="w-4 h-4" />
-                    Subir
+                    value="archivos"
+                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                    <Dock className="w-4 h-4" />
+                    Archivos
                   </TabsTrigger>
                 </TabsList>
-
-                {(activeTab === "images" || activeTab === "videos") && (
-                  <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden bg-white/80 backdrop-blur-sm">
-                    <Button
-                      variant={viewMode === "grid" ? "default" : "ghost"}
-                      size="icon"
-                      className="w-9 h-9 rounded-none"
-                      onClick={() => setViewMode("grid")}>
-                      <Grid3X3 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant={viewMode === "list" ? "default" : "ghost"}
-                      size="icon"
-                      className="w-9 h-9 rounded-none"
-                      onClick={() => setViewMode("list")}>
-                      <List className="w-4 h-4" />
-                    </Button>
-                  </div>
-                )}
               </div>
 
-              {(activeTab === "images" || activeTab === "videos") && (
-                <Badge variant="secondary" className="bg-white/80 text-nuvia-deep border-nuvia-silver/30 whitespace-nowrap">
-                  {activeTab === "images" 
-                    ? `${stats.totalImages} imágenes` 
-                    : `${stats.totalVideos} videos`
-                  }
-                </Badge>
-              )}
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => setActiveTab("upload")}
+                  className="bg-gradient-to-r from-nuvia-peach to-nuvia-rose hover:from-nuvia-peach-dark hover:to-nuvia-rose-dark text-white shadow-nuvia-accent hover:shadow-nuvia-glow transition-all duration-300 hover:scale-105 gap-2">
+                  <Upload className="w-4 h-4" />
+                  Subir Archivos
+                </Button>
+              </div>
             </div>
 
             <TabsContent value="images" className="space-y-6 animate-fade-in">
