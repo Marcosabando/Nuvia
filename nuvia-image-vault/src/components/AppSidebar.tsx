@@ -344,13 +344,6 @@ export function AppSidebar() {
                   side="right"
                   align="end"
                   className="w-48 bg-white dark:bg-neutral-900 border border-border/50 shadow-lg rounded-xl">
-                  <DropdownMenuItem
-                    onClick={() => navigate("/profile")}
-                    className="cursor-pointer">
-                    <User className="mr-2 w-4 h-4" />
-                    <span>Mi Perfil</span>
-                  </DropdownMenuItem>
-
                   <DropdownMenuSeparator />
 
                   <DropdownMenuItem
