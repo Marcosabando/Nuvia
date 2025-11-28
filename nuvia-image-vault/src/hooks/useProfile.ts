@@ -1,4 +1,4 @@
-// src/hooks/useProfile.ts - VERSIÓN CORREGIDA
+// src/hooks/useProfile.ts
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
@@ -54,6 +54,7 @@ interface UseProfileReturn {
   error: string | null;
   refetch: () => void;
   updateProfileImage: (file: File) => Promise<{ success: boolean; error?: string }>;
+  updateUsername: (newUsername: string) => Promise<{ success: boolean; error?: string }>; // ✅ AGREGADO
 }
 
 export const useProfile = (): UseProfileReturn => {
@@ -67,8 +68,6 @@ export const useProfile = (): UseProfileReturn => {
       setLoading(true);
       setError(null);
 
-
-      // Obtener perfil del usuario
       const profileResponse = await apiService.get('/profile');
 
       if (profileResponse.success && profileResponse.data) {
@@ -98,7 +97,6 @@ export const useProfile = (): UseProfileReturn => {
         throw new Error(profileResponse.error || 'Error en la respuesta del perfil');
       }
 
-      // Obtener estadísticas del usuario
       const statsResponse = await apiService.get('/profile/stats');
 
       if (statsResponse.success && statsResponse.data) {
@@ -131,57 +129,81 @@ export const useProfile = (): UseProfileReturn => {
 
     } catch (err: any) {
       console.error('❌ [useProfile] Error:', err);
-      
-      if (err.response?.data?.error) {
-        setError(`Error del servidor: ${err.response.data.error}`);
-      } else if (err.message) {
-        setError(`Error: ${err.message}`);
-      } else {
-        setError("No se pudo cargar el perfil");
-      }
+      setError(err.response?.data?.error || err.message || "No se pudo cargar el perfil");
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Función para actualizar imagen de perfil
+  // --------------------------------------------
+  // ✅ FUNCIÓN PARA ACTUALIZAR USERNAME
+  // --------------------------------------------
+  const updateUsername = async (
+    newUsername: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await apiService.put("/profile/username", { username: newUsername });
+
+      if (response.success) {
+        if (profile) {
+          setProfile({
+            ...profile,
+            username: newUsername
+          });
+        }
+
+        if (stats) {
+          setStats({
+            ...stats,
+            username: newUsername
+          });
+        }
+
+        return { success: true };
+      }
+
+      return { success: false, error: response.error || "Error al actualizar el nombre de usuario" };
+    } catch (err: any) {
+      console.error("❌ Error actualizando username:", err);
+      return {
+        success: false,
+        error: err.response?.data?.error || err.message || "Error desconocido"
+      };
+    }
+  };
+
+  // --------------------------------------------
+  // FUNCION PARA SUBIR FOTO DE PERFIL
+  // --------------------------------------------
   const updateProfileImage = async (file: File): Promise<{ success: boolean; error?: string }> => {
     try {
       const formData = new FormData();
       formData.append('profileImage', file);
 
       const response = await apiService.post('/profile/image', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       if (response.success) {
-        // Actualizar el perfil local con la nueva imagen
         if (profile) {
           setProfile({
             ...profile,
             profileImagePath: response.data.profileImagePath
           });
         }
-        
-        // También actualizar stats si existen
         if (stats) {
           setStats({
             ...stats,
             profileImagePath: response.data.profileImagePath
           });
         }
+
         return { success: true };
       } else {
-        console.error('❌ [useProfile] Error en respuesta:', response.error);
-        return { success: false, error: response.error || 'Error al actualizar la imagen' };
+        return { success: false, error: response.error };
       }
     } catch (err: any) {
-      console.error('❌ [useProfile] Error subiendo imagen:', err);
-      
-      const errorMsg = err.response?.data?.error || err.message || 'Error al subir la imagen';
-      return { success: false, error: errorMsg };
+      return { success: false, error: err.message };
     }
   };
 
@@ -195,6 +217,7 @@ export const useProfile = (): UseProfileReturn => {
     loading,
     error,
     refetch: fetchProfile,
-    updateProfileImage // ✅ Exportar la función de actualización
+    updateProfileImage,
+    updateUsername // ✅ AHORA SÍ EXISTE
   };
 };
