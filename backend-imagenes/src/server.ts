@@ -22,7 +22,9 @@ import trashRouter from './routes/TrashRoutes';
 import recentsRouter from './routes/RecentsRoutes';
 import foldersRouter from './routes/FoldersRoutes';
 import adminRouter from './routes/AdminRoutes';
-import profileRouter from './routes/ProfileRoutes'; // ✅ NUEVA RUTA AÑADIDA
+import profileRouter from './routes/ProfileRoutes';
+import documentsRouter from './routes/DocumentsRoutes'; // ✅ NUEVA RUTA DE DOCUMENTOS
+
 
 const app = express();
 
@@ -58,8 +60,6 @@ app.use(
   })
 );
 
-
-
 // Logger
 if (ENV.NodeEnv === NodeEnvs.Dev) app.use(morgan('dev'));
 
@@ -87,6 +87,81 @@ app.use('/uploads', express.static(uploadsPath, {
   cacheControl: true,
   maxAge: '0',  // evita 304
 }));
+
+/******************************************************
+ * 📄 STREAMING DE DOCUMENTOS
+ ******************************************************/
+app.get('/api/documents/:userId/:filename', (req, res) => {
+  const { userId, filename } = req.params;
+
+  const filePath = path.join(uploadsPath, userId, 'documents', filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, error: 'Documento no encontrado' });
+  }
+
+  const ext = path.extname(filename).toLowerCase();
+  const mime = {
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.txt': 'text/plain',
+    '.csv': 'text/csv',
+    '.zip': 'application/zip',
+    '.rar': 'application/x-rar-compressed',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.md': 'text/markdown'
+  }[ext] || 'application/octet-stream';
+
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+  fs.createReadStream(filePath).pipe(res);
+});
+
+/******************************************************
+ * 📄 DESCARGAR DOCUMENTOS
+ ******************************************************/
+app.get('/api/documents/:userId/:filename/download', (req, res) => {
+  const { userId, filename } = req.params;
+
+  const filePath = path.join(uploadsPath, userId, 'documents', filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, error: 'Documento no encontrado' });
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-cache');
+
+  fs.createReadStream(filePath).pipe(res);
+});
+
+/******************************************************
+ * 📄 DOCUMENTOS COMPARTIDOS (ACCESO PÚBLICO)
+ ******************************************************/
+app.get('/api/shared/documents/:token', (req, res) => {
+  const { token } = req.params;
+
+  // Esta ruta será manejada por el servicio de compartición
+  // que verificará el token y servirá el documento si es válido
+  res.setHeader('Cache-Control', 'no-cache');
+  
+  // La lógica completa estará en DocumentShareService
+  res.json({ 
+    message: 'Acceso a documento compartido',
+    token: token 
+  });
+});
 
 /******************************************************
  * 🎬 STREAMING NORMAL DE VIDEOS
@@ -157,6 +232,7 @@ app.use('/api/recents', recentsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/profile', profileRouter);
+app.use('/api/documents', documentsRouter); // ✅ NUEVA RUTA DE DOCUMENTOS
 
 /******************************************************
  * 🩺 Health Check
@@ -171,12 +247,12 @@ app.get('/health', (_: Request, res: Response) => {
 });
 
 /******************************************************
- * 📜 Documentación raíz (ACTUALIZADA)
+ * 📜 Documentación raíz (ACTUALIZADA CON DOCUMENTOS)
  ******************************************************/
 app.get('/', (_: Request, res: Response) => {
   res.json({
-    message: 'API de Gestión de Imágenes - Nuvia',
-    version: '1.0.0',
+    message: 'API de Gestión de Archivos - Nuvia',
+    version: '2.1.0',
     documentation: {
       auth: {
         register: 'POST /api/auth/register',
@@ -198,6 +274,41 @@ app.get('/', (_: Request, res: Response) => {
         updateLocation: 'PATCH /api/profile/location',
         updatePassword: 'PATCH /api/profile/password',
         deleteAccount: 'DELETE /api/profile',
+      },
+      documents: {
+        upload: 'POST /api/documents/upload',
+        list: 'GET /api/documents',
+        search: 'GET /api/documents/search',
+        stats: 'GET /api/documents/stats',
+        getById: 'GET /api/documents/:id',
+        update: 'PUT /api/documents/:id',
+        favorite: 'PATCH /api/documents/:id/favorite',
+        delete: 'DELETE /api/documents/:id',
+        byCategory: 'GET /api/documents/category/:category',
+        stream: 'GET /api/documents/:userId/:filename',
+        download: 'GET /api/documents/:userId/:filename/download',
+        // Características avanzadas
+        versions: {
+          list: 'GET /api/documents/:documentId/versions',
+          get: 'GET /api/documents/:documentId/versions/:versionId',
+          create: 'POST /api/documents/:documentId/versions',
+          restore: 'POST /api/documents/:documentId/versions/:versionId/restore',
+          delete: 'DELETE /api/documents/:documentId/versions/:versionId'
+        },
+        sharing: {
+          list: 'GET /api/documents/:documentId/shares',
+          create: 'POST /api/documents/:documentId/shares',
+          update: 'PUT /api/documents/:documentId/shares/:shareId',
+          delete: 'DELETE /api/documents/:documentId/shares/:shareId',
+          public: 'GET /api/shared/documents/:token'
+        },
+        comments: {
+          list: 'GET /api/documents/:documentId/comments',
+          create: 'POST /api/documents/:documentId/comments',
+          update: 'PUT /api/documents/:documentId/comments/:commentId',
+          resolve: 'PATCH /api/documents/:documentId/comments/:commentId/resolve',
+          delete: 'DELETE /api/documents/:documentId/comments/:commentId'
+        }
       },
       images: {
         upload: 'POST /api/images/upload',
@@ -244,6 +355,15 @@ app.get('/', (_: Request, res: Response) => {
       }
     },
     status: 'online',
+    features: {
+      images: true,
+      videos: true,
+      documents: true, // ✅ NUEVA CARACTERÍSTICA
+      profiles: true,
+      folders: true,
+      sharing: true,
+      admin: true
+    }
   });
 });
 
