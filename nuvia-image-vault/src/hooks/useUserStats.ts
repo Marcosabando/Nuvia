@@ -1,86 +1,91 @@
-// src/hooks/useUserStats.ts
+// src/hooks/useUserStats.ts - VERSIÓN ACTUALIZADA
 import { useEffect, useState } from "react";
-import { apiService } from '@/services/api.services';
+import { apiService } from "@/services/api.services";
 
-interface StatsData {
+interface UserStats {
+  username: string;
   totalImages: number;
+  totalVideos: number;
+  totalDocuments: number; // ✅ NUEVA PROPIEDAD
   todayUploads: number;
   storageUsed: number;
   storageLimit: number;
   storagePercentage: number;
-  totalVideos: number;
 }
 
-interface UserStats {
+interface UseUserStatsReturn {
   username: string;
-  email: string;
-  role: "user" | "admin" | "moderator";
-  stats: StatsData;
+  stats: UserStats;
   loading: boolean;
   error: string | null;
+  refetch: () => void;
 }
 
-export const useUserStats = (): UserStats => {
+export const useUserStats = (): UseUserStatsReturn => {
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"user" | "admin" | "moderator">("user");
-
-  const [stats, setStats] = useState<StatsData>({
+  const [stats, setStats] = useState<UserStats>({
+    username: "",
     totalImages: 0,
+    totalVideos: 0,
+    totalDocuments: 0, // ✅ INICIALIZAR
     todayUploads: 0,
     storageUsed: 0,
-    storageLimit: 50,
+    storageLimit: 0,
     storagePercentage: 0,
-    totalVideos: 0,
   });
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const fetchUserStats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const response = await apiService.get('/users/profile');
+      // Obtener estadísticas del usuario
+      const statsResponse = await apiService.get('/profile/stats');
 
-        if (response.success && response.data) {
-          const userData = response.data;
+      if (statsResponse.success && statsResponse.data) {
+        const userData = statsResponse.data;
+        
+        setUsername(userData.username || "");
+        
+        setStats({
+          username: userData.username || "",
+          totalImages: userData.imageCount || 0,
+          totalVideos: userData.videoCount || 0,
+          totalDocuments: userData.documentCount || 0, // ✅ INCLUIR DOCUMENTOS
+          todayUploads: userData.todayUploads || 0,
+          storageUsed: Math.round((userData.storageUsed || 0) / (1024 * 1024 * 1024) * 100) / 100, // Convertir a GB
+          storageLimit: Math.round((userData.storageLimit || 5368709120) / (1024 * 1024 * 1024) * 100) / 100, // 5GB por defecto
+          storagePercentage: userData.storagePercentage || 0,
+        });
 
-          setUsername(userData.username || "");
-          setEmail(userData.email || "");
-          setRole(userData.role || "user");
-
-          const storageUsedGB = parseFloat((userData.storageUsed / 1024 / 1024 / 1024).toFixed(2));
-          const storageLimitGB = parseFloat((userData.storageLimit / 1024 / 1024 / 1024).toFixed(2));
-
-          setStats({
-            totalImages: userData.stats?.totalImages || 0,
-            todayUploads: userData.stats?.todayUploads || 0,
-            storageUsed: storageUsedGB,
-            storageLimit: storageLimitGB,
-            storagePercentage: parseFloat(userData.storagePercentage) || 0,
-            totalVideos: userData.stats?.totalVideos || 0,
-          });
-        } else {
-          throw new Error(response.error || 'Error en la respuesta del servidor');
-        }
-      } catch (err: any) {
-        if (err.response?.data?.error) {
-          setError(`Error del servidor: ${err.response.data.error}`);
-        } else if (err.message) {
-          setError(`Error: ${err.message}`);
-        } else {
-          setError("No se pudieron cargar los datos del usuario");
-        }
-      } finally {
-        setLoading(false);
+      } else {
+        throw new Error(statsResponse.error || 'Error en la respuesta del servidor');
       }
-    };
 
-    fetchUserData();
+    } catch (err: any) {
+      if (err.response?.data?.error) {
+        setError(`Error del servidor: ${err.response.data.error}`);
+      } else if (err.message) {
+        setError(`Error: ${err.message}`);
+      } else {
+        setError("No se pudieron cargar las estadísticas");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserStats();
   }, []);
 
-  return { username, email, role, stats, loading, error };
+  return {
+    username,
+    stats,
+    loading,
+    error,
+    refetch: fetchUserStats
+  };
 };
