@@ -27,13 +27,23 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          
+          {/* ✅ AGREGAR RUTA HOME PROTEGIDA */}
+          <Route 
+            path="/home" 
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            } 
+          />
+          
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/recent" element={<Recent />} />
           <Route path="/folders/:folderId" element={<FolderView />} />
           <Route path="/downloads" element={<Downloads />} />
           <Route path="/screenshots" element={<Screenshots />} />
           <Route path="/trash" element={<Trash />} />
-          <Route path="/home" element={<Home />} />
           
           {/* ✅ RUTA ÚNICA DE PERFIL */}
           <Route 

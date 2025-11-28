@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { Upload, Image, X, CheckCircle } from "lucide-react";
+import { Upload, Image, X, CheckCircle, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -46,6 +46,90 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
     }
   }, []);
 
+  // Tipos MIME permitidos para documentos
+  const allowedDocumentTypes = [
+    // PDF
+    'application/pdf',
+    
+    // Word
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    
+    // Excel
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    
+    // PowerPoint
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    
+    // Texto
+    'text/plain',
+    'text/csv',
+    'text/markdown',
+    
+    // Otros documentos
+    'application/rtf',
+    'application/json',
+    'application/xml',
+    'text/html',
+    'text/css',
+    'application/javascript',
+    
+    // Archivos comprimidos
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+    'application/x-tar',
+    'application/gzip'
+  ];
+
+  const isDocumentFile = (file: File): boolean => {
+    return allowedDocumentTypes.includes(file.type);
+  };
+
+  const isImageFile = (file: File): boolean => {
+    return file.type.startsWith("image/");
+  };
+
+  const isVideoFile = (file: File): boolean => {
+    return file.type.startsWith("video/");
+  };
+
+  const getFileType = (file: File): 'image' | 'video' | 'document' => {
+    if (isImageFile(file)) return 'image';
+    if (isVideoFile(file)) return 'video';
+    if (isDocumentFile(file)) return 'document';
+    return 'document'; // Por defecto
+  };
+
+  const getUploadEndpoint = (fileType: 'image' | 'video' | 'document'): string => {
+    switch (fileType) {
+      case 'image':
+        return "http://localhost:3000/api/images/upload";
+      case 'video':
+        return "http://localhost:3000/api/videos/upload";
+      case 'document':
+        return "http://localhost:3000/api/documents/upload";
+      default:
+        return "http://localhost:3000/api/documents/upload";
+    }
+  };
+
+  // Función para determinar el nombre del campo según el tipo de archivo
+  const getFieldName = (fileType: 'image' | 'video' | 'document'): string => {
+    switch (fileType) {
+      case 'image':
+        return 'image';
+      case 'video':
+        return 'video';
+      case 'document':
+        return 'document';
+      default:
+        return 'file';
+    }
+  };
+
   const uploadToServer = useCallback(
     async (uploadFile: UploadFile) => {
       try {
@@ -56,9 +140,38 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
           throw new Error("No hay sesión activa. Por favor, inicia sesión nuevamente.");
         }
 
-        // Crear FormData
+        // Determinar tipo de archivo y endpoint
+        const fileType = getFileType(uploadFile.file);
+        const endpoint = getUploadEndpoint(fileType);
+        const fieldName = getFieldName(fileType);
+
+        console.log("🎯 Subiendo a endpoint:", endpoint);
+        console.log("📝 Usando campo:", fieldName);
+
+        // Crear FormData - PRUEBA CON DIFERENTES ENFOQUES
         const formData = new FormData();
-        formData.append("file", uploadFile.file);
+        
+        // PRIMER INTENTO: Solo el archivo básico
+        formData.append(fieldName, uploadFile.file);
+        
+        // SEGUNDO INTENTO: Agregar metadata adicional SOLO para documentos
+        if (fileType === 'document') {
+          const title = uploadFile.file.name.replace(/\.[^/.]+$/, ""); // Remover extensión
+          formData.append("title", title);
+          formData.append("category", "other");
+          formData.append("description", `Archivo subido: ${uploadFile.file.name}`);
+          
+          // DEBUG: Agregar información adicional para debugging
+          formData.append("originalName", uploadFile.file.name);
+          formData.append("fileSize", uploadFile.file.size.toString());
+          formData.append("mimeType", uploadFile.file.type);
+        }
+
+        // DEBUG: Mostrar los campos del FormData
+        console.log("📋 Campos en FormData:");
+        for (let [key, value] of formData.entries()) {
+          console.log(`  ${key}:`, value instanceof File ? `File: ${value.name}` : value);
+        }
 
         const xhr = new XMLHttpRequest();
 
@@ -84,8 +197,16 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
                 const response = JSON.parse(xhr.responseText);
                 console.log("✅ Respuesta JSON:", response);
 
-                // VERIFICAR SI LA RESPUESTA INDICA ÉXITO
-                if (response.success) {
+                // VERIFICACIÓN MEJORADA: Aceptar diferentes estructuras de respuesta
+                const isSuccess = 
+                  response.success === true || 
+                  response.status === 'success' || 
+                  response.id !== undefined ||
+                  response.documentId !== undefined ||
+                  response.imageId !== undefined ||
+                  response.videoId !== undefined;
+
+                if (isSuccess) {
                   setUploadingFiles((prev) =>
                     prev.map((file) => {
                       if (file.id === uploadFile.id) {
@@ -100,7 +221,7 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
                     description: `${uploadFile.file.name} se subió correctamente`,
                   });
 
-                  // Llamar callback para recargar imágenes
+                  // Llamar callback para recargar contenido
                   if (onUploadComplete) {
                     onUploadComplete();
                   }
@@ -108,18 +229,61 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
                   resolve(response);
                 } else {
                   // El servidor respondió OK pero con error en la lógica
-                  reject(new Error(response.error || "Error al guardar la imagen"));
+                  const errorMessage = response.error || response.message || `Error al guardar el ${fileType}`;
+                  console.error("❌ Error en respuesta del servidor:", errorMessage);
+                  reject(new Error(errorMessage));
                 }
               } catch (parseError) {
-                reject(new Error("Error al procesar la respuesta del servidor"));
+                console.error("❌ Error al parsear respuesta:", parseError);
+                // Si no se puede parsear como JSON pero el status es 200, considerar como éxito
+                if (xhr.responseText && xhr.responseText.includes("success")) {
+                  setUploadingFiles((prev) =>
+                    prev.map((file) => {
+                      if (file.id === uploadFile.id) {
+                        return { ...file, progress: 100, status: "completed" };
+                      }
+                      return file;
+                    })
+                  );
+
+                  toast({
+                    title: "✅ Subida completada",
+                    description: `${uploadFile.file.name} se subió correctamente`,
+                  });
+
+                  if (onUploadComplete) {
+                    onUploadComplete();
+                  }
+
+                  resolve({ success: true });
+                } else {
+                  reject(new Error("Error al procesar la respuesta del servidor"));
+                }
               }
             } else {
               // Error HTTP
               let errorMessage = `Error ${xhr.status}: ${xhr.statusText}`;
               try {
                 const errorResponse = JSON.parse(xhr.responseText);
-                errorMessage = errorResponse.error || errorMessage;
-              } catch (e) {}
+                errorMessage = errorResponse.error || errorResponse.message || errorMessage;
+                console.log("❌ Error detallado:", errorResponse);
+                
+                // MANEJO ESPECÍFICO PARA ERROR 400 "Información del archivo incompleta"
+                if (errorResponse.error === "Información del archivo incompleta") {
+                  errorMessage = "El servidor no recibió la información completa del archivo. ";
+                  errorMessage += "Probando método alternativo...";
+                  
+                  // Intentar método alternativo
+                  setTimeout(() => {
+                    uploadAlternativeMethod(uploadFile, fileType, fieldName)
+                      .then(resolve)
+                      .catch(reject);
+                  }, 1000);
+                  return;
+                }
+              } catch (e) {
+                console.log("❌ Error sin JSON:", xhr.responseText);
+              }
               reject(new Error(errorMessage));
             }
           });
@@ -133,11 +297,6 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
           });
 
           // Configurar y enviar la petición
-          const endpoint = uploadFile.file.type.startsWith("video/")
-            ? "http://localhost:3000/api/videos/upload"
-            : "http://localhost:3000/api/images/upload";
-
-          // Enviar al endpoint correcto
           xhr.open("POST", endpoint);
           xhr.setRequestHeader("Authorization", `Bearer ${token}`);
           xhr.send(formData);
@@ -147,14 +306,16 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
 
         let errorMessage = `No se pudo subir ${uploadFile.file.name}`;
 
-        if (error.message?.includes("401")) {
+        if (error.message?.includes("Unexpected field")) {
+          errorMessage = "Error de configuración: El servidor no reconoce el campo del archivo. Contacta al administrador.";
+        } else if (error.message?.includes("401")) {
           errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
           localStorage.removeItem("token");
           localStorage.removeItem("user");
         } else if (error.message?.includes("413")) {
-          errorMessage = "El archivo es demasiado grande (máximo 10MB)";
+          errorMessage = "El archivo es demasiado grande";
         } else if (error.message?.includes("500")) {
-          errorMessage = "Error interno del servidor al procesar la imagen";
+          errorMessage = "Error interno del servidor al procesar el archivo";
         } else if (error.message?.includes("404")) {
           errorMessage = "Servicio no disponible. Ruta no encontrada.";
         } else {
@@ -177,33 +338,99 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
         });
       }
     },
-    [toast]
+    [toast, onUploadComplete]
   );
+
+  // MÉTODO ALTERNATIVO para cuando falla el principal
+  const uploadAlternativeMethod = async (uploadFile: UploadFile, fileType: string, fieldName: string) => {
+    console.log("🔄 Probando método alternativo para:", uploadFile.file.name);
+    
+    const token = localStorage.getItem("authToken");
+    const endpoint = getUploadEndpoint(fileType as any);
+
+    // FormData simplificado - solo lo esencial
+    const formData = new FormData();
+    formData.append(fieldName, uploadFile.file);
+    
+    // Para documentos, solo el título mínimo
+    if (fileType === 'document') {
+      const title = uploadFile.file.name.replace(/\.[^/.]+$/, "");
+      formData.append("title", title);
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (response.ok && (result.success || result.id || result.documentId)) {
+        setUploadingFiles((prev) =>
+          prev.map((file) => {
+            if (file.id === uploadFile.id) {
+              return { ...file, progress: 100, status: "completed" };
+            }
+            return file;
+          })
+        );
+
+        toast({
+          title: "✅ Subida completada",
+          description: `${uploadFile.file.name} se subió correctamente (método alternativo)`,
+        });
+
+        if (onUploadComplete) {
+          onUploadComplete();
+        }
+
+        return result;
+      } else {
+        throw new Error(result.error || "Error en método alternativo");
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
 
   const handleFiles = useCallback(
     (files: File[]) => {
-      const mediaFiles = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+      const validFiles = files.filter((file) => 
+        isImageFile(file) || isVideoFile(file) || isDocumentFile(file)
+      );
 
-      if (mediaFiles.length !== files.length) {
+      if (validFiles.length !== files.length) {
+        const invalidCount = files.length - validFiles.length;
         toast({
           title: "Archivos no válidos",
-          description: "Solo se permiten archivos de imagen y vídeo",
+          description: `${invalidCount} archivo(s) no son válidos. Solo se permiten imágenes, videos y documentos.`,
           variant: "destructive",
         });
       }
 
-      // Verificar tamaño (10MB máximo)
-     const oversizedFiles = mediaFiles.filter((file) => file.size > 3 * 1024 * 1024 * 1024);
-if (oversizedFiles.length > 0) {
-  toast({
-    title: "Archivos demasiado grandes",
-    description: "El tamaño máximo por archivo es 3GB",
-    variant: "destructive",
-  });
-  return;
-}
+      if (validFiles.length === 0) return;
 
-      const newUploadFiles: UploadFile[] = mediaFiles.map((file) => ({
+      // Verificar tamaño (100MB máximo para documentos, 3GB para multimedia)
+      const oversizedFiles = validFiles.filter((file) => {
+        const fileType = getFileType(file);
+        const maxSize = fileType === 'document' ? 100 * 1024 * 1024 : 3 * 1024 * 1024 * 1024;
+        return file.size > maxSize;
+      });
+
+      if (oversizedFiles.length > 0) {
+        toast({
+          title: "Archivos demasiado grandes",
+          description: "El tamaño máximo es 100MB para documentos y 3GB para multimedia",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const newUploadFiles: UploadFile[] = validFiles.map((file) => ({
         id: Math.random().toString(36).substr(2, 9),
         file,
         progress: 0,
@@ -231,6 +458,39 @@ if (oversizedFiles.length > 0) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
+
+  const getFileIcon = (file: File) => {
+    const fileType = getFileType(file);
+    switch (fileType) {
+      case 'image':
+        return <Image className="w-6 h-6 text-nuvia-mauve" />;
+      case 'video':
+        return (
+          <div className="w-6 h-6 bg-nuvia-mauve rounded flex items-center justify-center">
+            <span className="text-white text-xs font-bold">VID</span>
+          </div>
+        );
+      case 'document':
+        return <FileText className="w-6 h-6 text-nuvia-mauve" />;
+      default:
+        return <FileText className="w-6 h-6 text-nuvia-mauve" />;
+    }
+  };
+
+  const getFileTypeLabel = (file: File): string => {
+    const fileType = getFileType(file);
+    switch (fileType) {
+      case 'image':
+        return 'Imagen';
+      case 'video':
+        return 'Video';
+      case 'document':
+        return 'Documento';
+      default:
+        return 'Archivo';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Upload Zone */}
@@ -255,7 +515,7 @@ if (oversizedFiles.length > 0) {
           <input
             type="file"
             multiple
-            accept="image/*,video/*"
+            accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.tar,.gz,.json,.xml,.html,.css,.js,.md"
             onChange={handleFileInput}
             className="hidden"
             id="file-input"
@@ -266,14 +526,14 @@ if (oversizedFiles.length > 0) {
               className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose hover:from-nuvia-rose hover:to-nuvia-peach text-white shadow-nuvia-strong hover:shadow-nuvia-glow transition-all duration-300"
               asChild>
               <span className="cursor-pointer">
-                <Image className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                <Upload className="w-4 h-4 md:w-5 md:h-5 mr-2" />
                 Elegir archivos
               </span>
             </Button>
           </label>
 
           <p className="text-xs text-nuvia-deep/50 mt-3 md:mt-4">
-            Soporta: JPG, PNG, GIF, WebP, MP4, MOV (Máx. 10MB por archivo)
+            Soporta: JPG, PNG, GIF, WebP, MP4, MOV, PDF, Word, Excel, PowerPoint, ZIP, TXT (Máx. 100MB documentos, 3GB multimedia)
           </p>
         </CardContent>
       </Card>
@@ -299,20 +559,25 @@ if (oversizedFiles.length > 0) {
                       : "bg-nuvia-peach/10 border border-nuvia-peach/20"
                   }`}>
                   <div className="w-12 h-12 rounded-lg bg-white border border-nuvia-peach/30 flex items-center justify-center overflow-hidden shadow-nuvia-soft">
-                    {uploadFile.file.type.startsWith("image/") ? (
+                    {getFileType(uploadFile.file) === 'image' ? (
                       <img
                         src={URL.createObjectURL(uploadFile.file)}
                         alt={uploadFile.file.name}
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <Image className="w-6 h-6 text-nuvia-mauve" />
+                      getFileIcon(uploadFile.file)
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="font-medium truncate text-nuvia-deep">{uploadFile.file.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium truncate text-nuvia-deep">{uploadFile.file.name}</p>
+                        <span className="text-xs bg-nuvia-mauve/20 text-nuvia-mauve px-2 py-1 rounded-full">
+                          {getFileTypeLabel(uploadFile.file)}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2">
                         {uploadFile.status === "completed" && <CheckCircle className="w-5 h-5 text-green-500" />}
                         <Button
@@ -339,7 +604,7 @@ if (oversizedFiles.length > 0) {
                     </div>
 
                     <p className="text-xs text-nuvia-deep/50 mt-1">
-                      {formatFileSize(uploadFile.file.size)} • {uploadFile.file.type.split("/")[1].toUpperCase()}
+                      {formatFileSize(uploadFile.file.size)} • {uploadFile.file.type.split("/")[1]?.toUpperCase() || 'ARCHIVO'}
                     </p>
                   </div>
                 </div>

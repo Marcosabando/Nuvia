@@ -3,13 +3,13 @@ import { useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import ImageGallery from "@/components/ImageGallery";
 import { VideoGallery } from "@/components/VideoGallery";
+import DocumentsGallery from "@/components/DocumentsGallery";
 import { UploadZone } from "@/components/UploadZone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Images, Upload, TrendingUp, Video, Dock } from "lucide-react";
+import { Images, Upload, TrendingUp, Video, FileText } from "lucide-react";
 import { useUserStats } from "@/hooks/useUserStats";
-import { Grid3X3, List } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const Home = () => {
@@ -91,12 +91,12 @@ const Home = () => {
               <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-nuvia-deep/70 font-medium">Vídeos Totales</p>
+                    <p className="text-sm text-nuvia-deep/70 font-medium">Documentos</p>
                     <div className="p-2 rounded-lg bg-gradient-nuvia-dawn shadow-nuvia-soft">
-                      <Video className="w-4 h-4 text-white" />
+                      <FileText className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalVideos}</p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalDocuments || 0}</p>
                 </CardContent>
               </Card>
             </div>
@@ -122,10 +122,10 @@ const Home = () => {
                   </TabsTrigger>
 
                   <TabsTrigger
-                    value="archivos"
+                    value="documents"
                     className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
-                    <Dock className="w-4 h-4" />
-                    Archivos
+                    <FileText className="w-4 h-4" />
+                    Documentos
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -170,6 +170,23 @@ const Home = () => {
                 </CardHeader>
                 <CardContent className="p-6">
                   <VideoGallery key={`videos-${refreshKey}`} viewMode={viewMode} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="documents" className="space-y-6 animate-fade-in">
+              <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+                <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5">
+                  <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold">
+                    <FileText className="w-5 h-5 text-nuvia-mauve" />
+                    Galería de Documentos
+                    <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
+                      {stats.totalDocuments || 0} elementos
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <DocumentsGallery key={`documents-${refreshKey}`} viewMode={viewMode} />
                 </CardContent>
               </Card>
             </TabsContent>
