@@ -15,6 +15,7 @@ import Home from "./pages/Home";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile"; // ✅ Solo perfil personal
+import Footer from "./components/Footer";
 // import Login from "./pages/Login"
 
 const queryClient = new QueryClient();
@@ -66,6 +67,7 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      <Footer />
     </TooltipProvider>
   </QueryClientProvider>
 );
