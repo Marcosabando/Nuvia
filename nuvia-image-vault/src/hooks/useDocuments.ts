@@ -1,10 +1,9 @@
-// src/hooks/useDocuments.ts
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 
 interface DocumentData {
   id: number;
-  documentId?: number;
+  documentId: number;
   userId: number;
   title: string;
   description?: string;
@@ -29,7 +28,10 @@ interface UseDocumentsReturn {
   documents: DocumentData[];
   loading: boolean;
   error: string | null;
-  refetch: () => void;
+  refetch: () => Promise<void>;
+  toggleFavorite: (id: number, isFavorite: boolean) => Promise<void>;
+  deleteDocument: (id: number) => Promise<void>;
+  renameDocument: (id: number, title: string) => Promise<void>;
 }
 
 export const useDocuments = (): UseDocumentsReturn => {
@@ -47,11 +49,11 @@ export const useDocuments = (): UseDocumentsReturn => {
       if (response.success && response.data) {
         const transformedDocuments = response.data.map((doc: any) => ({
           id: doc.documentId || doc.id,
-          documentId: doc.documentId,
+          documentId: doc.documentId || doc.id,
           userId: doc.userId,
           title: doc.title,
           description: doc.description,
-          category: doc.category,
+          category: doc.category || 'other',
           tags: doc.tags,
           originalFilename: doc.originalFilename,
           filename: doc.filename,
@@ -61,8 +63,8 @@ export const useDocuments = (): UseDocumentsReturn => {
           pageCount: doc.pageCount,
           wordCount: doc.wordCount,
           language: doc.language,
-          isFavorite: doc.isFavorite || false,
-          isPublic: doc.isPublic || false,
+          isFavorite: Boolean(doc.isFavorite),
+          isPublic: Boolean(doc.isPublic),
           version: doc.version || 1,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt || doc.createdAt
@@ -75,15 +77,54 @@ export const useDocuments = (): UseDocumentsReturn => {
       }
 
     } catch (err: any) {
-      if (err.response?.data?.error) {
-        setError(`Error del servidor: ${err.response.data.error}`);
-      } else if (err.message) {
-        setError(`Error: ${err.message}`);
-      } else {
-        setError("No se pudieron cargar los documentos");
-      }
+      console.error('Error fetching documents:', err);
+      setError(
+        err.response?.data?.error || 
+        err.message || 
+        "No se pudieron cargar los documentos"
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleFavorite = async (id: number, isFavorite: boolean) => {
+    try {
+      const response = await apiService.patch(`/documents/${id}/favorite`, { isFavorite });
+      if (response.success) {
+        setDocuments(prev => prev.map(doc => 
+          doc.id === id ? { ...doc, isFavorite } : doc
+        ));
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      throw error;
+    }
+  };
+
+  const deleteDocument = async (id: number) => {
+    try {
+      const response = await apiService.delete(`/documents/${id}`);
+      if (response.success) {
+        setDocuments(prev => prev.filter(doc => doc.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      throw error;
+    }
+  };
+
+  const renameDocument = async (id: number, title: string) => {
+    try {
+      const response = await apiService.patch(`/documents/${id}`, { title });
+      if (response.success) {
+        setDocuments(prev => prev.map(doc => 
+          doc.id === id ? { ...doc, title } : doc
+        ));
+      }
+    } catch (error) {
+      console.error('Error renaming document:', error);
+      throw error;
     }
   };
 
@@ -95,6 +136,9 @@ export const useDocuments = (): UseDocumentsReturn => {
     documents,
     loading,
     error,
-    refetch: fetchDocuments
+    refetch: fetchDocuments,
+    toggleFavorite,
+    deleteDocument,
+    renameDocument
   };
 };
