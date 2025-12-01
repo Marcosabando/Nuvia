@@ -3,6 +3,8 @@ import { Request, Response } from "express";
 import db from "@src/config/database";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import path from "path";
+import fs from "fs";
+
 
 // ============================================================================
 // 📤 SUBIR DOCUMENTO (NUEVO CONTROLADOR ESPECÍFICO PARA UPLOAD)
@@ -13,8 +15,6 @@ export const uploadDocument = async (req: Request, res: Response) => {
     
     console.log('📤 [UPLOAD] Iniciando subida de documento');
     console.log('👤 [UPLOAD] UserID:', userId);
-    console.log('📄 [UPLOAD] req.file:', req.file);
-    console.log('📝 [UPLOAD] req.body:', req.body);
     
     if (!userId) {
       console.error('❌ [UPLOAD] Usuario no autenticado');
@@ -35,65 +35,42 @@ export const uploadDocument = async (req: Request, res: Response) => {
 
     const file = req.file;
     console.log('✅ [UPLOAD] Archivo recibido:', {
-      fieldname: file.fieldname,
       originalname: file.originalname,
       filename: file.filename,
       mimetype: file.mimetype,
-      size: file.size,
-      path: file.path,
-      destination: file.destination
+      size: file.size
     });
     
     // Validar que el archivo tiene los datos mínimos necesarios
     if (!file.filename || !file.originalname || !file.path) {
-      console.error('❌ [UPLOAD] Archivo incompleto:', file);
+      console.error('❌ [UPLOAD] Archivo incompleto');
       return res.status(400).json({
         success: false,
-        error: "Información del archivo incompleta",
-        details: {
-          hasFilename: !!file.filename,
-          hasOriginalname: !!file.originalname,
-          hasPath: !!file.path
-        }
+        error: "Información del archivo incompleta"
       });
     }
     
-    // Obtener metadatos del body (si existen)
+    // Obtener metadatos del body
     const { title, description, tags, isPublic, category: bodyCategory } = req.body;
     
-    // Usar el título proporcionado o el nombre original del archivo (sin extensión)
+    // Usar el título proporcionado o el nombre original del archivo
     const documentTitle = title?.trim() || path.parse(file.originalname).name;
     
-    // Extraer información del documento desde multer
+    // Extraer información del documento
     const documentInfo = (file as any).documentInfo || {};
     const category = bodyCategory || documentInfo.category || 'other';
     
     // Crear ruta relativa para guardar en la BD
-    const relativePath = path.relative(
-      path.join(process.cwd(), 'uploads'),
-      file.path
-    ).replace(/\\/g, '/'); // Normalizar para Windows
+    const relativePath = `/${userId}/documents/${file.filename}`;
 
-    console.log('💾 [UPLOAD] Datos para guardar en BD:', {
-      userId,
-      title: documentTitle,
-      description: description || null,
-      category,
-      tags: tags || null,
-      originalFilename: file.originalname,
-      filename: file.filename,
-      documentPath: relativePath,
-      fileSize: file.size,
-      mimeType: file.mimetype,
-      isPublic: isPublic === 'true' || isPublic === true ? 1 : 0
-    });
+    console.log('💾 [UPLOAD] Guardando en BD...');
 
     // Insertar documento en la base de datos
     const [result] = await db.query<ResultSetHeader>(
       `INSERT INTO documents 
        (userId, title, description, category, tags, originalFilename, 
-        filename, documentPath, fileSize, mimeType, isPublic, version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        filename, documentPath, fileSize, mimeType, isPublic)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         documentTitle,
@@ -109,7 +86,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
       ]
     );
 
-    console.log('✅ [UPLOAD] Documento insertado en BD con ID:', result.insertId);
+    console.log('✅ [UPLOAD] Documento insertado con ID:', result.insertId);
 
     // Obtener el documento recién creado
     const [newDocument] = await db.query<RowDataPacket[]>(
@@ -126,12 +103,8 @@ export const uploadDocument = async (req: Request, res: Response) => {
         documentPath,
         fileSize,
         mimeType,
-        pageCount,
-        wordCount,
-        language,
         isFavorite,
         isPublic,
-        version,
         createdAt,
         updatedAt
       FROM documents 
@@ -139,7 +112,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
       [result.insertId]
     );
 
-    console.log('✅ [UPLOAD] Documento guardado exitosamente:', newDocument[0]);
+    console.log('✅ [UPLOAD] Documento guardado exitosamente');
 
     return res.status(201).json({
       success: true,
@@ -148,26 +121,22 @@ export const uploadDocument = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ [UPLOAD] Error subiendo documento:", error);
-    console.error("❌ [UPLOAD] Error stack:", error.stack);
+    console.error("❌ [UPLOAD] Error:", error.message);
     
-    // Si hay error, intentar eliminar el archivo subido
-    if (req.file?.path) {
+    // Limpiar archivo si hay error
+    if (req.file?.path && fs.existsSync(req.file.path)) {
       try {
-        const fs = require('fs');
-        if (fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
-          console.log('🧹 [UPLOAD] Archivo eliminado tras error:', req.file.path);
-        }
+        fs.unlinkSync(req.file.path);
+        console.log('🧹 Archivo eliminado tras error');
       } catch (cleanupError) {
-        console.error('❌ [UPLOAD] Error limpiando archivo:', cleanupError);
+        console.error('❌ Error limpiando archivo:', cleanupError);
       }
     }
     
     return res.status(500).json({
       success: false,
-      error: error.message || "Error al subir el documento",
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: "Error al subir el documento",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -232,7 +201,7 @@ export const getUserDocuments = async (req: Request, res: Response) => {
 // ============================================================================
 // 🆕 CREAR NUEVO DOCUMENTO (SOLO METADATOS - SIN ARCHIVO)
 // ============================================================================
-export const createDocument = async (req: Request, res: Response) => {
+export const createDocumentMetadata = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { 
@@ -245,9 +214,7 @@ export const createDocument = async (req: Request, res: Response) => {
       documentPath, 
       fileSize, 
       mimeType,
-      pageCount,
-      wordCount,
-      language
+      isPublic
     } = req.body;
 
     if (!userId) {
@@ -276,8 +243,8 @@ export const createDocument = async (req: Request, res: Response) => {
     const [result] = await db.query<ResultSetHeader>(
       `INSERT INTO documents 
        (userId, title, description, category, tags, originalFilename, 
-        filename, documentPath, fileSize, mimeType, pageCount, wordCount, language)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        filename, documentPath, fileSize, mimeType, isPublic)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         title.trim(),
@@ -289,9 +256,7 @@ export const createDocument = async (req: Request, res: Response) => {
         documentPath,
         fileSize || 0,
         mimeType || 'application/octet-stream',
-        pageCount || null,
-        wordCount || null,
-        language || null
+        isPublic || 0
       ]
     );
 
@@ -783,6 +748,376 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: "Error al obtener documentos por categoría"
+    });
+  }
+};
+
+// ============================================================================
+// 📥 DESCARGAR DOCUMENTO
+// ============================================================================
+export const downloadDocument = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    // Obtener documento
+    const [documents] = await db.query<RowDataPacket[]>(
+      `SELECT * FROM documents 
+       WHERE documentId = ? AND userId = ? AND deletedAt IS NULL`,
+      [documentId, userId]
+    );
+
+    if (documents.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado"
+      });
+    }
+
+    const document = documents[0];
+    const filePath = path.join(process.cwd(), 'uploads', document.documentPath);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: "Archivo no encontrado en el servidor"
+      });
+    }
+
+    // Configurar headers para descarga
+    res.setHeader('Content-Disposition', `attachment; filename="${document.originalFilename}"`);
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Length', document.fileSize);
+
+    // Enviar archivo
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+  } catch (error: any) {
+    console.error("❌ Error descargando documento:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al descargar el documento"
+    });
+  }
+};
+
+// ============================================================================
+// 👁️ PREVISUALIZAR DOCUMENTO
+// ============================================================================
+export const previewDocument = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+    const filename = req.params.filename; // Opcional: aceptar también por nombre
+
+    console.log('🔍 [PREVIEW] Parámetros recibidos:', { 
+      documentId, 
+      filename,
+      userId 
+    });
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    let query = `SELECT * FROM documents WHERE userId = ? AND deletedAt IS NULL`;
+    const params: any[] = [userId];
+    
+    // Buscar por ID o por nombre de archivo
+    if (documentId && !isNaN(documentId)) {
+      query += ` AND documentId = ?`;
+      params.push(documentId);
+    } else if (filename) {
+      query += ` AND (filename = ? OR originalFilename = ?)`;
+      params.push(filename, filename);
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Se requiere ID o nombre de archivo"
+      });
+    }
+
+    console.log('📄 [PREVIEW] Query:', query, params);
+
+    const [documents] = await db.query<RowDataPacket[]>(query, params);
+
+    console.log('📄 [PREVIEW] Resultados encontrados:', documents.length);
+
+    if (documents.length === 0) {
+      // Listar todos los documentos disponibles para debug
+      const [allDocs] = await db.query<RowDataPacket[]>(
+        `SELECT documentId, title, originalFilename FROM documents 
+         WHERE userId = ? AND deletedAt IS NULL`,
+        [userId]
+      );
+      
+      console.log('📋 [PREVIEW] Documentos disponibles:', allDocs);
+      
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado",
+        availableDocuments: allDocs.map(doc => ({
+          id: doc.documentId,
+          title: doc.title,
+          filename: doc.originalFilename
+        }))
+      });
+    }
+
+    const document = documents[0];
+    console.log('✅ [PREVIEW] Documento encontrado:', {
+      id: document.documentId,
+      filename: document.filename,
+      originalname: document.originalFilename,
+      documentPath: document.documentPath
+    });
+
+    // Resto del código original...
+    const filePath = path.join(process.cwd(), 'uploads', document.documentPath);
+    
+    // ... resto del código igual
+
+  } catch (error: any) {
+    console.error("❌ [PREVIEW] Error:", error.message);
+    console.error(error.stack);
+    
+    return res.status(500).json({
+      success: false,
+      error: "Error al previsualizar el documento"
+    });
+  }
+};
+
+export const getPreviewUrl = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    // Obtener documento
+    const [documents] = await db.query<RowDataPacket[]>(
+      `SELECT * FROM documents 
+       WHERE documentId = ? AND userId = ? AND deletedAt IS NULL`,
+      [documentId, userId]
+    );
+
+    if (documents.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado"
+      });
+    }
+
+    const document = documents[0];
+    
+    // Devolver URL directa al archivo (para usar en <iframe> o <embed>)
+    const fileUrl = `/uploads${document.documentPath}`;
+    
+    return res.json({
+      success: true,
+      data: {
+        url: fileUrl,
+        mimeType: document.mimeType,
+        filename: document.originalFilename,
+        canPreviewInline: [
+          'application/pdf',
+          'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+          'text/plain', 'text/html'
+        ].includes(document.mimeType)
+      }
+    });
+
+  } catch (error: any) {
+    console.error("❌ Error obteniendo URL de preview:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener URL de preview"
+    });
+  }
+};
+
+export const openDocument = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    // Obtener documento
+    const [documents] = await db.query<RowDataPacket[]>(
+      `SELECT * FROM documents 
+       WHERE documentId = ? AND userId = ? AND deletedAt IS NULL`,
+      [documentId, userId]
+    );
+
+    if (documents.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado"
+      });
+    }
+
+    const document = documents[0];
+    const filePath = path.join(process.cwd(), 'uploads', document.documentPath);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: "Archivo no encontrado en el servidor"
+      });
+    }
+
+    // Crear página HTML simple para abrir el documento
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${document.originalFilename}</title>
+          <style>
+            body { margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+            .filename { font-size: 18px; font-weight: bold; color: #333; }
+            .actions { display: flex; gap: 10px; }
+            .btn { padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 14px; }
+            .btn:hover { background: #0056b3; }
+            .btn.download { background: #28a745; }
+            .btn.download:hover { background: #1e7e34; }
+            .viewer { width: 100%; min-height: 500px; border: 1px solid #ddd; border-radius: 4px; }
+            iframe, embed { width: 100%; height: 600px; border: none; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="filename">${document.originalFilename}</div>
+              <div class="actions">
+                <a href="/api/documents/${documentId}/download" class="btn download">Descargar</a>
+                <button onclick="window.close()" class="btn">Cerrar</button>
+              </div>
+            </div>
+            
+            <div class="viewer">
+              ${getDocumentViewerHTML(document)}
+            </div>
+          </div>
+          
+          <script>
+            // Auto-cerrar después de 5 segundos si es una imagen
+            if ('${document.mimeType}'.startsWith('image/')) {
+              setTimeout(() => {
+                if (confirm('¿Deseas cerrar esta ventana?')) {
+                  window.close();
+                }
+              }, 5000);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    res.send(html);
+
+  } catch (error: any) {
+    console.error("❌ Error abriendo documento:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al abrir el documento"
+    });
+  }
+};
+
+const getDocumentViewerHTML = (document: any): string => {
+  const mimeType = document.mimeType.toLowerCase();
+  const fileUrl = `/uploads${document.documentPath}`;
+  
+  if (mimeType === 'application/pdf') {
+    return `<embed src="${fileUrl}#toolbar=1&navpanes=0" type="application/pdf" />`;
+  }
+  
+  if (mimeType.startsWith('image/')) {
+    return `<img src="${fileUrl}" alt="${document.originalFilename}" style="max-width: 100%; max-height: 80vh; display: block; margin: 0 auto;" />`;
+  }
+  
+  if (mimeType === 'text/plain' || mimeType === 'text/html' || 
+      mimeType === 'application/json' || mimeType === 'application/xml') {
+    return `<iframe src="${fileUrl}" sandbox="allow-same-origin"></iframe>`;
+  }
+  
+  // Para otros tipos, mostrar mensaje y botón de descarga
+  return `
+    <div style="text-align: center; padding: 40px;">
+      <h3>Este tipo de archivo no se puede previsualizar directamente</h3>
+      <p>${document.originalFilename} (${document.mimeType})</p>
+      <a href="/api/documents/${document.documentId}/download" class="btn download" style="margin-top: 20px;">
+        Descargar archivo
+      </a>
+    </div>
+  `;
+};
+
+export const previewByFilename = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const filename = req.params.filename;
+
+    console.log('🔍 [PREVIEW-BY-FILENAME] Buscando archivo:', filename);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    // Buscar por nombre de archivo
+    const [documents] = await db.query<RowDataPacket[]>(
+      `SELECT * FROM documents 
+       WHERE (filename = ? OR originalFilename = ?) 
+       AND userId = ? AND deletedAt IS NULL`,
+      [filename, filename, userId]
+    );
+
+    if (documents.length === 0) {
+      console.log('❌ [PREVIEW-BY-FILENAME] Archivo no encontrado');
+      return res.status(404).json({
+        success: false,
+        error: `Archivo "${filename}" no encontrado`
+      });
+    }
+
+    const document = documents[0];
+    
+    // Redirigir a la ruta de preview normal
+    return res.redirect(`/api/documents/${document.documentId}/preview`);
+
+  } catch (error: any) {
+    console.error("❌ Error en preview por nombre:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al buscar documento"
     });
   }
 };
