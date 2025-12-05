@@ -1,4 +1,4 @@
-// 📁 src/routes/DocumentsRoutes.ts - VERSIÓN COMPLETA Y CORREGIDA
+// src/routes/DocumentsRoutes.ts
 import auth from "@src/middleware/auth";
 import { Router } from "express";
 import * as DocumentService from "@src/services/DocumentService";
@@ -52,9 +52,9 @@ router.get("/:id", DocumentService.getDocumentById);
 router.get("/:id/download", DocumentService.downloadDocument);
 
 // ============================================================================
-// 👁️ PREVISUALIZAR DOCUMENTO (¡ESTA ES LA QUE FALTA!)
+// 👁️ PREVISUALIZAR DOCUMENTO
 // ============================================================================
-router.get("/:id/preview", DocumentService.previewDocument); // ✅ AÑADIR ESTA LÍNEA
+router.get("/:id/preview", DocumentService.previewDocument);
 
 // ============================================================================
 // ✏️ ACTUALIZAR DOCUMENTO
@@ -72,19 +72,11 @@ router.patch("/:id/favorite", DocumentService.toggleFavorite);
 // ============================================================================
 router.delete("/:id", DocumentService.deleteDocument);
 
-// Ruta principal de preview
-router.get("/:id/preview", DocumentService.previewDocument);
-
-// Ruta alternativa para obtener URL de preview
-router.get("/:id/preview-url", DocumentService.getPreviewUrl);
-
-// Ruta para abrir en nueva pestaña
-router.get("/:id/open", DocumentService.openDocument);
-
-// Ruta de descarga
-router.get("/:id/download", DocumentService.downloadDocument);
-
-router.get("/view/:id", DocumentService.previewDocument); // Alias
-router.get("/open/:id", DocumentService.openDocument);
+// ============================================================================
+// 🛠️ DEBUG: Solo para desarrollo
+// ============================================================================
+if (process.env.NODE_ENV === 'development') {
+  router.get("/debug/files", DocumentService.debugFiles);
+}
 
 export default router;
