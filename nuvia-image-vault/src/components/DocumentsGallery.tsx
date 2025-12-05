@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import {
   MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw,
   X, Calendar, Eye, EyeOff, Grid3X3, List, Search, Filter,
-  ChevronLeft, ChevronRight, FileText, File, FileImage, FileCode, Archive, FileType
+  ChevronLeft, ChevronRight, FileText, File, FileImage, FileCode, 
+  Archive, FileType, ExternalLink, AlertCircle, Info
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,12 +60,45 @@ const getCategoryColor = (category: string) => {
   return colors[category as keyof typeof colors] || colors.other;
 };
 
-const getPreviewUrl = (documentId: number): string => {
-  return `${API_BASE}/api/documents/${documentId}/preview`;
+// Determinar qué tipos de archivo se pueden previsualizar directamente en el navegador
+const canPreviewInBrowser = (mimeType: string): boolean => {
+  if (!mimeType) return false;
+  
+  const mime = mimeType.toLowerCase();
+  
+  // Archivos que el navegador puede mostrar directamente
+  return (
+    mime.includes('pdf') ||
+    mime.startsWith('image/') ||
+    mime.startsWith('text/') ||
+    mime.includes('json') ||
+    mime.includes('xml') ||
+    mime.includes('html') ||
+    mime.includes('css') ||
+    mime.includes('javascript')
+  );
 };
 
+// Función para obtener URL directa del archivo
+const getDirectFileUrl = (document: any): string => {
+  if (document.documentPath) {
+    return `${API_BASE}/uploads/${document.documentPath}`;
+  }
+  // Fallback: si no hay documentPath, usar la ruta estándar
+  return `${API_BASE}/api/documents/${document.userId || 'user'}/documents/${document.filename || document.originalFilename}`;
+};
+
+// Función para obtener URL de descarga
 const getDownloadUrl = (documentId: number): string => {
   return `${API_BASE}/api/documents/${documentId}/download`;
+};
+
+// Función para obtener URL de vista previa de PDF usando Google Docs Viewer (alternativa gratuita)
+const getPdfPreviewUrl = (document: any): string => {
+  const directUrl = getDirectFileUrl(document);
+  // Codificar la URL para Google Docs Viewer
+  const encodedUrl = encodeURIComponent(directUrl);
+  return `https://docs.google.com/viewer?url=${encodedUrl}&embedded=true`;
 };
 
 export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "grid" | "list" }) {
@@ -78,6 +112,10 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
   const [renameModal, setRenameModal] = useState<{ open: boolean; document: any; name: string }>({
     open: false, document: null, name: ""
   });
+
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [previewError, setPreviewError] = useState(false);
+  const [useAlternativePdfViewer, setUseAlternativePdfViewer] = useState(false);
 
   const { toast } = useToast();
   const { 
@@ -156,6 +194,253 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, favoritesOnly]);
+
+  // Resetear estados de previsualización cuando cambia el documento
+  useEffect(() => {
+    if (selectedDocument) {
+      setPreviewLoading(true);
+      setPreviewError(false);
+      setUseAlternativePdfViewer(false);
+    }
+  }, [selectedDocument]);
+
+  const handleImageLoad = () => {
+    console.log('✅ Imagen cargada exitosamente');
+    setPreviewLoading(false);
+  };
+
+  const handleImageError = () => {
+    console.error('❌ Error cargando imagen');
+    setPreviewLoading(false);
+    setPreviewError(true);
+  };
+
+  const handleIframeLoad = () => {
+    console.log('✅ Iframe cargado exitosamente');
+    setPreviewLoading(false);
+  };
+
+  const handleIframeError = () => {
+    console.error('❌ Error cargando iframe');
+    setPreviewLoading(false);
+    setPreviewError(true);
+  };
+
+  const openDirectFile = () => {
+    if (selectedDocument) {
+      window.open(getDirectFileUrl(selectedDocument), '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  // Renderizar contenido del preview
+  const renderPreviewContent = () => {
+    if (!selectedDocument) return null;
+
+    const directFileUrl = getDirectFileUrl(selectedDocument);
+    const canPreview = canPreviewInBrowser(selectedDocument.mimeType);
+    const isPdf = selectedDocument.mimeType?.includes('pdf');
+
+    console.log('🔍 Preview info:', {
+      document: selectedDocument,
+      directFileUrl,
+      canPreview,
+      mimeType: selectedDocument.mimeType,
+      isPdf,
+      useAlternativePdfViewer
+    });
+
+    if (!canPreview && !isPdf) {
+      // Para archivos que no se pueden previsualizar
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8">
+          <div className="text-center max-w-md">
+            <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-nuvia-mauve/10 flex items-center justify-center">
+              {(() => {
+                const IconComponent = getDocumentIcon(selectedDocument.category, selectedDocument.mimeType);
+                return <IconComponent className="w-12 h-12 text-nuvia-mauve" />;
+              })()}
+            </div>
+            <h3 className="text-xl font-bold text-nuvia-deep mb-2">
+              {selectedDocument.title || selectedDocument.originalFilename}
+            </h3>
+            <p className="text-nuvia-deep/60 mb-4">
+              Este tipo de archivo ({selectedDocument.mimeType || 'desconocido'}) no puede previsualizarse directamente en el navegador.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button
+                onClick={() => window.open(getDownloadUrl(selectedDocument.id), "_blank")}
+                className="bg-nuvia-mauve hover:bg-nuvia-mauve/90"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Descargar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={openDirectFile}
+                className="border-nuvia-silver/30"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Intentar abrir
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedDocument.mimeType?.startsWith('image/')) {
+      // Para imágenes, usar img tag
+      return (
+        <div className="h-full flex items-center justify-center bg-gray-100 p-4">
+          <img
+            src={directFileUrl}
+            alt={selectedDocument.originalFilename}
+            className="max-w-full max-h-full object-contain"
+            onLoad={handleImageLoad}
+            onError={handleImageError}
+          />
+        </div>
+      );
+    } else if (isPdf) {
+      // Para PDFs - Opción 1: Usar Google Docs Viewer si hay problemas con iframe directo
+      if (useAlternativePdfViewer) {
+        return (
+          <>
+            <div className="p-4 bg-blue-50 border-b border-blue-200">
+              <div className="flex items-center gap-2">
+                <Info className="w-5 h-5 text-blue-600" />
+                <p className="text-sm text-blue-700">
+                  Usando Google Docs Viewer para mostrar el PDF. Si no se carga, 
+                  <Button 
+                    variant="link" 
+                    className="h-auto p-0 ml-1 text-blue-700 underline"
+                    onClick={() => window.open(directFileUrl, '_blank')}
+                  >
+                    ábrelo directamente
+                  </Button>
+                </p>
+              </div>
+            </div>
+            <iframe
+              src={getPdfPreviewUrl(selectedDocument)}
+              title={`Vista previa de ${selectedDocument.originalFilename}`}
+              className="w-full h-full border-0"
+              sandbox="allow-same-origin allow-scripts"
+              allow="fullscreen"
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          </>
+        );
+      }
+      
+      // Opción 2: Intentar iframe directo primero
+      return (
+        <div className="h-full flex flex-col">
+          {previewError && (
+            <div className="p-4 bg-yellow-50 border-b border-yellow-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-yellow-600" />
+                  <p className="text-sm text-yellow-700">
+                    Chrome bloqueó la carga del PDF por razones de seguridad.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setUseAlternativePdfViewer(true)}
+                  className="border-yellow-300 text-yellow-700"
+                >
+                  Usar visor alternativo
+                </Button>
+              </div>
+            </div>
+          )}
+          
+          {!previewError && (
+            <iframe
+              src={directFileUrl}
+              title={`Vista previa de ${selectedDocument.originalFilename}`}
+              className="w-full flex-1 border-0"
+              sandbox="allow-same-origin allow-scripts"
+              allow="fullscreen"
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          )}
+          
+          {previewError && !useAlternativePdfViewer && (
+            <div className="flex-1 flex flex-col items-center justify-center p-8">
+              <div className="text-center max-w-md">
+                <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
+                  <AlertCircle className="w-12 h-12 text-yellow-600" />
+                </div>
+                <h3 className="text-xl font-bold text-nuvia-deep mb-2">
+                  Bloqueo de seguridad
+                </h3>
+                <p className="text-nuvia-deep/60 mb-4">
+                  Chrome ha bloqueado la carga del PDF por motivos de seguridad.
+                </p>
+                <div className="space-y-3">
+                  <div className="flex gap-3 justify-center">
+                    <Button
+                      onClick={() => setUseAlternativePdfViewer(true)}
+                      className="bg-nuvia-mauve hover:bg-nuvia-mauve/90"
+                    >
+                      Usar visor alternativo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={openDirectFile}
+                      className="border-nuvia-silver/30"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Abrir en nueva pestaña
+                    </Button>
+                  </div>
+                  <Button
+                    onClick={() => window.open(getDownloadUrl(selectedDocument.id), "_blank")}
+                    variant="ghost"
+                    size="sm"
+                    className="text-nuvia-deep/60 hover:text-nuvia-deep"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Descargar PDF
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    } else if (selectedDocument.mimeType?.startsWith('text/') || 
+               selectedDocument.mimeType?.includes('json') || 
+               selectedDocument.mimeType?.includes('xml') ||
+               selectedDocument.mimeType?.includes('html') ||
+               selectedDocument.mimeType?.includes('css') ||
+               selectedDocument.mimeType?.includes('javascript')) {
+      // Para archivos de texto, usar iframe
+      return (
+        <iframe
+          src={directFileUrl}
+          title={`Vista previa de ${selectedDocument.originalFilename}`}
+          className="w-full h-full border-0"
+          sandbox="allow-same-origin allow-scripts"
+          allow="fullscreen"
+          onLoad={handleIframeLoad}
+          onError={handleIframeError}
+        />
+      );
+    }
+
+    // Fallback
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8">
+        <p className="text-nuvia-deep/60">No se puede previsualizar este tipo de archivo.</p>
+      </div>
+    );
+  };
 
   if (error) {
     return (
@@ -289,6 +574,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                 const displayName = document.title || document.originalFilename;
                 const DocumentIcon = getDocumentIcon(document.category, document.mimeType);
                 const categoryColor = getCategoryColor(document.category);
+                const canPreview = canPreviewInBrowser(document.mimeType) || document.mimeType?.includes('pdf');
                 
                 if (currentViewMode === 'list') {
                   return (
@@ -346,6 +632,13 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end" className="w-48">
+                                    {canPreview && (
+                                      <DropdownMenuItem onClick={() => setSelectedDocument(document)}>
+                                        <Eye className="w-4 h-4 mr-2" />
+                                        Vista previa
+                                      </DropdownMenuItem>
+                                    )}
+                                    
                                     <DropdownMenuItem onClick={() => handleToggleFavorite(document)}>
                                       <Heart className={`w-4 h-4 mr-2 ${document.isFavorite ? "text-red-500 fill-current" : ""}`} />
                                       {document.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
@@ -398,6 +691,12 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                           style={{ color: categoryColor }}
                         />
                         
+                        {canPreview && (
+                          <div className="absolute bottom-2 right-2 bg-white/80 backdrop-blur-sm rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Eye className="w-4 h-4 text-nuvia-deep" />
+                          </div>
+                        )}
+                        
                         <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button 
                             variant="secondary" 
@@ -422,6 +721,13 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48">
+                              {canPreview && (
+                                <DropdownMenuItem onClick={() => setSelectedDocument(document)}>
+                                  <Eye className="w-4 h-4 mr-2" />
+                                  Vista previa
+                                </DropdownMenuItem>
+                              )}
+                              
                               <DropdownMenuItem onClick={() => handleToggleFavorite(document)}>
                                 <Heart className={`w-4 h-4 mr-2 ${document.isFavorite ? "text-red-500 fill-current" : ""}`} />
                                 {document.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
@@ -534,128 +840,96 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
         )}
       </div>
 
-      {/* Modal Vista Previa */}
+      {/* Modal Vista Previa - CON SOPORTE MEJORADO PARA PDFs */}
       <Dialog open={!!selectedDocument} onOpenChange={(open) => !open && setSelectedDocument(null)}>
-        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-y-auto">
+        <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 border-0 overflow-hidden bg-white">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Vista previa de documento</DialogTitle>
+            <DialogDescription>
+              Vista previa del documento seleccionado
+            </DialogDescription>
+          </DialogHeader>
+          
           {selectedDocument && (
-            <div className="flex flex-col md:flex-row min-h-full">
-              <div className="flex-1 flex items-center justify-center p-8 min-h-[40vh] md:min-h-[60vh]">
-                <div className="text-center">
+            <div className="flex flex-col h-full">
+              {/* Header */}
+              <div className="p-4 border-b border-nuvia-silver/30 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div 
-                    className="w-32 h-32 mx-auto mb-6 rounded-2xl flex items-center justify-center"
+                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: `${getCategoryColor(selectedDocument.category)}15` }}
                   >
                     {(() => {
                       const IconComponent = getDocumentIcon(selectedDocument.category, selectedDocument.mimeType);
-                      return <IconComponent className="w-16 h-16" style={{ color: getCategoryColor(selectedDocument.category) }} />;
+                      return <IconComponent className="w-6 h-6" style={{ color: getCategoryColor(selectedDocument.category) }} />;
                     })()}
                   </div>
-                  <h2 className="text-2xl font-bold text-nuvia-deep mb-2">
-                    {selectedDocument.title || selectedDocument.originalFilename}
-                  </h2>
-                  <div className="flex gap-2 justify-center">
-                    <Button 
-                      onClick={() => window.open(getPreviewUrl(selectedDocument.id), "_blank")}
-                      className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white"
-                    >
-                      <Eye className="w-4 h-4 mr-2" />
-                      Ver documento
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => window.open(getDownloadUrl(selectedDocument.id), "_blank")}
-                      className="border-nuvia-silver/30"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Descargar
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
-                <div className="p-4 border-b border-nuvia-silver/30 flex items-start justify-between sticky top-0 bg-white/95 z-10">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <h3 className="text-lg font-semibold text-nuvia-deep break-words">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-nuvia-deep truncate">
                       {selectedDocument.title || selectedDocument.originalFilename}
                     </h3>
+                    <p className="text-sm text-nuvia-deep/60">
+                      {formatFileSize(selectedDocument.fileSize)} • {selectedDocument.mimeType}
+                    </p>
                   </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {selectedDocument.mimeType?.includes('pdf') && previewError && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setUseAlternativePdfViewer(true)}
+                      className="border-nuvia-silver/30"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Usar visor alternativo
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openDirectFile}
+                    className="border-nuvia-silver/30"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Abrir directamente
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(getDownloadUrl(selectedDocument.id), "_blank")}
+                    className="border-nuvia-silver/30"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Descargar
+                  </Button>
                   <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={() => setSelectedDocument(null)} 
-                    className="flex-shrink-0"
                   >
                     <X className="w-5 h-5" />
                   </Button>
                 </div>
+              </div>
+              
+              {/* Contenido del documento */}
+              <div className="flex-1 relative min-h-0 overflow-auto">
+                {previewLoading && (
+                  <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-20">
+                    <div className="text-center">
+                      <div className="w-12 h-12 border-4 border-nuvia-mauve/30 border-t-nuvia-mauve rounded-full animate-spin mx-auto mb-4" />
+                      <p className="text-nuvia-deep">Cargando documento...</p>
+                      {selectedDocument.mimeType?.includes('pdf') && (
+                        <p className="text-sm text-nuvia-deep/40 mt-2">
+                          PDF puede tardar unos segundos en cargar
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
-                <div className="p-4 space-y-4">
-                  <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
-                    <h4 className="font-semibold text-nuvia-deep">Archivo</h4>
-                    <div className="flex justify-between">
-                      <span className="text-nuvia-deep/60">Tamaño</span>
-                      <span>{formatFileSize(selectedDocument.fileSize)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-nuvia-deep/60">Tipo</span>
-                      <span className="capitalize">{selectedDocument.mimeType}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
-                    <h4 className="font-semibold text-nuvia-deep flex items-center gap-2">
-                      <Calendar className="w-4 h-4" />
-                      Información
-                    </h4>
-                    <div className="flex justify-between">
-                      <span className="text-nuvia-deep/60">Subida</span>
-                      <span>{new Date(selectedDocument.createdAt).toLocaleDateString("es-ES")}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-nuvia-deep/60">Categoría</span>
-                      <span className="capitalize">{selectedDocument.category}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-nuvia-deep">Acciones</h4>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full justify-start border-nuvia-silver/30" 
-                      onClick={() => window.open(getDownloadUrl(selectedDocument.id), "_blank")}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Descargar
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full justify-start border-nuvia-silver/30" 
-                      onClick={() => { 
-                        setSelectedDocument(null); 
-                        setRenameModal({ 
-                          open: true, 
-                          document: selectedDocument, 
-                          name: selectedDocument.title || selectedDocument.originalFilename 
-                        }); 
-                      }}
-                    >
-                      <Edit3 className="w-4 h-4 mr-2" />
-                      Renombrar
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30" 
-                      onClick={() => handleDelete(selectedDocument)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Mover a papelera
-                    </Button>
-                  </div>
-                </div>
+                {renderPreviewContent()}
               </div>
             </div>
           )}
@@ -670,6 +944,9 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
               <Edit3 className="w-5 h-5 text-nuvia-mauve" />
               Renombrar documento
             </DialogTitle>
+            <DialogDescription>
+              Ingresa el nuevo nombre para el documento
+            </DialogDescription>
           </DialogHeader>
           {renameModal.document && (
             <div className="space-y-4 py-4">
