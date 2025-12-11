@@ -4,7 +4,6 @@ import { useVideos } from '@/hooks/useVideos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { 
   Grid3X3, 
   List, 
@@ -17,7 +16,7 @@ import {
   Play,
   Heart,
   Clock,
-  MoreVertical,
+  MoreHorizontal,
   Download,
   Eye,
   EyeOff,
@@ -25,7 +24,8 @@ import {
   Trash2,
   FolderPlus,
   X,
-  FileVideo
+  FileVideo,
+  Edit3
 } from 'lucide-react';
 import { videoApi } from '@/services/videoApi';
 import { Video } from '@/services/videoApi';
@@ -44,8 +44,13 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { apiService } from '@/services/api.services';
+import { useToast } from '@/hooks/use-toast';
 
 interface VideoGalleryProps {
   viewMode?: 'grid' | 'list';
@@ -67,10 +72,16 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(20);
+  const [itemsPerPage] = useState(20); // 5 columnas × 4 filas = 20 videos por página
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Record<number, any>>({});
+  const [renameModal, setRenameModal] = useState<{ open: boolean; video: Video | null; name: string }>({
+    open: false, video: null, name: ""
+  });
+  const [isRenaming, setIsRenaming] = useState(false);
+  const { toast } = useToast();
   
   const { videos, loading, error, refetch } = useVideos();
 
@@ -95,10 +106,19 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     fetchFolders();
   }, []);
 
+  // Función para mostrar toasts
+  const showToast = (success: boolean, message: string) => {
+    toast({
+      title: success ? "✅ Éxito" : "❌ Error",
+      description: message,
+      ...(success ? { className: "bg-green-50 border-green-200 text-green-800" } : { variant: "destructive" })
+    });
+  };
+
   // Función para añadir video a carpeta
   const addToFolder = async (videoId: number, folderId: number) => {
     if (folderId === undefined || folderId === null || isNaN(folderId)) {
-      alert("Error: ID de carpeta inválido.");
+      showToast(false, "ID de carpeta inválido.");
       return;
     }
 
@@ -108,22 +128,26 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
       });
       
       if (response.success) {
-        alert("Video añadido a la carpeta correctamente");
+        showToast(true, "Video añadido a la carpeta correctamente");
       } else {
         throw new Error(response.error || 'Error al añadir video a la carpeta');
       }
     } catch (error: any) {
       console.error("Error añadiendo video a carpeta:", error);
-      alert(error.response?.data?.error || "Error al añadir video a la carpeta");
+      showToast(false, error.response?.data?.error || "Error al añadir video a la carpeta");
     }
   };
 
   const handleFavoriteToggle = async (videoId: number) => {
+    const current = videos.find(video => video.videoId === videoId)?.isFavorite;
+    setOptimisticUpdates(p => ({ ...p, [videoId]: { isFavorite: !current } }));
+    
     try {
       await videoApi.toggleFavorite(videoId);
       refetch();
     } catch (err) {
       console.error('Error toggling favorite:', err);
+      setOptimisticUpdates(p => { const n = { ...p }; delete n[videoId]; return n; });
     }
   };
 
@@ -131,12 +155,15 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
   const handleSoftDelete = async (videoId: number) => {
     if (!confirm('¿Seguro que quieres mover este video a la papelera?')) return;
 
+    setOptimisticUpdates(p => ({ ...p, [videoId]: { deleted: true } }));
+    setSelectedVideo(null);
+    
     try {
-      // ✅ OBTENER TOKEN DEL LOCALSTORAGE
       const token = localStorage.getItem('authToken');
 
       if (!token) {
-        alert('No estás autenticado. Por favor inicia sesión.');
+        showToast(false, 'No estás autenticado. Por favor inicia sesión.');
+        setOptimisticUpdates(p => { const n = { ...p }; delete n[videoId]; return n; });
         return;
       }
 
@@ -144,7 +171,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, // ✅ ENVIAR TOKEN JWT
+          'Authorization': `Bearer ${token}`,
         },
       });
 
@@ -154,11 +181,40 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         throw new Error(data.error || 'Error al mover el video a la papelera');
       }
 
-      alert(data.message || 'Video movido a la papelera correctamente');
-      refetch(); // actualiza la lista de videos
+      showToast(true, data.message || 'Video movido a la papelera correctamente');
+      refetch();
     } catch (err: any) {
       console.error('Error en soft delete:', err);
-      alert(err.message || 'No se pudo mover el video a la papelera');
+      showToast(false, err.message || 'No se pudo mover el video a la papelera');
+      setOptimisticUpdates(p => { const n = { ...p }; delete n[videoId]; return n; });
+    }
+  };
+
+  // Función para renombrar video
+  const renameVideo = async () => {
+    if (!renameModal.name.trim() || !renameModal.video) {
+      showToast(false, "El nombre no puede estar vacío");
+      return;
+    }
+    
+    setIsRenaming(true);
+    try {
+      const response = await apiService.patch(`/videos/${renameModal.video.videoId}/title`, { 
+        title: renameModal.name.trim() 
+      });
+      
+      if (response.success) {
+        showToast(true, "Video renombrado correctamente");
+        setRenameModal({ open: false, video: null, name: "" });
+        refetch();
+      } else {
+        throw new Error(response.error || 'Error al renombrar video');
+      }
+    } catch (error: any) {
+      console.error("Error renombrando video:", error);
+      showToast(false, error.response?.data?.error || "Error al renombrar video");
+    } finally {
+      setIsRenaming(false);
     }
   };
 
@@ -216,8 +272,16 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Filtrar videos según búsqueda y favoritos - ÚNICA DECLARACIÓN
-  const filteredVideos = videos.filter(video => {
+  // Filtrar videos con updates optimistas
+  const displayVideos = videos
+    .filter(video => !optimisticUpdates[video.videoId]?.deleted)
+    .map(video => ({ 
+      ...video, 
+      isFavorite: optimisticUpdates[video.videoId]?.isFavorite ?? video.isFavorite 
+    }));
+
+  // Filtrar videos según búsqueda y favoritos
+  const filteredVideos = displayVideos.filter(video => {
     const matchesSearch = video.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          video.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFavorites = !favoritesOnly || video.isFavorite;
@@ -234,224 +298,6 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     setCurrentPage(1);
   }, [searchTerm, favoritesOnly, currentViewMode]);
 
-  // Componente VideoCard unificado
-  const VideoCard = ({ video }: { video: Video }) => {
-    const [thumbnailError, setThumbnailError] = useState(false);
-    const [thumbnailLoading, setThumbnailLoading] = useState(true);
-    const [showControls, setShowControls] = useState(false);
-
-    const thumbnailUrl = getThumbnailUrl(video);
-    const videoUrl = getVideoUrl(video);
-
-    const handleThumbnailLoad = () => {
-      setThumbnailLoading(false);
-      setThumbnailError(false);
-    };
-
-    const handleThumbnailError = () => {
-      setThumbnailLoading(false);
-      setThumbnailError(true);
-    };
-
-    const handleMouseEnter = () => setShowControls(true);
-    const handleMouseLeave = () => setShowControls(false);
-
-    // Si no hay URL válida, mostrar error
-    if (!videoUrl) {
-      return (
-        <Card className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="aspect-square flex flex-col items-center justify-center bg-red-50">
-              <FileVideo className="w-8 h-8 text-red-400 mb-2" />
-              <p className="text-red-600 text-xs font-medium">Error en video</p>
-            </div>
-            <div className="p-3 bg-white border-t border-nuvia-silver/30">
-              <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
-                {video.title || video.originalFilename || 'Video no disponible'}
-              </p>
-              <div className="text-xs text-nuvia-deep/60">
-                <p>Formato no disponible</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return (
-      <Card className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
-        <CardContent className="p-0 relative">
-          {/* Video Thumbnail clickeable para abrir modal */}
-          <div 
-            className="aspect-square bg-gray-50 relative overflow-hidden cursor-pointer"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            onClick={() => setSelectedVideo(video)}
-          >
-            {/* Loading state */}
-            {thumbnailLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-nuvia-mauve mx-auto mb-1"></div>
-                  <p className="text-nuvia-deep/60 text-xs">Cargando...</p>
-                </div>
-              </div>
-            )}
-
-            {/* Thumbnail - CORREGIDO */}
-            <img
-              src={thumbnailUrl}
-              alt={video.title || video.originalFilename}
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
-              onLoad={handleThumbnailLoad}
-              onError={handleThumbnailError}
-            />
-
-            {/* Overlay de controles */}
-            <div className={`absolute inset-0 transition-all duration-300 flex items-center justify-center ${
-              showControls ? 'bg-black/30' : 'bg-black/0 group-hover:bg-black/20'
-            }`}>
-              <div className={`transform transition-all duration-300 ${
-                showControls ? 'scale-110' : 'scale-100'
-              }`}>
-                <Play className="w-10 h-10 text-white fill-current opacity-90" />
-              </div>
-            </div>
-
-            {/* Badge favorito */}
-            {video.isFavorite && (
-              <div className="absolute top-2 left-2 z-10 pointer-events-none">
-                <div className="bg-red-500 rounded-md px-1.5 py-1 shadow-sm">
-                  <Heart className="w-3 h-3 text-white fill-current" />
-                </div>
-              </div>
-            )}
-
-            {/* Duración */}
-            {video.duration && (
-              <div className="absolute bottom-2 right-2">
-                <div className="bg-black/80 text-white text-xs px-2 py-1 rounded">
-                  <Clock className="w-3 h-3 inline mr-1" />
-                  {formatDuration(video.duration)}
-                </div>
-              </div>
-            )}
-
-            {/* Botones de acción */}
-            <div 
-              className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleFavoriteToggle(video.videoId);
-                }}
-              >
-                <Heart className={`w-3 h-3 ${video.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
-              </Button>
-              
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MoreVertical className="w-3 h-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenuItem onClick={() => handleFavoriteToggle(video.videoId)}>
-                    <Heart className={`w-4 h-4 mr-2 ${video.isFavorite ? "text-red-500 fill-current" : ""}`} />
-                    {video.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <FolderPlus className="w-4 h-4 mr-2" />
-                      Añadir a carpeta
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal>
-                      <DropdownMenuSubContent className="w-48">
-                        {foldersLoading ? (
-                          <DropdownMenuItem disabled>
-                            <div className="flex items-center">
-                              <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                              Cargando carpetas...
-                            </div>
-                          </DropdownMenuItem>
-                        ) : folders.length === 0 ? (
-                          <DropdownMenuItem disabled>
-                            No tienes carpetas
-                          </DropdownMenuItem>
-                        ) : (
-                          folders.map((folder) => {
-                            const actualFolderId = folder.folderId || folder.id;
-                            if (!actualFolderId || isNaN(actualFolderId)) return null;
-
-                            return (
-                              <DropdownMenuItem
-                                key={actualFolderId}
-                                onClick={() => addToFolder(video.videoId, actualFolderId)}
-                                className="flex items-center justify-between"
-                              >
-                                <div className="flex items-center">
-                                  <div 
-                                    className="w-3 h-3 rounded mr-2"
-                                    style={{ backgroundColor: folder.color }}
-                                  />
-                                  <span className="truncate">{folder.name}</span>
-                                </div>
-                                {folder.itemCount > 0 && (
-                                  <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
-                                )}
-                              </DropdownMenuItem>
-                            );
-                          }).filter(Boolean)
-                        )}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
-                  
-                  <DropdownMenuItem onClick={() => window.open(videoUrl, "_blank")}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Descargar
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuSeparator />
-                  
-                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Mover a papelera
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-          
-          {/* Info del video */}
-          <div className="p-3 bg-white border-t border-nuvia-silver/30">
-            <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
-              {video.title || video.originalFilename || `Video ${video.videoId}`}
-            </p>
-            <div className="flex justify-between items-center text-xs text-nuvia-deep/60">
-              <span>{formatFileSize(video.fileSize)}</span>
-              {video.duration && (
-                <span>{formatDuration(video.duration)}</span>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   if (error) {
     return (
       <div className="text-center py-8">
@@ -465,109 +311,525 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header con controles */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-nuvia-deep/40 w-4 h-4" />
-            <Input
-              placeholder="Buscar videos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-white/50 border-nuvia-silver/30"
-            />
-          </div>
-          
-          <Button
-            variant={favoritesOnly ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFavoritesOnly(!favoritesOnly)}
-            className={`whitespace-nowrap border-nuvia-silver/30 ${
-              favoritesOnly 
-                ? 'bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white' 
-                : 'bg-white/50'
-            }`}
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            Favoritos
-          </Button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={refetch}
-            disabled={loading}
-            className="border-nuvia-silver/30"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-
-          <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden">
+    <>
+      <div className="space-y-6">
+        {/* Header con controles */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-nuvia-deep/40 w-4 h-4" />
+              <Input
+                placeholder="Buscar videos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-white/50 border-nuvia-silver/30"
+              />
+            </div>
+            
             <Button
-              variant={currentViewMode === 'grid' ? 'default' : 'ghost'}
-              size="icon"
-              className="w-9 h-9 rounded-none"
-              onClick={() => setCurrentViewMode('grid')}
+              variant={favoritesOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFavoritesOnly(!favoritesOnly)}
+              className={`whitespace-nowrap border-nuvia-silver/30 ${
+                favoritesOnly 
+                  ? 'bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white' 
+                  : 'bg-white/50'
+              }`}
             >
-              <Grid3X3 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={currentViewMode === 'list' ? 'default' : 'ghost'}
-              size="icon"
-              className="w-9 h-9 rounded-none"
-              onClick={() => setCurrentViewMode('list')}
-            >
-              <List className="w-4 h-4" />
+              <Filter className="w-4 h-4 mr-2" />
+              Favoritos
             </Button>
           </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={refetch}
+              disabled={loading}
+              className="border-nuvia-silver/30"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+
+            <div className="flex border border-nuvia-silver/30 rounded-lg overflow-hidden">
+              <Button
+                variant={currentViewMode === 'grid' ? 'default' : 'ghost'}
+                size="icon"
+                className="w-9 h-9 rounded-none"
+                onClick={() => setCurrentViewMode('grid')}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={currentViewMode === 'list' ? 'default' : 'ghost'}
+                size="icon"
+                className="w-9 h-9 rounded-none"
+                onClick={() => setCurrentViewMode('list')}
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </div>
+
+        {/* Grid de Videos */}
+        {loading && filteredVideos.length === 0 ? (
+          <div className={
+            currentViewMode === 'grid' 
+              ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
+              : "space-y-4"
+          }>
+            {Array.from({ length: 20 }).map((_, i) => (
+              currentViewMode === 'list' ? (
+                <div key={i} className="animate-pulse flex items-center gap-4 p-4">
+                  <div className="w-20 h-20 bg-nuvia-silver/30 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-nuvia-silver/30 rounded w-3/4" />
+                    <div className="h-3 bg-nuvia-silver/30 rounded w-1/2" />
+                    <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+                  </div>
+                </div>
+              ) : (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-square bg-nuvia-silver/30 rounded-xl mb-3" />
+                  <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
+                  <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+                </div>
+              )
+            ))}
+          </div>
+        ) : filteredVideos.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 bg-nuvia-peach/20 rounded-full flex items-center justify-center">
+              <Upload className="w-8 h-8 text-nuvia-mauve" />
+            </div>
+            <h3 className="text-lg font-semibold text-nuvia-deep mb-2">
+              {videos.length === 0 ? 'No hay videos' : 'No se encontraron videos'}
+            </h3>
+            <p className="text-nuvia-deep/60 mb-4">
+              {videos.length === 0 
+                ? 'Comienza subiendo tu primer video'
+                : 'Intenta con otros términos de búsqueda'
+              }
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className={
+              currentViewMode === 'grid' 
+                ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
+                : "space-y-4"
+            }>
+              {paginatedVideos.map(video => {
+                const displayName = video.title || video.originalFilename;
+                const videoUrl = getVideoUrl(video);
+                
+                if (currentViewMode === 'list') {
+                  // Vista de lista
+                  return (
+                    <Card key={video.videoId} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
+                      <CardContent className="p-3 sm:p-4">
+                        <div className="flex items-center gap-3 sm:gap-4">
+                          {/* Thumbnail pequeño a la izquierda */}
+                          <div 
+                            className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-lg relative overflow-hidden cursor-pointer"
+                            onClick={() => setSelectedVideo(video)}
+                          >
+                            <img
+                              src={getThumbnailUrl(video)}
+                              alt={displayName}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Play className="w-6 h-6 text-white fill-current" />
+                            </div>
+                            
+                            {video.isFavorite && (
+                              <div className="absolute top-1 left-1 z-10 pointer-events-none">
+                                <div className="bg-red-500 rounded-md px-1 py-0.5 shadow-sm">
+                                  <Heart className="w-2 h-2 text-white fill-current" />
+                                </div>
+                              </div>
+                            )}
+                            
+                            {video.duration && (
+                              <div className="absolute bottom-1 right-1">
+                                <div className="bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded">
+                                  {formatDuration(video.duration)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Información del video */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-2 gap-2">
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-sm font-semibold text-nuvia-deep truncate mb-1">
+                                  {displayName}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-nuvia-deep/60">
+                                  <span>{formatFileSize(video.fileSize)}</span>
+                                  {video.duration && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="w-3 h-3" />
+                                      {formatDuration(video.duration)}
+                                    </span>
+                                  )}
+                                  <span className="capitalize">{video.mimeType?.split("/")[1] || 'MP4'}</span>
+                                  {video.width && video.height && (
+                                    <span>{video.width}×{video.height}</span>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Botones de acción en vista lista */}
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  variant="secondary" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFavoriteToggle(video.videoId);
+                                  }}
+                                >
+                                  <Heart className={`w-3 h-3 ${video.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
+                                </Button>
+                                
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button 
+                                      variant="secondary" 
+                                      size="sm" 
+                                      className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                    >
+                                      <MoreHorizontal className="w-3 h-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48 z-[9999]">
+                                    <DropdownMenuItem onClick={() => handleFavoriteToggle(video.videoId)}>
+                                      <Heart className={`w-4 h-4 mr-2 ${video.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                                      {video.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger>
+                                        <FolderPlus className="w-4 h-4 mr-2" />
+                                        Añadir a carpeta
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuPortal>
+                                        <DropdownMenuSubContent className="w-48">
+                                          {foldersLoading ? (
+                                            <DropdownMenuItem disabled>
+                                              <div className="flex items-center">
+                                                <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                                Cargando carpetas...
+                                              </div>
+                                            </DropdownMenuItem>
+                                          ) : folders.length === 0 ? (
+                                            <DropdownMenuItem disabled>
+                                              No tienes carpetas
+                                            </DropdownMenuItem>
+                                          ) : (
+                                            folders.map((folder) => {
+                                              const actualFolderId = folder.folderId || folder.id;
+                                              if (!actualFolderId || isNaN(actualFolderId)) return null;
+
+                                              return (
+                                                <DropdownMenuItem
+                                                  key={actualFolderId}
+                                                  onClick={() => addToFolder(video.videoId, actualFolderId)}
+                                                  className="flex items-center justify-between"
+                                                >
+                                                  <div className="flex items-center">
+                                                    <div 
+                                                      className="w-3 h-3 rounded mr-2"
+                                                      style={{ backgroundColor: folder.color }}
+                                                    />
+                                                    <span className="truncate">{folder.name}</span>
+                                                  </div>
+                                                  {folder.itemCount > 0 && (
+                                                    <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
+                                                  )}
+                                                </DropdownMenuItem>
+                                              );
+                                            }).filter(Boolean)
+                                          )}
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuPortal>
+                                    </DropdownMenuSub>
+                                    
+                                    <DropdownMenuItem onClick={() => window.open(videoUrl, "_blank")}>
+                                      <Download className="w-4 h-4 mr-2" />
+                                      Descargar
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuItem onClick={() => setRenameModal({ open: true, video, name: displayName })}>
+                                      <Edit3 className="w-4 h-4 mr-2" />
+                                      Renombrar
+                                    </DropdownMenuItem>
+                                    
+                                    <DropdownMenuSeparator />
+                                    
+                                    <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Mover a papelera
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </div>
+                            
+                            {/* Información adicional - Solo en desktop */}
+                            <div className="hidden sm:flex items-center gap-4 text-xs text-nuvia-deep/60">
+                              <span>Subido: {new Date(video.createdAt).toLocaleDateString("es-ES")}</span>
+                              {video.isPublic ? (
+                                <span className="flex items-center gap-1">
+                                  <Eye className="w-3 h-3 text-green-500" />
+                                  Público
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  <EyeOff className="w-3 h-3 text-nuvia-deep/40" />
+                                  Privado
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Vista de grid (5 columnas)
+                return (
+                  <Card key={video.videoId} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
+                    <CardContent className="p-0 relative">
+                      {/* Video Thumbnail clickeable */}
+                      <div 
+                        className="aspect-square bg-gray-50 relative overflow-hidden cursor-pointer" 
+                        onClick={() => setSelectedVideo(video)}
+                      >
+                        <img
+                          src={getThumbnailUrl(video)}
+                          alt={displayName}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
+                            <Play className="w-8 h-8 text-white fill-current" />
+                          </div>
+                        </div>
+                        
+                        {/* Badge favorito */}
+                        {video.isFavorite && (
+                          <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                            <div className="bg-red-500 rounded-md px-1.5 py-1 shadow-sm">
+                              <Heart className="w-3 h-3 text-white fill-current" />
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Duración */}
+                        {video.duration && (
+                          <div className="absolute bottom-2 right-2">
+                            <div className="bg-black/80 text-white text-xs px-2 py-1 rounded">
+                              <Clock className="w-3 h-3 inline mr-1" />
+                              {formatDuration(video.duration)}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Botones de acción */}
+                        <div 
+                          className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFavoriteToggle(video.videoId);
+                            }}
+                          >
+                            <Heart className={`w-3 h-3 ${video.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
+                          </Button>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                variant="secondary" 
+                                size="sm" 
+                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreHorizontal className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem onClick={() => handleFavoriteToggle(video.videoId)}>
+                                <Heart className={`w-4 h-4 mr-2 ${video.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                                {video.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <FolderPlus className="w-4 h-4 mr-2" />
+                                  Añadir a carpeta
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                  <DropdownMenuSubContent className="w-48">
+                                    {foldersLoading ? (
+                                      <DropdownMenuItem disabled>
+                                        <div className="flex items-center">
+                                          <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                          Cargando carpetas...
+                                        </div>
+                                      </DropdownMenuItem>
+                                    ) : folders.length === 0 ? (
+                                      <DropdownMenuItem disabled>
+                                        No tienes carpetas
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      folders.map((folder) => {
+                                        const actualFolderId = folder.folderId || folder.id;
+                                        if (!actualFolderId || isNaN(actualFolderId)) return null;
+
+                                        return (
+                                          <DropdownMenuItem
+                                            key={actualFolderId}
+                                            onClick={() => addToFolder(video.videoId, actualFolderId)}
+                                            className="flex items-center justify-between"
+                                          >
+                                            <div className="flex items-center">
+                                              <div 
+                                                className="w-3 h-3 rounded mr-2"
+                                                style={{ backgroundColor: folder.color }}
+                                              />
+                                              <span className="truncate">{folder.name}</span>
+                                            </div>
+                                            {folder.itemCount > 0 && (
+                                              <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
+                                            )}
+                                          </DropdownMenuItem>
+                                        );
+                                      }).filter(Boolean)
+                                    )}
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                              </DropdownMenuSub>
+                              
+                              <DropdownMenuItem onClick={() => window.open(videoUrl, "_blank")}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Descargar
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuItem onClick={() => setRenameModal({ open: true, video, name: displayName })}>
+                                <Edit3 className="w-4 h-4 mr-2" />
+                                Renombrar
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuSeparator />
+                              
+                              <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Mover a papelera
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                      
+                      {/* Info del video */}
+                      <div className="p-3 bg-white border-t border-nuvia-silver/30">
+                        <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
+                          {displayName}
+                        </p>
+                        <div className="flex justify-between items-center text-xs text-nuvia-deep/60">
+                          <span>{formatFileSize(video.fileSize)}</span>
+                          {video.duration && (
+                            <span>{formatDuration(video.duration)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Paginación - Solo mostrar si hay más de una página */}
+            {totalPages > 1 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-nuvia-silver/30 gap-4">
+                <div className="text-sm text-nuvia-deep/60 text-center sm:text-left">
+                  Mostrando {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredVideos.length)} de {filteredVideos.length} videos
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="border-nuvia-silver/30"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`w-8 h-8 ${
+                            currentPage === pageNum 
+                              ? '' 
+                              : 'border-nuvia-silver/30'
+                          }`}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="border-nuvia-silver/30"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Grid de Videos */}
-      {loading && videos.length === 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="animate-pulse">
-              <div className="aspect-video bg-nuvia-silver/30 rounded-2xl mb-4" />
-              <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
-              <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
-            </div>
-          ))}
-        </div>
-      ) : filteredVideos.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 mx-auto mb-4 bg-nuvia-peach/20 rounded-full flex items-center justify-center">
-            <Upload className="w-8 h-8 text-nuvia-mauve" />
-          </div>
-          <h3 className="text-lg font-semibold text-nuvia-deep mb-2">
-            {videos.length === 0 ? 'No hay videos' : 'No se encontraron videos'}
-          </h3>
-          <p className="text-nuvia-deep/60 mb-4">
-            {videos.length === 0 
-              ? 'Comienza subiendo tu primer video'
-              : 'Intenta con otros términos de búsqueda'
-            }
-          </p>
-        </div>
-      ) : (
-        <div className={
-          currentViewMode === 'grid' 
-            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-            : "space-y-4"
-        }>
-          {paginatedVideos.map((video) => (
-            <VideoCard
-              key={video.videoId}
-              video={video}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Modal Vista Previa - UNIFICADO */}
+      {/* Modal Vista Previa */}
       <Dialog open={!!selectedVideo} onOpenChange={(open) => !open && setSelectedVideo(null)}>
         <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-y-auto">
           {selectedVideo && (
@@ -691,6 +953,15 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                       variant="outline" 
                       size="sm" 
                       className="w-full justify-start border-nuvia-silver/30" 
+                      onClick={() => setRenameModal({ open: true, video: selectedVideo, name: selectedVideo.title || selectedVideo.originalFilename })}
+                    >
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Renombrar
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full justify-start border-nuvia-silver/30" 
                       onClick={() => handleFavoriteToggle(selectedVideo.videoId)}
                     >
                       <Heart className={`w-4 h-4 mr-2 ${selectedVideo.isFavorite ? "text-red-500 fill-current" : ""}`} />
@@ -715,6 +986,55 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Modal Renombrar */}
+      <Dialog open={renameModal.open} onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-nuvia-mauve" />
+              Renombrar video
+            </DialogTitle>
+            <DialogDescription>Cambia el nombre de tu video.</DialogDescription>
+          </DialogHeader>
+          {renameModal.video && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-nuvia-silver/10 rounded-lg border border-nuvia-silver/30">
+                <img src={getThumbnailUrl(renameModal.video)} alt="" className="w-12 h-12 object-cover rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">{renameModal.video.title || renameModal.video.originalFilename}</p>
+                  <p className="text-xs text-nuvia-deep/60">
+                    {formatFileSize(renameModal.video.fileSize)} • {formatDuration(renameModal.video.duration)}
+                  </p>
+                </div>
+              </div>
+              <Input
+                value={renameModal.name}
+                onChange={(e) => setRenameModal(p => ({ ...p, name: e.target.value }))}
+                placeholder="Nuevo nombre..."
+                autoFocus
+                className="border-nuvia-silver/30"
+                onKeyDown={(e) => e.key === "Enter" && renameVideo()}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameModal({ open: false, video: null, name: "" })} disabled={isRenaming} className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button onClick={renameVideo} disabled={!renameModal.name.trim() || isRenaming} className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white">
+              {isRenaming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Renombrando...
+                </>
+              ) : (
+                "Renombrar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
