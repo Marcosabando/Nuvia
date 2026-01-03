@@ -193,6 +193,17 @@ const Favorites = () => {
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
 
+  const getThumbnailUrl = (item: FavoriteItem): string | null => {
+    if (!item.thumbnailPath) return null;
+
+    let cleanPath = item.thumbnailPath;
+    if (cleanPath.startsWith("uploads/")) {
+      cleanPath = cleanPath.replace("uploads/", "");
+    }
+
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
   const handleFileClick = (file: FavoriteItem) => {
     setSelectedFile(file);
     setIsModalOpen(true);
@@ -420,9 +431,18 @@ const Favorites = () => {
                                   loading="lazy"
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                                  <Video className="w-6 h-6 text-nuvia-mauve" />
-                                </div>
+                                getThumbnailUrl(favorite) ? (
+                                  <img
+                                    src={getThumbnailUrl(favorite)!}
+                                    alt={favorite.originalFilename}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
+                                    <Video className="w-6 h-6 text-nuvia-mauve" />
+                                  </div>
+                                )
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -554,9 +574,13 @@ const Favorites = () => {
                       className="w-full h-full object-contain"
                     />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                      <Video className="w-16 h-16 text-nuvia-mauve" />
-                    </div>
+                    <video
+                      src={getFileUrl(selectedFile)}
+                      controls
+                      preload="metadata"
+                      poster={getThumbnailUrl(selectedFile) || undefined}
+                      className="w-full h-full object-contain"
+                    />
                   )}
                 </div>
 
