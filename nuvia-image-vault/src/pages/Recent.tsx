@@ -1,5 +1,5 @@
 import { AppLayout } from "@/components/AppLayout";
-import { Clock, Download, Share2, MoreVertical, TrendingUp } from "lucide-react";
+import { Clock, Download, Share2, MoreVertical, TrendingUp, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,16 @@ export default function Recent() {
   const { toast } = useToast();
   const [timeFilter, setTimeFilter] = useState<"today" | "week" | "month" | "all">("week");
 
-  const { recentItems, stats, loading, error, getFileUrl, getRelativeTime } = useRecent(timeFilter);
+  const { 
+    recentItems, 
+    stats, 
+    loading, 
+    error, 
+    getFileUrl, 
+    getRelativeTime,
+    getFileIcon,
+    getFileTypeName 
+  } = useRecent(timeFilter);
 
   const handleOpen = (name: string, path: string) => {
     window.open(getFileUrl(path), "_blank");
@@ -27,15 +36,8 @@ export default function Recent() {
     });
   };
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case "image":
-        return "🖼️";
-      case "video":
-        return "🎬";
-      default:
-        return "📁";
-    }
+  const getIcon = (item: any) => {
+    return getFileIcon(item.type, item.mimeType, item.extension);
   };
 
   const getTypeColor = (type: string) => {
@@ -44,9 +46,15 @@ export default function Recent() {
         return "bg-gradient-to-r from-nuvia-peach/20 to-nuvia-rose/20 text-nuvia-deep border-nuvia-peach/40";
       case "video":
         return "bg-gradient-to-r from-nuvia-rose/20 to-nuvia-mauve/20 text-nuvia-deep border-nuvia-rose/40";
+      case "document":
+        return "bg-gradient-to-r from-nuvia-mauve/20 to-nuvia-deep/20 text-nuvia-deep border-nuvia-mauve/40";
       default:
         return "bg-gradient-to-r from-nuvia-mauve/10 to-nuvia-peach/10 text-nuvia-deep border-nuvia-mauve/30";
     }
+  };
+
+  const getTypeDisplayName = (item: any) => {
+    return getFileTypeName(item.type, item.mimeType);
   };
 
   if (loading) {
@@ -212,8 +220,8 @@ export default function Recent() {
                                 </div>
                               )
                             ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-nuvia-deep/10 to-nuvia-peach/10 flex items-center justify-center">
-                                <span className="text-2xl">{getIcon(item.type)}</span>
+                              <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-peach/10 flex items-center justify-center">
+                                <span className="text-2xl">{getIcon(item)}</span>
                               </div>
                             )}
                           </div>
@@ -228,10 +236,18 @@ export default function Recent() {
                               <span className="break-words">{getRelativeTime(item.accessedAt)}</span>
                               <span className="hidden sm:inline">•</span>
                               <span className="break-words">{item.size}</span>
-                              {item.dimensions && (
+                              {item.dimensions && item.type !== 'document' && (
                                 <>
                                   <span className="hidden sm:inline">•</span>
                                   <span className="break-words">{item.dimensions}</span>
+                                </>
+                              )}
+                              {item.type === 'document' && item.extension && (
+                                <>
+                                  <span className="hidden sm:inline">•</span>
+                                  <span className="break-words text-nuvia-mauve font-medium">
+                                    .{item.extension.toUpperCase()}
+                                  </span>
                                 </>
                               )}
                             </div>
@@ -239,7 +255,7 @@ export default function Recent() {
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 ml-0 sm:ml-16 mt-2 sm:mt-0">
                           <Badge className={`${getTypeColor(item.type)} text-xs`}>
-                            {item.type}
+                            {getTypeDisplayName(item)}
                           </Badge>
                           <span className="text-xs text-nuvia-deep break-words">
                             Subido {getRelativeTime(item.uploadedAt)}
@@ -278,9 +294,13 @@ export default function Recent() {
                             className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium"
                           >
                             <DropdownMenuItem onClick={() => handleOpen(item.name, item.path)}>
+                              <FileText className="w-4 h-4 mr-2" />
                               Abrir
                             </DropdownMenuItem>
-                            <DropdownMenuItem>Duplicar</DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <Download className="w-4 h-4 mr-2" />
+                              Descargar
+                            </DropdownMenuItem>
                             <DropdownMenuItem>Mover a favoritos</DropdownMenuItem>
                             <DropdownMenuItem className="text-red-600">Eliminar</DropdownMenuItem>
                           </DropdownMenuContent>

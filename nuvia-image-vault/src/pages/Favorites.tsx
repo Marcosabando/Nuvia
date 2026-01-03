@@ -302,6 +302,17 @@ const Favorites = () => {
     return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23f3f4f6' width='200' height='200'/%3E%3Cpath d='M80 60L120 80L80 100Z' fill='%239ca3af'/%3E%3Ctext x='50%25' y='85%25' text-anchor='middle' fill='%239ca3af' font-size='12'%3EVideo%3C/text%3E%3C/svg%3E";
   };
 
+  const getThumbnailUrl = (item: FavoriteItem): string | null => {
+    if (!item.thumbnailPath) return null;
+
+    let cleanPath = item.thumbnailPath;
+    if (cleanPath.startsWith("uploads/")) {
+      cleanPath = cleanPath.replace("uploads/", "");
+    }
+
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
   const handleFileClick = (file: FavoriteItem) => {
     setSelectedFile(file);
     setIsPreviewOpen(true);
@@ -572,23 +583,18 @@ const Favorites = () => {
                                   }}
                                 />
                               ) : (
-                                /* Para videos: mostrar thumbnail SIEMPRE */
-                                <>
-                                  <img 
-                                    src={getThumbnailUrl(favorite)} 
+                                getThumbnailUrl(favorite) ? (
+                                  <img
+                                    src={getThumbnailUrl(favorite)!}
                                     alt={favorite.originalFilename}
                                     className="w-full h-full object-cover"
                                     loading="lazy"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                    }}
                                   />
-                                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="bg-black/50 p-2 rounded-full">
-                                      <Play className="w-6 h-6 text-white" />
-                                    </div>
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
+                                    <Video className="w-6 h-6 text-nuvia-mauve" />
                                   </div>
-                                </>
+                                )
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -749,33 +755,13 @@ const Favorites = () => {
                       />
                     </div>
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center">
-                      <div className={`w-full ${isFullscreen ? 'h-[80vh]' : 'max-h-[65vh]'} flex items-center justify-center`}>
-                        <video
-                          ref={videoRef}
-                          controls
-                          autoPlay
-                          className={`${isFullscreen ? 'w-full h-full' : 'w-auto max-w-full max-h-[65vh]'} rounded-lg ${isFullscreen ? '' : 'shadow-xl'}`}
-                          poster={getThumbnailUrl(selectedFile)}
-                        >
-                          <source src={getFileUrl(selectedFile)} type={selectedFile.mimeType || 'video/mp4'} />
-                          Tu navegador no soporta el elemento video.
-                        </video>
-                      </div>
-                      {!isFullscreen && (
-                        <div className="mt-4 flex gap-2">
-                          <Button
-                            onClick={handleFullscreen}
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                          >
-                            <Maximize2 className="w-4 h-4" />
-                            Pantalla completa
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    <video
+                      src={getFileUrl(selectedFile)}
+                      controls
+                      preload="metadata"
+                      poster={getThumbnailUrl(selectedFile) || undefined}
+                      className="w-full h-full object-contain"
+                    />
                   )}
                 </div>
 

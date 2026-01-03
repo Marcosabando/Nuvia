@@ -1,4 +1,4 @@
-// src/middleware/multer.ts - VERSIÓN CORREGIDA
+// src/middleware/multer.ts - VERSIÓN CORREGIDA CON 3GB
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,10 +48,10 @@ export const ALLOWED_MIME_TYPES = [
   'text/markdown'
 ];
 
-// Tamaños máximos - ACTUALIZADO CON DOCUMENTOS
-export const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50MB para imágenes
-export const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB para videos
-export const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100MB para documentos
+// ✅ TAMAÑOS MÁXIMOS ACTUALIZADOS A 3GB
+export const MAX_IMAGE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para imágenes
+export const MAX_VIDEO_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para videos
+export const MAX_DOCUMENT_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para documentos
 
 // Interface extendida para Request con user
 interface AuthRequest extends Request {
@@ -117,7 +117,7 @@ const getStorage = (fileType: 'image' | 'video' | 'profile' | 'document') => {
   });
 };
 
-// ✅ CONFIGURACIÓN PARA DOCUMENTOS
+// ✅ CONFIGURACIÓN PARA DOCUMENTOS (3GB)
 export const uploadDocument = multer({
   storage: getStorage('document'),
   fileFilter: (req, file, cb) => {
@@ -154,12 +154,12 @@ export const uploadDocument = multer({
     }
   },
   limits: {
-    fileSize: MAX_DOCUMENT_SIZE,
+    fileSize: MAX_DOCUMENT_SIZE, // 3GB
     files: 10
   }
 });
 
-// ✅ CONFIGURACIÓN PARA IMÁGENES DE PERFIL
+// ✅ CONFIGURACIÓN PARA IMÁGENES DE PERFIL (mantener más pequeño)
 export const uploadProfileImage = multer({
   storage: getStorage('profile'),
   fileFilter: (req, file, cb) => {
@@ -180,12 +180,12 @@ export const uploadProfileImage = multer({
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB máximo para imágenes de perfil
+    fileSize: 50 * 1024 * 1024, // 50MB máximo para imágenes de perfil
     files: 1
   }
 });
 
-// ✅ CONFIGURACIÓN PARA IMÁGENES NORMALES
+// ✅ CONFIGURACIÓN PARA IMÁGENES NORMALES (3GB)
 export const uploadImage = multer({
   storage: getStorage('image'),
   fileFilter: (req, file, cb) => {
@@ -206,12 +206,12 @@ export const uploadImage = multer({
     }
   },
   limits: {
-    fileSize: MAX_IMAGE_SIZE,
+    fileSize: MAX_IMAGE_SIZE, // 3GB
     files: 10
   }
 });
 
-// ✅ CONFIGURACIÓN PARA VIDEOS
+// ✅ CONFIGURACIÓN PARA VIDEOS (3GB)
 export const uploadVideo = multer({
   storage: getStorage('video'),
   fileFilter: (req, file, cb) => {
@@ -234,7 +234,7 @@ export const uploadVideo = multer({
     }
   },
   limits: {
-    fileSize: MAX_VIDEO_SIZE,
+    fileSize: MAX_VIDEO_SIZE, // 3GB
     files: 5
   }
 });
@@ -836,7 +836,7 @@ export const cleanTempFiles = (files: Express.Multer.File[]): void => {
   });
 };
 
-// ✅ MIDDLEWARE DE MANEJO DE ERRORES MEJORADO
+// ✅ MIDDLEWARE DE MANEJO DE ERRORES MEJORADO (ACTUALIZADO PARA 3GB)
 export const handleUploadError = (error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('💥 Error en middleware de upload:', error);
 
@@ -860,18 +860,16 @@ export const handleUploadError = (error: any, req: Request, res: Response, next:
         
         let maxSize: number;
         if (isProfile) {
-          maxSize = 10 * 1024 * 1024;
-        } else if (isDocument) {
-          maxSize = MAX_DOCUMENT_SIZE;
+          maxSize = 50 * 1024 * 1024; // 50MB para perfil
         } else {
-          maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+          maxSize = 3 * 1024 * 1024 * 1024; // 3GB para todo lo demás
         }
         
         return res.status(413).json({
           success: false,
-          error: `El archivo es demasiado grande. Tamaño máximo: ${maxSize / 1024 / 1024}MB`,
-          maxSizeMB: maxSize / 1024 / 1024,
-          fileType: isVideo ? 'video' : isDocument ? 'document' : 'image'
+          error: `El archivo es demasiado grande. Tamaño máximo: ${(maxSize / (1024 * 1024 * 1024)).toFixed(1)}GB`,
+          maxSizeGB: (maxSize / (1024 * 1024 * 1024)).toFixed(1),
+          fileType: isVideo ? 'video' : isDocument ? 'document' : isProfile ? 'profile' : 'image'
         });
       
       case 'LIMIT_FILE_COUNT':

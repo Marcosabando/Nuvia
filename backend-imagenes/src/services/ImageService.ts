@@ -1,70 +1,61 @@
+// src/services/images.service.ts
 import { Request, Response } from "express";
-import { pool } from "@src/config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
+import prisma from "../lib/prisma"; // ✅ Instancia única
 import path from "path";
-import fs from "fs/promises"; 
-import sharp from "sharp"; // ✅ USAMOS SHARP EN LUGAR DE IMAGE-SIZE
+import fs from "fs/promises";
+import sharp from "sharp";
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 3GB
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
 const validateFile = (file: Express.Multer.File) => {
   if (!ALLOWED_TYPES.includes(file.mimetype)) {
     throw new Error(`Format not allowed: ${file.mimetype}`);
   }
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    throw new Error(`File too large: ${formatFileSize(file.size)}`); // Usa tu función formatFileSize
   }
 };
 
-// ✅ FUNCIÓN MEJORADA CON SHARP: Obtener dimensiones de la imagen
 const getImageDimensions = async (filePath: string): Promise<{ width: number; height: number }> => {
   try {
-    console.log(`📐 Intentando obtener dimensiones para: ${filePath}`);
-    
-    // Verificar que el archivo existe
-    try {
-      await fs.access(filePath);
-      console.log(`✅ Archivo encontrado: ${filePath}`);
-    } catch (accessError) {
-      console.error(`❌ Archivo no encontrado: ${filePath}`, accessError);
+    await fs.access(filePath);
+    const metadata = await sharp(filePath).metadata();
+
+    if (!metadata.width || !metadata.height) {
       return { width: 0, height: 0 };
     }
 
-    // Obtener metadatos con sharp
-    const metadata = await sharp(filePath).metadata();
-    
-    console.log(`📏 Metadatos obtenidos:`, metadata);
-    
-    if (!metadata.width || !metadata.height) {
-      console.warn("⚠️ No se pudieron obtener las dimensiones de la imagen");
-      return { width: 0, height: 0 };
-    }
-    
-    console.log(`✅ Dimensiones obtenidas: ${metadata.width}x${metadata.height}`);
     return {
       width: metadata.width,
-      height: metadata.height
+      height: metadata.height,
     };
   } catch (error) {
-    console.error("❌ Error crítico obteniendo dimensiones de la imagen:", error);
+    console.error("Error getting image dimensions:", error);
     return { width: 0, height: 0 };
   }
 };
 
-// 🔧 CORREGIDO: Ahora incluye la carpeta /images/
-const getRelativePath = (userId: number, filename: string, subfolder: string = 'images'): string => {
-  return path.join("uploads", userId.toString(), subfolder, filename).replace(/\\/g, '/');
+const getRelativePath = (userId: number, filename: string, subfolder: string = "images"): string => {
+  return path.join("uploads", userId.toString(), subfolder, filename).replace(/\\/g, "/");
 };
 
 // ============================================================================
-// 📤 UPLOAD IMAGES - VERSIÓN MEJORADA CON DIMENSIONES
+// 📤 UPLOAD IMAGES
 // ============================================================================
 
 /**
@@ -73,12 +64,12 @@ const getRelativePath = (userId: number, filename: string, subfolder: string = '
  */
 export const uploadImage = async (req: Request, res: Response): Promise<void> => {
   let fileProcessed = false;
-  
+
   try {
     if (!req.file) {
-      res.status(400).json({ 
+      res.status(400).json({
         success: false,
-        error: "No image uploaded" 
+        error: "No image uploaded",
       });
       return;
     }
@@ -86,79 +77,65 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
     const userId = req.user!.userId;
     const file = req.file;
 
-    console.log(`📤 Subiendo imagen: ${file.originalname} (${file.size} bytes)`);
-    console.log(`📁 Ruta temporal: ${file.path}`);
-
     validateFile(file);
 
-    // 🔧 CORREGIDO: Ahora incluye /images/ en la ruta
-    const relativePath = getRelativePath(userId, file.filename, 'images');
+    const relativePath = getRelativePath(userId, file.filename, "images");
     const { title, description } = req.body;
 
-    // ✅ OBTENER DIMENSIONES DE LA IMAGEN
-    let width = 0;
-    let height = 0;
-    
-    console.log(`🔍 Obteniendo dimensiones para: ${file.originalname}`);
+    // Get image dimensions
     const dimensions = await getImageDimensions(file.path);
-    width = dimensions.width;
-    height = dimensions.height;
-    
-    console.log(`📐 Dimensiones finales para ${file.originalname}: ${width}x${height}`);
 
-    // ✅ INSERTAR EN BD CON DIMENSIONES
-    const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO images 
-      (userId, title, description, originalFilename, filename, imagePath, 
-       fileSize, mimeType, width, height) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        title || file.originalname,
-        description || null,
-        file.originalname,
-        file.filename,
-        relativePath,
-        file.size,
-        file.mimetype,
-        width,  // ✅ Ancho de la imagen
-        height  // ✅ Alto de la imagen
-      ]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const image = await prisma.images.create({
+      data: {
+        userId: userId,
+        title: title || file.originalname,
+        description: description || null,
+        originalFilename: file.originalname,
+        filename: file.filename,
+        imagePath: relativePath,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        width: dimensions.width,
+        height: dimensions.height,
+        isFavorite: false,
+        isPublic: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
 
     fileProcessed = true;
-    console.log(`✅ Imagen subida correctamente - ID: ${result.insertId}, Dimensiones: ${width}x${height}`);
 
     res.status(201).json({
       success: true,
       message: "Image uploaded successfully",
       data: {
-        imageId: result.insertId,
-        title: title || file.originalname,
+        imageId: image.imageId,
+        title: image.title,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
-        width: width,   // ✅ INCLUIR EN RESPUESTA
-        height: height, // ✅ INCLUIR EN RESPUESTA
+        width: dimensions.width,
+        height: dimensions.height,
         url: `/${relativePath}`,
       },
     });
   } catch (error) {
-    console.error("❌ Error uploading image:", error);
+    console.error("Error uploading image:", error);
     res.status(500).json({
       success: false,
       error: "Error uploading image",
       details: (error as Error).message,
     });
   } finally {
-    // Limpiar archivo temporal si es necesario
+    // Clean temp file if needed
     if (!fileProcessed && req.file) {
       try {
         await fs.unlink(req.file.path);
-        console.log(`🧹 Archivo temporal limpiado: ${req.file.path}`);
       } catch (cleanupError) {
-        console.error("Error limpiando archivo temporal:", cleanupError);
+        console.error("Error cleaning temp file:", cleanupError);
       }
     }
   }
@@ -169,14 +146,13 @@ export const uploadImage = async (req: Request, res: Response): Promise<void> =>
  * POST /api/images/upload-multiple
  */
 export const uploadMultipleImages = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   const filesToCleanup: string[] = [];
-  
+
   try {
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      res.status(400).json({ 
+      res.status(400).json({
         success: false,
-        error: "No images uploaded" 
+        error: "No images uploaded",
       });
       return;
     }
@@ -185,70 +161,53 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
     const files = req.files as Express.Multer.File[];
     const insertedImages = [];
 
-    console.log(`📤 Subiendo ${files.length} imágenes...`);
-
-    await connection.beginTransaction();
-
     for (const file of files) {
-      // Guardar ruta para limpieza en caso de error
+      // Save path for cleanup in case of error
       filesToCleanup.push(file.path);
-      
+
       validateFile(file);
 
-      // 🔧 CORREGIDO: Ahora incluye /images/ en la ruta
-      const relativePath = getRelativePath(userId, file.filename, 'images');
+      const relativePath = getRelativePath(userId, file.filename, "images");
 
-      // ✅ OBTENER DIMENSIONES DE CADA IMAGEN
-      let width = 0;
-      let height = 0;
-      
-      console.log(`🔍 Obteniendo dimensiones para: ${file.originalname}`);
+      // Get dimensions for each image
       const dimensions = await getImageDimensions(file.path);
-      width = dimensions.width;
-      height = dimensions.height;
-      
-      console.log(`📐 Dimensiones finales para ${file.originalname}: ${width}x${height}`);
 
-      // ✅ INSERTAR EN BD CON DIMENSIONES
-      const [result] = await connection.query<ResultSetHeader>(
-        `INSERT INTO images 
-         (userId, title, originalFilename, filename, imagePath, 
-          fileSize, mimeType, width, height)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          userId,
-          file.originalname,
-          file.originalname,
-          file.filename,
-          relativePath,
-          file.size,
-          file.mimetype,
-          width,   // ✅ Ancho de la imagen
-          height   // ✅ Alto de la imagen
-        ]
-      );
+      // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+      const image = await prisma.images.create({
+        data: {
+          userId: userId,
+          title: file.originalname,
+          originalFilename: file.originalname,
+          filename: file.filename,
+          imagePath: relativePath,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          width: dimensions.width,
+          height: dimensions.height,
+          isFavorite: false,
+          isPublic: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
 
       insertedImages.push({
-        imageId: result.insertId,
+        imageId: image.imageId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
-        width: width,   // ✅ INCLUIR EN RESPUESTA
-        height: height, // ✅ INCLUIR EN RESPUESTA
+        width: dimensions.width,
+        height: dimensions.height,
         url: `/${relativePath}`,
       });
 
-      // Remover de la lista de limpieza ya que se procesó correctamente
+      // Remove from cleanup list since processed correctly
       const index = filesToCleanup.indexOf(file.path);
       if (index > -1) {
         filesToCleanup.splice(index, 1);
       }
     }
-
-    await connection.commit();
-
-    console.log(`✅ ${insertedImages.length} imágenes subidas correctamente`);
 
     res.status(201).json({
       success: true,
@@ -256,25 +215,20 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
       data: insertedImages,
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("❌ Error uploading multiple images:", error);
+    console.error("Error uploading multiple images:", error);
     res.status(500).json({
       success: false,
       error: "Error uploading images",
       details: (error as Error).message,
     });
   } finally {
-    connection.release();
-    
-    // Limpiar archivos temporales en caso de error
+    // Clean temp files in case of error
     if (filesToCleanup.length > 0) {
-      console.log(`🧹 Limpiando ${filesToCleanup.length} archivos temporales...`);
       for (const filePath of filesToCleanup) {
         try {
           await fs.unlink(filePath);
-          console.log(`✅ Limpiado: ${filePath}`);
         } catch (cleanupError) {
-          console.error(`❌ Error limpiando ${filePath}:`, cleanupError);
+          console.error(`Error cleaning ${filePath}:`, cleanupError);
         }
       }
     }
@@ -282,60 +236,90 @@ export const uploadMultipleImages = async (req: Request, res: Response): Promise
 };
 
 // ============================================================================
-// 📋 GET IMAGES
+// 📋 GET IMAGES - VERSIÓN CORREGIDA
 // ============================================================================
 
 /**
  * Get all user images (active)
  * GET /api/images
- * Query params: page, limit, favorites (true/false)
  */
 export const getUserImages = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const favoritesOnly = req.query.favorites === "true";
+    const searchQuery = req.query.search as string;
 
-    let query = `
-      SELECT 
-        imageId, userId, title, description,
-        originalFilename, filename, 
-        imagePath, fileSize, 
-        mimeType, width, height,
-        isFavorite, isPublic,
-        location, takenDate, cameraInfo,
-        createdAt, updatedAt
-      FROM images 
-      WHERE userId = ? AND deletedAt IS NULL
-    `;
-
-    const params: any[] = [userId];
+    // Build where clause
+    const where: any = {
+      userId: userId,
+      deletedAt: { equals: null }, // Cambiado a equals: null
+    };
 
     if (favoritesOnly) {
-      query += ` AND isFavorite = 1`;
+      where.isFavorite = true;
     }
 
-    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
-
-    const [images] = await pool.query<RowDataPacket[]>(query, params);
-
-    // Count total
-    let countQuery = `SELECT COUNT(*) as total FROM images WHERE userId = ? AND deletedAt IS NULL`;
-    const countParams: any[] = [userId];
-
-    if (favoritesOnly) {
-      countQuery += ` AND isFavorite = 1`;
+    if (searchQuery && searchQuery.trim() !== "") {
+      where.OR = [
+        { title: { contains: searchQuery, mode: "insensitive" } },
+        { description: { contains: searchQuery, mode: "insensitive" } },
+        { originalFilename: { contains: searchQuery, mode: "insensitive" } },
+      ];
     }
 
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
-    const total = countResult[0].total;
+    console.log("🔍 Buscando imágenes con where clause:", JSON.stringify(where, null, 2));
+
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const [images, total] = await Promise.all([
+      prisma.images.findMany({
+        where,
+        select: {
+          imageId: true,
+          userId: true,
+          title: true,
+          description: true,
+          originalFilename: true,
+          filename: true,
+          imagePath: true,
+          thumbnailPath: true,
+          mediumPath: true,
+          fileSize: true,
+          mimeType: true,
+          width: true,
+          height: true,
+          isFavorite: true,
+          isPublic: true,
+          location: true,
+          takenDate: true,
+          cameraInfo: true,
+          deletedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          yearMonth: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        skip,
+        take: limit,
+      }),
+      prisma.images.count({ where }),
+    ]);
+
+    console.log(`✅ Encontradas ${images.length} imágenes de ${total} totales`);
+
+    // Convertir BigInt a Number para fileSize
+    const imagesWithSerializedFileSize = images.map((image) => ({
+      ...image,
+      fileSize: image.fileSize ? Number(image.fileSize) : 0,
+    }));
 
     res.json({
       success: true,
-      data: images,
+      data: imagesWithSerializedFileSize,
       pagination: {
         page,
         limit,
@@ -344,10 +328,11 @@ export const getUserImages = async (req: Request, res: Response): Promise<void> 
       },
     });
   } catch (error) {
-    console.error("Error getting user images:", error);
+    console.error("❌ Error obteniendo imágenes del usuario:", error);
     res.status(500).json({
       success: false,
-      error: "Error getting images",
+      error: "Error obteniendo imágenes",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -361,37 +346,71 @@ export const getImageById = async (req: Request, res: Response): Promise<void> =
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
 
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        imageId, userId, title, description,
-        originalFilename, filename, 
-        imagePath, fileSize, 
-        mimeType, width, height,
-        isFavorite, isPublic,
-        location, takenDate, cameraInfo,
-        createdAt, updatedAt
-       FROM images 
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [imageId, userId]
-    );
-
-    if (images.length === 0) {
-      res.status(404).json({
+    if (!userId || !imageId) {
+      res.status(400).json({
         success: false,
-        error: "Image not found",
+        error: "ID de imagen requerido",
       });
       return;
     }
 
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const image = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: { equals: null }, // Cambiado aquí también
+      },
+      select: {
+        imageId: true,
+        userId: true,
+        title: true,
+        description: true,
+        originalFilename: true,
+        filename: true,
+        imagePath: true,
+        thumbnailPath: true,
+        mediumPath: true,
+        fileSize: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        isFavorite: true,
+        isPublic: true,
+        location: true,
+        takenDate: true,
+        cameraInfo: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        yearMonth: true,
+      },
+    });
+
+    if (!image) {
+      res.status(404).json({
+        success: false,
+        error: "Imagen no encontrada",
+      });
+      return;
+    }
+
+    // Convertir BigInt a Number
+    const imageWithSerializedFileSize = {
+      ...image,
+      fileSize: image.fileSize ? Number(image.fileSize) : 0,
+    };
+
     res.json({
       success: true,
-      data: images[0],
+      data: imageWithSerializedFileSize,
     });
   } catch (error) {
-    console.error("Error getting image:", error);
+    console.error("❌ Error obteniendo imagen:", error);
     res.status(500).json({
       success: false,
-      error: "Error getting image",
+      error: "Error obteniendo imagen",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -405,27 +424,44 @@ export const getRecentImages = async (req: Request, res: Response): Promise<void
     const userId = req.user!.userId;
     const limit = parseInt(req.query.limit as string) || 10;
 
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        imageId, title, imagePath, mimeType,
-        fileSize, isFavorite,
-        createdAt
-       FROM images 
-       WHERE userId = ? AND deletedAt IS NULL
-       ORDER BY createdAt DESC
-       LIMIT ?`,
-      [userId, limit]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const images = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: { equals: null }, // Cambiado aquí
+      },
+      select: {
+        imageId: true,
+        title: true,
+        imagePath: true,
+        thumbnailPath: true,
+        mimeType: true,
+        fileSize: true,
+        isFavorite: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: limit,
+    });
+
+    // Convertir BigInt a Number
+    const imagesWithSerializedFileSize = images.map((image) => ({
+      ...image,
+      fileSize: image.fileSize ? Number(image.fileSize) : 0,
+    }));
 
     res.json({
       success: true,
-      data: images,
+      data: imagesWithSerializedFileSize,
     });
   } catch (error) {
-    console.error("Error getting recent images:", error);
+    console.error("❌ Error obteniendo imágenes recientes:", error);
     res.status(500).json({
       success: false,
-      error: "Error getting recent images",
+      error: "Error obteniendo imágenes recientes",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -440,44 +476,59 @@ export const searchImages = async (req: Request, res: Response): Promise<void> =
     const searchQuery = req.query.q as string;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     if (!searchQuery || searchQuery.trim() === "") {
       res.status(400).json({
         success: false,
-        error: "Search term required",
+        error: "Término de búsqueda requerido",
       });
       return;
     }
 
-    const searchTerm = `%${searchQuery}%`;
+    const where = {
+      userId: userId,
+      deletedAt: { equals: null }, // Cambiado aquí
+      OR: [
+        { title: { contains: searchQuery, mode: "insensitive" } },
+        { description: { contains: searchQuery, mode: "insensitive" } },
+        { originalFilename: { contains: searchQuery, mode: "insensitive" } },
+      ],
+    };
 
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        imageId, title, description, imagePath,
-        mimeType, fileSize,
-        isFavorite, createdAt
-       FROM images 
-       WHERE userId = ? AND deletedAt IS NULL
-         AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)
-       ORDER BY createdAt DESC
-       LIMIT ? OFFSET ?`,
-      [userId, searchTerm, searchTerm, searchTerm, limit, offset]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const [images, total] = await Promise.all([
+      prisma.images.findMany({
+        where,
+        select: {
+          imageId: true,
+          title: true,
+          description: true,
+          imagePath: true,
+          thumbnailPath: true,
+          mimeType: true,
+          fileSize: true,
+          isFavorite: true,
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        skip,
+        take: limit,
+      }),
+      prisma.images.count({ where }),
+    ]);
 
-    const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total 
-       FROM images 
-       WHERE userId = ? AND deletedAt IS NULL
-         AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)`,
-      [userId, searchTerm, searchTerm, searchTerm]
-    );
-
-    const total = countResult[0].total;
+    // Convertir BigInt a Number
+    const imagesWithSerializedFileSize = images.map((image) => ({
+      ...image,
+      fileSize: image.fileSize ? Number(image.fileSize) : 0,
+    }));
 
     res.json({
       success: true,
-      data: images,
+      data: imagesWithSerializedFileSize,
       pagination: {
         page,
         limit,
@@ -486,10 +537,11 @@ export const searchImages = async (req: Request, res: Response): Promise<void> =
       },
     });
   } catch (error) {
-    console.error("Error searching images:", error);
+    console.error("❌ Error buscando imágenes:", error);
     res.status(500).json({
       success: false,
-      error: "Error searching images",
+      error: "Error buscando imágenes",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -511,36 +563,50 @@ export const updateImageTitle = async (req: Request, res: Response): Promise<voi
     if (!title || title.trim() === "") {
       res.status(400).json({
         success: false,
-        error: "Title cannot be empty",
+        error: "El título no puede estar vacío",
       });
       return;
     }
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE images 
-       SET title = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [title.trim(), imageId, userId]
-    );
+    // Verificar que la imagen existe
+    const existing = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (!existing) {
       res.status(404).json({
         success: false,
-        error: "Image not found",
+        error: "Imagen no encontrada",
       });
       return;
     }
+
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const image = await prisma.images.update({
+      where: {
+        imageId: imageId,
+      },
+      data: {
+        title: title.trim(),
+        updatedAt: new Date(),
+      },
+    });
 
     res.json({
       success: true,
-      message: "Title updated successfully",
+      message: "Título actualizado correctamente",
       data: { title: title.trim() },
     });
   } catch (error) {
-    console.error("Error updating image title:", error);
+    console.error("❌ Error actualizando título de imagen:", error);
     res.status(500).json({
       success: false,
-      error: "Error updating title",
+      error: "Error actualizando título",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -555,37 +621,51 @@ export const updateImageDescription = async (req: Request, res: Response): Promi
     const imageId = parseInt(req.params.id);
     const { description } = req.body;
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE images 
-       SET description = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [description || null, imageId, userId]
-    );
+    // Verificar que la imagen existe
+    const existing = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (!existing) {
       res.status(404).json({
         success: false,
-        error: "Image not found",
+        error: "Imagen no encontrada",
       });
       return;
     }
 
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const image = await prisma.images.update({
+      where: {
+        imageId: imageId,
+      },
+      data: {
+        description: description || null,
+        updatedAt: new Date(),
+      },
+    });
+
     res.json({
       success: true,
-      message: "Description updated successfully",
+      message: "Descripción actualizada correctamente",
       data: { description },
     });
   } catch (error) {
-    console.error("Error updating image description:", error);
+    console.error("❌ Error actualizando descripción de imagen:", error);
     res.status(500).json({
       success: false,
-      error: "Error updating description",
+      error: "Error actualizando descripción",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
 
 /**
- * Update image metadata (width, height, location, etc.)
+ * Update image metadata
  * PATCH /api/images/:id/metadata
  */
 export const updateImageMetadata = async (req: Request, res: Response): Promise<void> => {
@@ -594,65 +674,60 @@ export const updateImageMetadata = async (req: Request, res: Response): Promise<
     const imageId = parseInt(req.params.id);
     const { width, height, location, takenDate, cameraInfo } = req.body;
 
-    const updates: string[] = [];
-    const values: any[] = [];
+    // Verificar que la imagen existe
+    const existing = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
-    if (width !== undefined) {
-      updates.push("width = ?");
-      values.push(width);
-    }
-    if (height !== undefined) {
-      updates.push("height = ?");
-      values.push(height);
-    }
-    if (location !== undefined) {
-      updates.push("location = ?");
-      values.push(location);
-    }
-    if (takenDate !== undefined) {
-      updates.push("takenDate = ?");
-      values.push(takenDate);
-    }
-    if (cameraInfo !== undefined) {
-      updates.push("cameraInfo = ?");
-      values.push(cameraInfo);
-    }
-
-    if (updates.length === 0) {
-      res.status(400).json({
-        success: false,
-        error: "No fields to update",
-      });
-      return;
-    }
-
-    updates.push("updatedAt = CURRENT_TIMESTAMP");
-    values.push(imageId, userId);
-
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE images 
-       SET ${updates.join(", ")}
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      values
-    );
-
-    if (result.affectedRows === 0) {
+    if (!existing) {
       res.status(404).json({
         success: false,
-        error: "Image not found",
+        error: "Imagen no encontrada",
       });
       return;
     }
+
+    const updates: any = {
+      updatedAt: new Date(),
+    };
+
+    if (width !== undefined) updates.width = parseInt(width);
+    if (height !== undefined) updates.height = parseInt(height);
+    if (location !== undefined) updates.location = location;
+    if (takenDate !== undefined) updates.takenDate = new Date(takenDate);
+    if (cameraInfo !== undefined) updates.cameraInfo = cameraInfo;
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({
+        success: false,
+        error: "No hay campos para actualizar",
+      });
+      return;
+    }
+
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const image = await prisma.images.update({
+      where: {
+        imageId: imageId,
+      },
+      data: updates,
+    });
 
     res.json({
       success: true,
-      message: "Metadata updated successfully",
+      message: "Metadatos actualizados correctamente",
+      data: image,
     });
   } catch (error) {
-    console.error("Error updating image metadata:", error);
+    console.error("❌ Error actualizando metadatos de imagen:", error);
     res.status(500).json({
       success: false,
-      error: "Error updating metadata",
+      error: "Error actualizando metadatos",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -670,43 +745,49 @@ export const toggleImageFavorite = async (req: Request, res: Response): Promise<
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
 
-    // Get current state
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT isFavorite 
-       FROM images 
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [imageId, userId]
-    );
+    // Verificar que la imagen existe
+    const existing = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
-    if (images.length === 0) {
+    if (!existing) {
       res.status(404).json({
         success: false,
-        error: "Image not found",
+        error: "Imagen no encontrada",
       });
       return;
     }
 
-    const newFavoriteStatus = !images[0].isFavorite;
+    const newFavoriteStatus = !existing.isFavorite;
 
-    await pool.query(
-      `UPDATE images 
-       SET isFavorite = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ?`,
-      [newFavoriteStatus, imageId, userId]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const updated = await prisma.images.update({
+      where: {
+        imageId: imageId,
+      },
+      data: {
+        isFavorite: newFavoriteStatus,
+        updatedAt: new Date(),
+      },
+    });
 
     res.json({
       success: true,
-      message: newFavoriteStatus ? "Added to favorites" : "Removed from favorites",
+      message: newFavoriteStatus ? "Añadido a favoritos" : "Eliminado de favoritos",
       data: {
         isFavorite: newFavoriteStatus,
       },
     });
   } catch (error) {
-    console.error("Error toggling favorite:", error);
+    console.error("❌ Error cambiando favorito:", error);
     res.status(500).json({
       success: false,
-      error: "Error toggling favorite status",
+      error: "Error cambiando estado de favorito",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -724,42 +805,49 @@ export const toggleImagePublic = async (req: Request, res: Response): Promise<vo
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
 
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT isPublic 
-       FROM images 
-       WHERE imageId = ? AND userId = ? AND deletedAt IS NULL`,
-      [imageId, userId]
-    );
+    // Verificar que la imagen existe
+    const existing = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
-    if (images.length === 0) {
+    if (!existing) {
       res.status(404).json({
         success: false,
-        error: "Image not found",
+        error: "Imagen no encontrada",
       });
       return;
     }
 
-    const newPublicStatus = !images[0].isPublic;
+    const newPublicStatus = !existing.isPublic;
 
-    await pool.query(
-      `UPDATE images 
-       SET isPublic = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE imageId = ? AND userId = ?`,
-      [newPublicStatus, imageId, userId]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const updated = await prisma.images.update({
+      where: {
+        imageId: imageId,
+      },
+      data: {
+        isPublic: newPublicStatus,
+        updatedAt: new Date(),
+      },
+    });
 
     res.json({
       success: true,
-      message: newPublicStatus ? "Image is now public" : "Image is now private",
+      message: newPublicStatus ? "Imagen ahora es pública" : "Imagen ahora es privada",
       data: {
         isPublic: newPublicStatus,
       },
     });
   } catch (error) {
-    console.error("Error toggling public status:", error);
+    console.error("❌ Error cambiando visibilidad:", error);
     res.status(500).json({
       success: false,
-      error: "Error changing visibility",
+      error: "Error cambiando visibilidad",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -776,44 +864,56 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
   try {
     const userId = req.user!.userId;
 
-    const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        COUNT(*) as totalImages,
-        SUM(fileSize) as totalSize,
-        SUM(isFavorite) as totalFavorites,
-        SUM(isPublic) as totalPublic,
-        COUNT(CASE WHEN deletedAt IS NOT NULL THEN 1 END) as totalDeleted
-       FROM images 
-       WHERE userId = ?`,
-      [userId]
-    );
+    // ✅ USAR INSTANCIA ÚNICA DE PRISMA
+    const [totalImages, activeImages, totalFavorites, totalPublic, totalDeleted, totalSizeResult] = await Promise.all([
+      prisma.images.count({
+        where: { userId },
+      }),
+      prisma.images.count({
+        where: { userId, deletedAt: null },
+      }),
+      prisma.images.count({
+        where: { userId, isFavorite: true, deletedAt: null },
+      }),
+      prisma.images.count({
+        where: { userId, isPublic: true, deletedAt: null },
+      }),
+      prisma.images.count({
+        where: { userId, NOT: { deletedAt: null } },
+      }),
+      prisma.images.aggregate({
+        where: { userId, deletedAt: null },
+        _sum: { fileSize: true },
+      }),
+    ]);
 
-    const result = stats[0];
+    const totalSize = totalSizeResult._sum.fileSize ? Number(totalSizeResult._sum.fileSize) : 0;
 
     res.json({
       success: true,
       data: {
-        totalImages: result.totalImages || 0,
-        totalSize: result.totalSize || 0,
-        totalSizeFormatted: ((result.totalSize || 0) / (1024 * 1024)).toFixed(2) + " MB",
-        totalFavorites: result.totalFavorites || 0,
-        totalPublic: result.totalPublic || 0,
-        totalDeleted: result.totalDeleted || 0,
-        totalActive: (result.totalImages || 0) - (result.totalDeleted || 0),
+        totalImages,
+        activeImages,
+        totalSize,
+        totalSizeFormatted: (totalSize / (1024 * 1024)).toFixed(2) + " MB",
+        totalFavorites,
+        totalPublic,
+        totalDeleted,
       },
     });
   } catch (error) {
-    console.error("Error getting image stats:", error);
+    console.error("❌ Error obteniendo estadísticas de imágenes:", error);
     res.status(500).json({
       success: false,
-      error: "Error getting statistics",
+      error: "Error obteniendo estadísticas",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
 
 // ============================================================================
 // ❌ DELETE IMAGES
-// ============================================================================ 
+// ============================================================================
 
 /**
  * Soft delete image (move to trash)
@@ -821,64 +921,63 @@ export const getImageStats = async (req: Request, res: Response): Promise<void> 
  */
 export const moveToTrash = async (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = req.user!.userId;
 
   try {
-    // 1️⃣ Buscar la imagen
-    const [rows]: any = await pool.query("SELECT * FROM images WHERE imageId = ?", [id]);
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Imagen no encontrada" });
-    }
-
-    const image = rows[0];
-    
-    // 🔧 CORREGIDO: Arreglar la ruta si no tiene /images/
-    let correctPath = image.imagePath;
-    if (!correctPath.includes('/images/')) {
-      const parts = correctPath.split('/');
-      if (parts.length >= 3) {
-        const userId = parts[1];
-        const filename = parts.slice(2).join('/');
-        correctPath = `uploads/${userId}/images/${filename}`;
-      }
-    }
-
-    console.log('📸 Imagen a mover a papelera:', {
-      imageId: image.imageId,
-      imagePath: image.imagePath,
-      correctPath: correctPath,
-      filename: image.filename,
-      originalFilename: image.originalFilename
+    // 1️⃣ Find the image
+    const image = await prisma.images.findFirst({
+      where: {
+        imageId: parseInt(id),
+        userId: userId,
+        deletedAt: null,
+      },
     });
 
-    // 2️⃣ Insertar en la papelera con la ruta corregida
-    await pool.query(
-      `INSERT INTO trash (
-        userId,
-        itemType,
-        itemId,
-        originalName,
-        originalPath,
-        fileSize,
-        mimeType,
-        metadata
-      ) VALUES (?, 'image', ?, ?, ?, ?, ?, ?)`,
-      [
-        image.userId,
-        image.imageId,
-        image.originalFilename,
-        correctPath,  // 🔧 Usa la ruta corregida
-        image.fileSize,
-        image.mimeType,
-        JSON.stringify({
-          width: image.width,
-          height: image.height,
-          title: image.title,
-        })
-      ]
-    );
+    if (!image) {
+      return res.status(404).json({
+        success: false,
+        message: "Imagen no encontrada",
+      });
+    }
 
-    // 3️⃣ Marcar imagen como eliminada (soft delete)
-    await pool.query("UPDATE images SET deletedAt = NOW() WHERE imageId = ?", [id]);
+    console.log("📸 Moviendo imagen a la papelera:", {
+      imageId: image.imageId,
+      title: image.title,
+      path: image.imagePath,
+    });
+
+    // 2️⃣ Insert into trash with Prisma transaction
+    await prisma.$transaction(async (tx) => {
+      // Insert into trash
+      await tx.trash.create({
+        data: {
+          userId: image.userId,
+          itemType: "image",
+          itemId: image.imageId,
+          originalName: image.originalFilename,
+          originalPath: image.imagePath,
+          fileSize: image.fileSize, // Esto es BigInt, pero Prisma lo maneja si la base de datos lo soporta. Sin embargo, para JSON.stringify en metadata, convertimos a número.
+          mimeType: image.mimeType,
+          metadata: JSON.stringify({
+            width: image.width,
+            height: image.height,
+            title: image.title,
+            filename: image.filename,
+            fileSize: Number(image.fileSize), // Convertimos a número
+          }),
+          createdAt: new Date(),
+        },
+      });
+
+      // Soft delete image
+      await tx.images.update({
+        where: { imageId: image.imageId },
+        data: {
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    });
 
     res.json({
       success: true,
@@ -886,11 +985,115 @@ export const moveToTrash = async (req: Request, res: Response) => {
       imageId: id,
     });
   } catch (error) {
-    console.error("❌ Error al mover imagen a la papelera:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Error interno del servidor", 
-      error: error instanceof Error ? error.message : String(error)
+    console.error("❌ Error moviendo imagen a la papelera:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+/**
+ * Get deleted images
+ * GET /api/images/deleted
+ */
+export const getDeletedImages = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+
+    const deletedImages = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        NOT: { deletedAt: null },
+      },
+      select: {
+        imageId: true,
+        title: true,
+        originalFilename: true,
+        imagePath: true,
+        fileSize: true,
+        deletedAt: true,
+      },
+      orderBy: {
+        deletedAt: "desc",
+      },
+    });
+
+    // Convertir BigInt a Number
+    const deletedImagesWithSerializedFileSize = deletedImages.map((image) => ({
+      ...image,
+      fileSize: image.fileSize ? Number(image.fileSize) : 0,
+    }));
+
+    res.json({
+      success: true,
+      data: deletedImagesWithSerializedFileSize,
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo imágenes eliminadas:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error obteniendo imágenes eliminadas",
+    });
+  }
+};
+
+/**
+ * Restore image from trash
+ * POST /api/images/:id/restore
+ */
+export const restoreImage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+    const imageId = parseInt(req.params.id);
+
+    // Verificar que la imagen existe y está eliminada
+    const image = await prisma.images.findFirst({
+      where: {
+        imageId: imageId,
+        userId: userId,
+        NOT: { deletedAt: null },
+      },
+    });
+
+    if (!image) {
+      res.status(404).json({
+        success: false,
+        error: "Imagen no encontrada en la papelera",
+      });
+      return;
+    }
+
+    // Restaurar imagen
+    await prisma.images.update({
+      where: { imageId: imageId },
+      data: {
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Eliminar de la tabla trash
+    await prisma.trash.deleteMany({
+      where: {
+        userId: userId,
+        itemType: "image",
+        itemId: imageId,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Imagen restaurada correctamente",
+      data: { imageId },
+    });
+  } catch (error) {
+    console.error("❌ Error restaurando imagen:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error restaurando imagen",
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 };
