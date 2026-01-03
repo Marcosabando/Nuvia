@@ -1,11 +1,40 @@
-// src/services/UserService.ts - CORREGIDO CON LOGS
+// src/services/UserService.ts - MIGRADO A PRISMA
 import { Request, Response } from "express";
-import { pool } from "@src/config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
+import { PrismaClient } from '@prisma/client';
 import bcrypt from "bcrypt";
 import { generateToken, generateRefreshToken } from "@src/config/jwt";
 
 const SALT_ROUNDS = 10;
+
+// Definir interfaces para los tipos de datos
+interface ImageData {
+  imageId: number;
+  originalFilename: string;
+  filename: string;
+  fileSize: bigint;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+  uploadDate: Date | null;
+  takenDate: Date | null;
+  cameraInfo: any | null;
+  location: string | null;
+}
+
+interface VideoData {
+  videoId: number;
+  originalFilename: string;
+  filename: string;
+  fileSize: bigint;
+  mimeType: string;
+  duration: number | null;
+  width: number | null;
+  height: number | null;
+  uploadDate: Date | null;
+  recordedDate: Date | null;
+  cameraInfo: any | null;
+  location: string | null;
+}
 
 // ✅ Register new user
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
@@ -28,12 +57,20 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const [existingUsers] = await pool.query<RowDataPacket[]>(
-      `SELECT userId FROM users WHERE email = ? OR username = ?`,
-      [email, username]
-    );
+    const prisma = new PrismaClient();
 
-    if (existingUsers.length > 0) {
+    // Check if user already exists
+    const existingUser = await prisma.users.findFirst({
+      where: {
+        OR: [
+          { email: email },
+          { username: username }
+        ]
+      }
+    });
+
+    if (existingUser) {
+      await prisma.$disconnect();
       res.status(409).json({
         success: false,
         error: "Email or username already registered"
@@ -43,31 +80,46 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO users (username, email, password, role, isActive, emailVerified)
-       VALUES (?, ?, ?, 'user', TRUE, FALSE)`,
-      [username, email, passwordHash]
-    );
+    // Create new user
+    const newUser = await prisma.users.create({
+      data: {
+        username: username,
+        email: email,
+        password: passwordHash,
+        role: 'user',
+        isActive: true,
+        emailVerified: false,
+        storageUsed: 0,
+        storageLimit: 5368709120,
+        imageCount: 0,
+        videoCount: 0,
+        documentCount: 0,
+        albumCount: 0,
+        totalMediaCount: 0
+      }
+    });
 
     const payload = {
-      userId: result.insertId,
-      email,
-      username,
-      role: 'user'
+      userId: newUser.userId,
+      email: newUser.email,
+      username: newUser.username,
+      role: newUser.role
     };
 
     const token = generateToken(payload);
     const refreshToken = generateRefreshToken(payload);
+
+    await prisma.$disconnect();
 
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       data: {
         user: {
-          userId: result.insertId,
-          username,
-          email,
-          role: 'user',
+          userId: newUser.userId,
+          username: newUser.username,
+          email: newUser.email,
+          role: newUser.role,
           storageUsed: 0,
           storageLimit: 5368709120
         },
@@ -98,14 +150,20 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // 🔥 BUSCAR por email O username
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT userId, username, email, password, role, isActive 
-       FROM users WHERE email = ? OR username = ?`,
-      [identifier, identifier]
-    );
+    const prisma = new PrismaClient();
 
-    if (users.length === 0) {
+    // 🔥 BUSCAR por email O username
+    const user = await prisma.users.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { username: identifier }
+        ]
+      }
+    });
+
+    if (!user) {
+      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Invalid credentials"
@@ -113,9 +171,8 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const user = users[0];
-
     if (!user.isActive) {
+      await prisma.$disconnect();
       res.status(403).json({
         success: false,
         error: "Account deactivated"
@@ -126,6 +183,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
+      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Invalid credentials"
@@ -133,10 +191,11 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    await pool.query(
-      `UPDATE users SET lastLogin = NOW() WHERE userId = ?`,
-      [user.userId]
-    );
+    // Update last login
+    await prisma.users.update({
+      where: { userId: user.userId },
+      data: { lastLogin: new Date() }
+    });
 
     const payload = {
       userId: user.userId,
@@ -147,6 +206,8 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     const token = generateToken(payload);
     const refreshToken = generateRefreshToken(payload);
+
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -171,7 +232,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-// ✅ Get authenticated user profile - CORREGIDO CON LOGS
+// ✅ Get authenticated user profile
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -179,22 +240,32 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     // 🔍 LOG 1: Ver qué viene en req.user (del token JWT)
     console.log("🔍 [getProfile] Usuario del token (req.user):", req.user);
 
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT userId, username, email, role, storageUsed, storageLimit, 
-              isActive, emailVerified, lastLogin, createdAt 
-       FROM users WHERE userId = ?`,
-      [userId]
-    );
+    const prisma = new PrismaClient();
 
-    if (users.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { userId: userId },
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        role: true,
+        storageUsed: true,
+        storageLimit: true,
+        isActive: true,
+        emailVerified: true,
+        lastLogin: true,
+        createdAt: true
+      }
+    });
+
+    if (!user) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
       });
       return;
     }
-
-    const user = users[0];
 
     // 🔍 LOG 2: Ver qué viene de la base de datos
     console.log("🔍 [getProfile] Usuario de la BD:", {
@@ -205,36 +276,60 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       roleType: typeof user.role
     });
 
-    const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        (SELECT COUNT(*) FROM images WHERE userId = ? AND deletedAt IS NULL) as totalImages,
-        (SELECT COUNT(*) FROM videos WHERE userId = ? AND deletedAt IS NULL) as totalVideos,
-        (
-          (SELECT COUNT(*) FROM images WHERE userId = ? AND DATE(uploadDate) = CURDATE()) +
-          (SELECT COUNT(*) FROM videos WHERE userId = ? AND DATE(uploadDate) = CURDATE())
-        ) as todayUploads
-      `,
-      [userId, userId, userId, userId]
-    );
+    // Get statistics
+    const [totalImages, totalVideos, todayImages, todayVideos] = await Promise.all([
+      // Total images
+      prisma.images.count({
+        where: {
+          userId: userId,
+          deletedAt: null
+        }
+      }),
+      // Total videos
+      prisma.videos.count({
+        where: {
+          userId: userId,
+          deletedAt: null
+        }
+      }),
+      // Images uploaded today
+      prisma.images.count({
+        where: {
+          userId: userId,
+          createdAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0))
+          }
+        }
+      }),
+      // Videos uploaded today
+      prisma.videos.count({
+        where: {
+          userId: userId,
+          createdAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0))
+          }
+        }
+      })
+    ]);
 
-    const statistics = stats[0];
+    await prisma.$disconnect();
 
     const responseData = {
       userId: user.userId,
       username: user.username,
       email: user.email,
-      role: user.role, // ✅ Aseguramos que esté aquí
-      storageUsed: user.storageUsed,
-      storageLimit: user.storageLimit,
-      storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
+      role: user.role,
+      storageUsed: Number(user.storageUsed),
+      storageLimit: Number(user.storageLimit),
+      storagePercentage: ((Number(user.storageUsed) / Number(user.storageLimit)) * 100).toFixed(2),
       isActive: user.isActive,
       emailVerified: user.emailVerified,
       lastLogin: user.lastLogin,
       createdAt: user.createdAt,
       stats: {
-        totalImages: statistics.totalImages || 0,
-        totalVideos: statistics.totalVideos || 0,
-        todayUploads: statistics.todayUploads || 0
+        totalImages: totalImages,
+        totalVideos: totalVideos,
+        todayUploads: todayImages + todayVideos
       }
     };
 
@@ -259,15 +354,28 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
   try {
     const userId = req.user!.userId;
 
-    // Get user basic info
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT userId, username, email, role, storageUsed, storageLimit, 
-              isActive, emailVerified, lastLogin, createdAt, updatedAt
-       FROM users WHERE userId = ?`,
-      [userId]
-    );
+    const prisma = new PrismaClient();
 
-    if (users.length === 0) {
+    // Get user basic info
+    const user = await prisma.users.findUnique({
+      where: { userId: userId },
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        role: true,
+        storageUsed: true,
+        storageLimit: true,
+        isActive: true,
+        emailVerified: true,
+        lastLogin: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!user) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -276,46 +384,107 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
     }
 
     // Get all images
-    const [images] = await pool.query<RowDataPacket[]>(
-      `SELECT imageId, originalName, fileName, fileSize, mimeType, 
-              width, height, uploadDate, expiresAt, downloadCount, lastDownload
-       FROM images WHERE userId = ? AND deletedAt IS NULL
-       ORDER BY uploadDate DESC`,
-      [userId]
-    );
+    const images = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        imageId: true,
+        originalFilename: true,
+        filename: true,
+        fileSize: true,
+        mimeType: true,
+        width: true,
+        height: true,
+        uploadDate: true,
+        takenDate: true,
+        cameraInfo: true,
+        location: true
+      },
+      orderBy: {
+        uploadDate: 'desc'
+      }
+    });
 
     // Get all videos
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoId, originalName, fileName, fileSize, mimeType,
-              duration, width, height, uploadDate, expiresAt, downloadCount, lastDownload
-       FROM videos WHERE userId = ? AND deletedAt IS NULL
-       ORDER BY uploadDate DESC`,
-      [userId]
-    );
+    const videos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        videoId: true,
+        originalFilename: true,
+        filename: true,
+        fileSize: true,
+        mimeType: true,
+        duration: true,
+        width: true,
+        height: true,
+        uploadDate: true,
+        recordedDate: true,
+        cameraInfo: true,
+        location: true
+      },
+      orderBy: {
+        uploadDate: 'desc'
+      }
+    });
 
-    // Get statistics
-    const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        COUNT(DISTINCT i.imageId) as totalImages,
-        COUNT(DISTINCT v.videoId) as totalVideos,
-        COALESCE(SUM(i.fileSize), 0) + COALESCE(SUM(v.fileSize), 0) as totalStorageUsed,
-        COALESCE(SUM(i.downloadCount), 0) + COALESCE(SUM(v.downloadCount), 0) as totalDownloads,
-        (
-          SELECT COUNT(*) FROM images 
-          WHERE userId = ? AND DATE(uploadDate) = CURDATE()
-        ) as imagesUploadedToday,
-        (
-          SELECT COUNT(*) FROM videos 
-          WHERE userId = ? AND DATE(uploadDate) = CURDATE()
-        ) as videosUploadedToday
-       FROM images i
-       LEFT JOIN videos v ON v.userId = i.userId
-       WHERE i.userId = ? AND i.deletedAt IS NULL AND v.deletedAt IS NULL`,
-      [userId, userId, userId]
-    );
+    // Get statistics using Prisma aggregations
+    const [imagesStats, videosStats, todayImagesStats, todayVideosStats] = await Promise.all([
+      // Images statistics
+      prisma.images.aggregate({
+        where: {
+          userId: userId,
+          deletedAt: null
+        },
+        _count: {
+          imageId: true
+        },
+        _sum: {
+          fileSize: true
+        }
+      }),
+      // Videos statistics
+      prisma.videos.aggregate({
+        where: {
+          userId: userId,
+          deletedAt: null
+        },
+        _count: {
+          videoId: true
+        },
+        _sum: {
+          fileSize: true
+        }
+      }),
+      // Images uploaded today
+      prisma.images.count({
+        where: {
+          userId: userId,
+          createdAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0))
+          }
+        }
+      }),
+      // Videos uploaded today
+      prisma.videos.count({
+        where: {
+          userId: userId,
+          createdAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0))
+          }
+        }
+      })
+    ]);
 
-    const user = users[0];
-    const statistics = stats[0];
+    await prisma.$disconnect();
+
+    const totalImages = imagesStats._count.imageId || 0;
+    const totalVideos = videosStats._count.videoId || 0;
+    const totalStorageUsed = (Number(imagesStats._sum.fileSize) || 0) + (Number(videosStats._sum.fileSize) || 0);
 
     res.json({
       success: true,
@@ -325,9 +494,9 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
           username: user.username,
           email: user.email,
           role: user.role,
-          storageUsed: user.storageUsed,
-          storageLimit: user.storageLimit,
-          storagePercentage: ((user.storageUsed / user.storageLimit) * 100).toFixed(2),
+          storageUsed: Number(user.storageUsed),
+          storageLimit: Number(user.storageLimit),
+          storagePercentage: ((Number(user.storageUsed) / Number(user.storageLimit)) * 100).toFixed(2),
           isActive: user.isActive,
           emailVerified: user.emailVerified,
           lastLogin: user.lastLogin,
@@ -335,22 +504,29 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
           updatedAt: user.updatedAt
         },
         statistics: {
-          totalImages: statistics.totalImages || 0,
-          totalVideos: statistics.totalVideos || 0,
-          totalFiles: (statistics.totalImages || 0) + (statistics.totalVideos || 0),
-          totalStorageUsed: statistics.totalStorageUsed || 0,
-          totalDownloads: statistics.totalDownloads || 0,
+          totalImages: totalImages,
+          totalVideos: totalVideos,
+          totalFiles: totalImages + totalVideos,
+          totalStorageUsed: totalStorageUsed,
+          totalDownloads: 0, // Not available in current schema
           uploadsToday: {
-            images: statistics.imagesUploadedToday || 0,
-            videos: statistics.videosUploadedToday || 0,
-            total: (statistics.imagesUploadedToday || 0) + (statistics.videosUploadedToday || 0)
+            images: todayImagesStats,
+            videos: todayVideosStats,
+            total: todayImagesStats + todayVideosStats
           }
         },
-        images: images,
-        videos: videos
+        images: images.map((img: ImageData) => ({
+          ...img,
+          fileSize: Number(img.fileSize)
+        })),
+        videos: videos.map((vid: VideoData) => ({
+          ...vid,
+          fileSize: Number(vid.fileSize)
+        }))
       }
     });
   } catch (error) {
+    console.error("Error getting user data:", error);
     res.status(500).json({
       success: false,
       error: "Error getting user data"
@@ -372,14 +548,24 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    if (email || username) {
-      const [existing] = await pool.query<RowDataPacket[]>(
-        `SELECT userId FROM users 
-         WHERE (email = ? OR username = ?) AND userId != ?`,
-        [email || '', username || '', userId]
-      );
+    const prisma = new PrismaClient();
 
-      if (existing.length > 0) {
+    // Check if email or username already exists (excluding current user)
+    if (email || username) {
+      const existingUser = await prisma.users.findFirst({
+        where: {
+          OR: [
+            { email: email || '' },
+            { username: username || '' }
+          ],
+          NOT: {
+            userId: userId
+          }
+        }
+      });
+
+      if (existingUser) {
+        await prisma.$disconnect();
         res.status(409).json({
           success: false,
           error: "Email or username already in use"
@@ -388,31 +574,25 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       }
     }
 
-    const updates: string[] = [];
-    const values: any[] = [];
+    // Prepare update data
+    const updateData: any = {};
+    if (username) updateData.username = username;
+    if (email) updateData.email = email;
 
-    if (username) {
-      updates.push('username = ?');
-      values.push(username);
-    }
+    // Update user
+    await prisma.users.update({
+      where: { userId: userId },
+      data: updateData
+    });
 
-    if (email) {
-      updates.push('email = ?');
-      values.push(email);
-    }
-
-    values.push(userId);
-
-    await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE userId = ?`,
-      values
-    );
+    await prisma.$disconnect();
 
     res.json({
       success: true,
       message: "Profile updated successfully"
     });
   } catch (error) {
+    console.error("Error updating profile:", error);
     res.status(500).json({
       success: false,
       error: "Error updating profile"
@@ -442,12 +622,16 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT password FROM users WHERE userId = ?`,
-      [userId]
-    );
+    const prisma = new PrismaClient();
 
-    if (users.length === 0) {
+    // Get user with password
+    const user = await prisma.users.findUnique({
+      where: { userId: userId },
+      select: { password: true }
+    });
+
+    if (!user) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -455,9 +639,10 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const isValid = await bcrypt.compare(currentPassword, users[0].password);
+    const isValid = await bcrypt.compare(currentPassword, user.password);
 
     if (!isValid) {
+      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Current password is incorrect"
@@ -467,16 +652,19 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
     const newPasswordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
-    await pool.query(
-      `UPDATE users SET password = ? WHERE userId = ?`,
-      [newPasswordHash, userId]
-    );
+    await prisma.users.update({
+      where: { userId: userId },
+      data: { password: newPasswordHash }
+    });
+
+    await prisma.$disconnect();
 
     res.json({
       success: true,
       message: "Password changed successfully"
     });
   } catch (error) {
+    console.error("Error changing password:", error);
     res.status(500).json({
       success: false,
       error: "Error changing password"
@@ -498,12 +686,16 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT password FROM users WHERE userId = ?`,
-      [userId]
-    );
+    const prisma = new PrismaClient();
 
-    if (users.length === 0) {
+    // Get user with password
+    const user = await prisma.users.findUnique({
+      where: { userId: userId },
+      select: { password: true }
+    });
+
+    if (!user) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -511,9 +703,10 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const isValid = await bcrypt.compare(password, users[0].password);
+    const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
+      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Incorrect password"
@@ -521,13 +714,19 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    await pool.query(`DELETE FROM users WHERE userId = ?`, [userId]);
+    // Delete user (this will cascade delete related records due to Prisma relations)
+    await prisma.users.delete({
+      where: { userId: userId }
+    });
+
+    await prisma.$disconnect();
 
     res.json({
       success: true,
       message: "Account deleted successfully"
     });
   } catch (error) {
+    console.error("Error deleting account:", error);
     res.status(500).json({
       success: false,
       error: "Error deleting account"

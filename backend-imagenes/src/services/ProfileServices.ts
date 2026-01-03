@@ -1,7 +1,18 @@
-// src/services/ProfileService.ts
+// src/services/profile.service.ts
 import { Request, Response } from 'express';
-import { pool } from '@src/config/database';
-import logger from 'jet-logger';
+import prisma from '../lib/prisma';
+import path from 'path';
+import fs from 'fs';
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Convertir BigInt a Number de forma segura
+const safeBigIntToNumber = (value: bigint | null | undefined): number => {
+  if (value === null || value === undefined) return 0;
+  return Number(value);
+};
 
 // ============================================================================
 // 👤 OBTENER PERFIL
@@ -9,21 +20,40 @@ import logger from 'jet-logger';
 
 export const getUserProfile = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    // ✅ Usar el tipo correcto
+    const userId = req.user?.userId;
     
-    const [rows] = await pool.execute(
-      `SELECT 
-        userId, username, email, profileImagePath, bio, location,
-        role, status, emailVerified, storageUsed, storageLimit,
-        imageCount, videoCount, albumCount, totalMediaCount,
-        createdAt, lastLogin, updatedAt
-       FROM users 
-       WHERE userId = ? AND deletedAt IS NULL`,
-      [userId]
-    );
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
-    const user = (rows as any[])[0];
-    
+    // Obtener datos básicos del usuario (SIN los campos que no existen)
+    const user = await prisma.users.findFirst({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        profileImagePath: true,
+        bio: true,
+        location: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        storageUsed: true, // ✅ Existe en tu schema
+        storageLimit: true, // ✅ Existe en tu schema
+        createdAt: true,
+        lastLogin: true,
+        updatedAt: true
+      }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -31,15 +61,69 @@ export const getUserProfile = async (req: Request, res: Response) => {
       });
     }
 
-    logger.info(`✅ Perfil obtenido para usuario: ${user.username}`);
+    // ✅ Calcular estadísticas en tiempo real (porque no existen en el modelo)
+    const [imageCount, videoCount, albumCount, documentCount] = await Promise.all([
+      prisma.images.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.videos.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.albums.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.documents.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      })
+    ]);
+
+    const totalMediaCount = imageCount + videoCount + documentCount;
+    
+    // ✅ Convertir BigInt a Number de forma segura
+    const storageUsed = safeBigIntToNumber(user.storageUsed);
+    const storageLimit = safeBigIntToNumber(user.storageLimit);
+    
+    // ✅ Calcular porcentaje (con verificación de null)
+    const storagePercentage = storageLimit > 0 
+      ? Math.round((storageUsed / storageLimit) * 100)
+      : 0;
+
+    // ✅ Construir respuesta con todos los datos
+    const userProfile = {
+      ...user,
+      // Convertir storage a Number
+      storageUsed: storageUsed,
+      storageLimit: storageLimit,
+      // Añadir estadísticas calculadas
+      imageCount,
+      videoCount,
+      albumCount,
+      documentCount,
+      totalMediaCount,
+      storagePercentage,
+      storageUsedFormatted: `${(storageUsed / (1024 * 1024 * 1024)).toFixed(2)} GB`,
+      storageLimitFormatted: `${(storageLimit / (1024 * 1024 * 1024)).toFixed(2)} GB`
+    };
     
     res.json({
       success: true,
-      data: user
+      data: userProfile
     });
     
   } catch (error) {
-    logger.err(`❌ Error obteniendo perfil: ${error}`);
+    console.error('Error obteniendo perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al obtener perfil del usuario'
@@ -53,21 +137,37 @@ export const getUserProfile = async (req: Request, res: Response) => {
 
 export const getUserStats = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     
-    // Obtener perfil básico
-    const [userRows] = await pool.execute(
-      `SELECT 
-        userId, username, email, profileImagePath, bio, location,
-        role, status, emailVerified, storageUsed, storageLimit,
-        imageCount, videoCount, albumCount, totalMediaCount,
-        createdAt, lastLogin
-       FROM users 
-       WHERE userId = ? AND deletedAt IS NULL`,
-      [userId]
-    );
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
-    const user = (userRows as any[])[0];
+    // Obtener perfil básico
+    const user = await prisma.users.findFirst({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        profileImagePath: true,
+        bio: true,
+        location: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        storageUsed: true,
+        storageLimit: true,
+        createdAt: true,
+        lastLogin: true
+      }
+    });
     
     if (!user) {
       return res.status(404).json({
@@ -76,31 +176,96 @@ export const getUserStats = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener estadísticas adicionales
-    const [trashCountRows] = await pool.execute(
-      'SELECT COUNT(*) as count FROM trash WHERE userId = ?',
-      [userId]
-    );
+    // Obtener TODAS las estadísticas de forma paralela
+    const [
+      imageCount,
+      videoCount,
+      albumCount,
+      documentCount,
+      trashCount,
+      favoriteImagesCount,
+      favoriteVideosCount,
+      favoriteDocumentsCount
+    ] = await Promise.all([
+      prisma.images.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.videos.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.albums.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.documents.count({
+        where: { 
+          userId: userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.trash.count({
+        where: { userId: userId }
+      }),
+      prisma.images.count({
+        where: { 
+          userId: userId, 
+          isFavorite: true, 
+          deletedAt: null 
+        }
+      }),
+      prisma.videos.count({
+        where: { 
+          userId: userId, 
+          isFavorite: true, 
+          deletedAt: null 
+        }
+      }),
+      prisma.documents.count({
+        where: { 
+          userId: userId, 
+          isFavorite: true, 
+          deletedAt: null 
+        }
+      })
+    ]);
 
-    const [favoriteImagesRows] = await pool.execute(
-      'SELECT COUNT(*) as count FROM images WHERE userId = ? AND isFavorite = TRUE AND deletedAt IS NULL',
-      [userId]
-    );
-
-    const [favoriteVideosRows] = await pool.execute(
-      'SELECT COUNT(*) as count FROM videos WHERE userId = ? AND isFavorite = TRUE AND deletedAt IS NULL',
-      [userId]
-    );
+    const totalMediaCount = imageCount + videoCount + documentCount;
+    
+    // ✅ Convertir BigInt a Number de forma segura
+    const storageUsed = safeBigIntToNumber(user.storageUsed);
+    const storageLimit = safeBigIntToNumber(user.storageLimit);
+    
+    // ✅ Calcular porcentaje (con verificación de null)
+    const storagePercentage = storageLimit > 0 
+      ? Math.round((storageUsed / storageLimit) * 100)
+      : 0;
 
     const stats = {
       ...user,
-      storagePercentage: Math.round((user.storageUsed / user.storageLimit) * 100),
-      trashCount: (trashCountRows as any[])[0].count,
-      favoriteImageCount: (favoriteImagesRows as any[])[0].count,
-      favoriteVideoCount: (favoriteVideosRows as any[])[0].count
+      // Convertir storage a Number
+      storageUsed: storageUsed,
+      storageLimit: storageLimit,
+      // Añadir estadísticas calculadas
+      imageCount,
+      videoCount,
+      albumCount,
+      documentCount,
+      totalMediaCount,
+      storagePercentage,
+      trashCount,
+      favoriteImagesCount,
+      favoriteVideosCount,
+      favoriteDocumentsCount,
+      totalFavorites: favoriteImagesCount + favoriteVideosCount + favoriteDocumentsCount
     };
-
-    logger.info(`✅ Estadísticas obtenidas para usuario: ${user.username}`);
     
     res.json({
       success: true,
@@ -108,7 +273,7 @@ export const getUserStats = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    logger.err(`❌ Error obteniendo estadísticas: ${error}`);
+    console.error('Error obteniendo estadísticas:', error);
     res.status(500).json({
       success: false,
       error: 'Error al obtener estadísticas del usuario'
@@ -122,7 +287,14 @@ export const getUserStats = async (req: Request, res: Response) => {
 
 export const updateProfileImage = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
     
     if (!req.file) {
       return res.status(400).json({
@@ -135,31 +307,29 @@ export const updateProfileImage = async (req: Request, res: Response) => {
     const profileImagePath = `/uploads/${userId}/profile/${req.file.filename}`;
     
     // Obtener imagen anterior para eliminarla
-    const [userRows] = await pool.execute(
-      'SELECT profileImagePath FROM users WHERE userId = ?',
-      [userId]
-    );
+    const user = await prisma.users.findFirst({
+      where: { userId: userId },
+      select: { profileImagePath: true }
+    });
     
-    const oldImagePath = (userRows as any[])[0]?.profileImagePath;
+    const oldImagePath = user?.profileImagePath;
     
     // Actualizar en la base de datos
-    await pool.execute(
-      'UPDATE users SET profileImagePath = ?, updatedAt = CURRENT_TIMESTAMP WHERE userId = ?',
-      [profileImagePath, userId]
-    );
+    await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        profileImagePath: profileImagePath,
+        updatedAt: new Date()
+      }
+    });
 
-    // Eliminar imagen anterior si existe
+    // Eliminar imagen anterior si existe y no es la por defecto
     if (oldImagePath && !oldImagePath.includes('default-avatar')) {
-      const fs = require('fs');
-      const path = require('path');
-      const fullOldPath = path.join(__dirname, '..', '..', 'public', oldImagePath);
+      const fullOldPath = path.join(process.cwd(), 'public', oldImagePath);
       if (fs.existsSync(fullOldPath)) {
         fs.unlinkSync(fullOldPath);
-        logger.info(`🗑️ Imagen anterior eliminada: ${oldImagePath}`);
       }
     }
-
-    logger.info(`✅ Imagen de perfil actualizada para usuario: ${userId}`);
     
     res.json({
       success: true,
@@ -168,7 +338,7 @@ export const updateProfileImage = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando imagen de perfil: ${error}`);
+    console.error('Error actualizando imagen de perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar imagen de perfil'
@@ -182,19 +352,31 @@ export const updateProfileImage = async (req: Request, res: Response) => {
 
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     const { username, email, bio, location } = req.body;
     
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
+
     // Verificar si el username o email ya existen (excluyendo al usuario actual)
     if (username || email) {
-      const [existingUsers] = await pool.execute(
-        `SELECT userId FROM users 
-         WHERE (username = ? OR email = ?) 
-         AND userId != ? AND deletedAt IS NULL`,
-        [username || '', email || '', userId]
-      );
+      const whereConditions: any[] = [];
+      if (username) whereConditions.push({ username: username });
+      if (email) whereConditions.push({ email: email });
+      
+      const existingUsers = await prisma.users.findFirst({
+        where: {
+          OR: whereConditions.length > 0 ? whereConditions : undefined,
+          NOT: { userId: userId },
+          deletedAt: null
+        }
+      });
 
-      if ((existingUsers as any[]).length > 0) {
+      if (existingUsers) {
         return res.status(400).json({
           success: false,
           error: 'El nombre de usuario o email ya está en uso'
@@ -202,52 +384,41 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       }
     }
 
-    // Construir query dinámica
-    const updates: string[] = [];
-    const params: any[] = [];
+    // Construir datos de actualización
+    const updateData: any = {
+      updatedAt: new Date()
+    };
 
-    if (username) {
-      updates.push('username = ?');
-      params.push(username);
-    }
-    if (email) {
-      updates.push('email = ?');
-      params.push(email);
-    }
-    if (bio !== undefined) {
-      updates.push('bio = ?');
-      params.push(bio);
-    }
-    if (location !== undefined) {
-      updates.push('location = ?');
-      params.push(location);
-    }
+    if (username) updateData.username = username;
+    if (email) updateData.email = email;
+    if (bio !== undefined) updateData.bio = bio;
+    if (location !== undefined) updateData.location = location;
 
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
         error: 'No se proporcionaron datos para actualizar'
       });
     }
 
-    updates.push('updatedAt = CURRENT_TIMESTAMP');
-    params.push(userId);
-
-    const query = `UPDATE users SET ${updates.join(', ')} WHERE userId = ?`;
-    
-    await pool.execute(query, params);
-
-    logger.info(`✅ Perfil actualizado para usuario: ${userId}`);
-    
-    // Obtener usuario actualizado
-    const [updatedRows] = await pool.execute(
-      `SELECT userId, username, email, profileImagePath, bio, location,
-              role, status, emailVerified, createdAt, updatedAt
-       FROM users WHERE userId = ?`,
-      [userId]
-    );
-
-    const updatedUser = (updatedRows as any[])[0];
+    // Actualizar usuario
+    const updatedUser = await prisma.users.update({
+      where: { userId: userId },
+      data: updateData,
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        profileImagePath: true,
+        bio: true,
+        location: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
     
     res.json({
       success: true,
@@ -256,7 +427,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando perfil: ${error}`);
+    console.error('Error actualizando perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar perfil'
@@ -265,79 +436,129 @@ export const updateUserProfile = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// 🔐 ACTUALIZAR CONTRASEÑA (VERSIÓN SIMPLIFICADA)
+// 🗑️ MOVE PROFILE IMAGE TO TRASH (CORREGIDO)
 // ============================================================================
 
-export const updatePassword = async (req: Request, res: Response) => {
+export const moveProfileImageToTrash = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        error: 'Se requieren la contraseña actual y la nueva contraseña'
+        error: 'Usuario no autenticado'
       });
     }
 
-    // En una implementación real, aquí verificarías la contraseña actual
-    // y hashearías la nueva contraseña con bcrypt
+    // Obtener la imagen de perfil actual
+    const user = await prisma.users.findFirst({
+      where: { 
+        userId: userId,
+        deletedAt: null 
+      },
+      select: {
+        userId: true,
+        profileImagePath: true,
+        username: true
+      }
+    });
+
+    if (!user || !user.profileImagePath) {
+      return res.status(404).json({
+        success: false,
+        error: 'No hay imagen de perfil para eliminar'
+      });
+    }
+
+    // Verificar si es la imagen por defecto
+    if (user.profileImagePath.includes('default-avatar')) {
+      return res.status(400).json({
+        success: false,
+        error: 'No se puede eliminar la imagen de perfil por defecto'
+      });
+    }
+
+    // Extraer información del archivo
+    const fullPath = path.join(process.cwd(), 'public', user.profileImagePath);
+    let fileSize = 0;
     
-    logger.info(`✅ Solicitud de cambio de contraseña para usuario: ${userId}`);
+    if (fs.existsSync(fullPath)) {
+      const stats = fs.statSync(fullPath);
+      fileSize = stats.size;
+    }
+
+    // ✅ Usar itemType válido: 'image' (no 'profile_image')
+    // ✅ Asegurar que profileImagePath no sea null
+    const originalPath = user.profileImagePath || '';
     
-    // Por ahora, solo registramos la solicitud
-    res.json({
-      success: true,
-      message: 'Funcionalidad de cambio de contraseña en desarrollo'
+    // Usar transacción para mover a la papelera y actualizar perfil
+    await prisma.$transaction(async (tx) => {
+      // Insertar en trash con itemType válido
+      await tx.trash.create({
+        data: {
+          userId: user.userId,
+          itemType: 'image', // ✅ VALOR VÁLIDO
+          itemId: user.userId, // Usamos el userId como itemId para imágenes de perfil
+          originalName: `${user.username}-profile-image`,
+          originalPath: originalPath, // ✅ Asegurar que no sea null
+          fileSize: BigInt(fileSize),
+          mimeType: 'image/jpeg',
+          metadata: JSON.stringify({
+            username: user.username,
+            type: 'profile_image',
+            deletedAt: new Date().toISOString()
+          }),
+          createdAt: new Date(),
+        },
+      });
+
+      // Eliminar archivo físico si existe
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+      }
+
+      // Actualizar perfil con imagen por defecto
+      await tx.users.update({
+        where: { userId: user.userId },
+        data: { 
+          profileImagePath: '/uploads/default-avatar.png',
+          updatedAt: new Date()
+        }
+      });
     });
     
+    res.json({
+      success: true,
+      message: 'Imagen de perfil eliminada y movida a la papelera',
+      data: {
+        newProfileImage: '/uploads/default-avatar.png'
+      }
+    });
+
   } catch (error) {
-    logger.err(`❌ Error en cambio de contraseña: ${error}`);
+    console.error('Error moviendo imagen de perfil a la papelera:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al procesar cambio de contraseña'
+      error: 'Error al eliminar imagen de perfil'
     });
   }
 };
 
 // ============================================================================
-// ❌ ELIMINAR CUENTA (SOFT DELETE)
-// ============================================================================
-
-export const deleteAccount = async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId;
-
-    // Soft delete de la cuenta
-    await pool.execute(
-      'UPDATE users SET deletedAt = CURRENT_TIMESTAMP, status = "inactive" WHERE userId = ?',
-      [userId]
-    );
-
-    logger.warn(`🗑️ Cuenta eliminada (soft delete) para usuario: ${userId}`);
-    
-    res.json({
-      success: true,
-      message: 'Cuenta eliminada correctamente'
-    });
-    
-  } catch (error) {
-    logger.err(`❌ Error eliminando cuenta: ${error}`);
-    res.status(500).json({
-      success: false,
-      error: 'Error al eliminar cuenta'
-    });
-  }
-};
-
-// ============================================================================
-// 🎨 ACTUALIZACIONES INDIVIDUALES
+// ACTUALIZACIONES INDIVIDUALES (MANTENIDAS)
 // ============================================================================
 
 export const updateUsername = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     const { username } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
     if (!username) {
       return res.status(400).json({
@@ -347,33 +568,40 @@ export const updateUsername = async (req: Request, res: Response) => {
     }
 
     // Verificar si el username ya existe
-    const [existingUsers] = await pool.execute(
-      'SELECT userId FROM users WHERE username = ? AND userId != ? AND deletedAt IS NULL',
-      [username, userId]
-    );
+    const existingUser = await prisma.users.findFirst({
+      where: {
+        username: username,
+        NOT: { userId: userId },
+        deletedAt: null
+      }
+    });
 
-    if ((existingUsers as any[]).length > 0) {
+    if (existingUser) {
       return res.status(400).json({
         success: false,
         error: 'El nombre de usuario ya está en uso'
       });
     }
 
-    await pool.execute(
-      'UPDATE users SET username = ?, updatedAt = CURRENT_TIMESTAMP WHERE userId = ?',
-      [username, userId]
-    );
-
-    logger.info(`✅ Username actualizado para usuario: ${userId}`);
+    const updatedUser = await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        username: username,
+        updatedAt: new Date()
+      },
+      select: {
+        username: true
+      }
+    });
     
     res.json({
       success: true,
       message: 'Nombre de usuario actualizado correctamente',
-      data: { username }
+      data: updatedUser
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando username: ${error}`);
+    console.error('Error actualizando username:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar nombre de usuario'
@@ -383,24 +611,35 @@ export const updateUsername = async (req: Request, res: Response) => {
 
 export const updateBio = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     const { bio } = req.body;
 
-    await pool.execute(
-      'UPDATE users SET bio = ?, updatedAt = CURRENT_TIMESTAMP WHERE userId = ?',
-      [bio || null, userId]
-    );
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
-    logger.info(`✅ Bio actualizada para usuario: ${userId}`);
+    const updatedUser = await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        bio: bio || null,
+        updatedAt: new Date()
+      },
+      select: {
+        bio: true
+      }
+    });
     
     res.json({
       success: true,
       message: 'Biografía actualizada correctamente',
-      data: { bio }
+      data: updatedUser
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando bio: ${error}`);
+    console.error('Error actualizando bio:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar biografía'
@@ -410,8 +649,15 @@ export const updateBio = async (req: Request, res: Response) => {
 
 export const updateEmail = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     const { email } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
     if (!email) {
       return res.status(400).json({
@@ -421,33 +667,40 @@ export const updateEmail = async (req: Request, res: Response) => {
     }
 
     // Verificar si el email ya existe
-    const [existingUsers] = await pool.execute(
-      'SELECT userId FROM users WHERE email = ? AND userId != ? AND deletedAt IS NULL',
-      [email, userId]
-    );
+    const existingUser = await prisma.users.findFirst({
+      where: {
+        email: email,
+        NOT: { userId: userId },
+        deletedAt: null
+      }
+    });
 
-    if ((existingUsers as any[]).length > 0) {
+    if (existingUser) {
       return res.status(400).json({
         success: false,
         error: 'El email ya está en uso'
       });
     }
 
-    await pool.execute(
-      'UPDATE users SET email = ?, updatedAt = CURRENT_TIMESTAMP WHERE userId = ?',
-      [email, userId]
-    );
-
-    logger.info(`✅ Email actualizado para usuario: ${userId}`);
+    const updatedUser = await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        email: email,
+        updatedAt: new Date()
+      },
+      select: {
+        email: true
+      }
+    });
     
     res.json({
       success: true,
       message: 'Email actualizado correctamente',
-      data: { email }
+      data: updatedUser
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando email: ${error}`);
+    console.error('Error actualizando email:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar email'
@@ -457,24 +710,35 @@ export const updateEmail = async (req: Request, res: Response) => {
 
 export const updateLocation = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user.userId;
+    const userId = req.user?.userId;
     const { location } = req.body;
 
-    await pool.execute(
-      'UPDATE users SET location = ?, updatedAt = CURRENT_TIMESTAMP WHERE userId = ?',
-      [location || null, userId]
-    );
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
 
-    logger.info(`✅ Location actualizada para usuario: ${userId}`);
+    const updatedUser = await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        location: location || null,
+        updatedAt: new Date()
+      },
+      select: {
+        location: true
+      }
+    });
     
     res.json({
       success: true,
       message: 'Ubicación actualizada correctamente',
-      data: { location }
+      data: updatedUser
     });
     
   } catch (error) {
-    logger.err(`❌ Error actualizando location: ${error}`);
+    console.error('Error actualizando location:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar ubicación'
@@ -482,11 +746,78 @@ export const updateLocation = async (req: Request, res: Response) => {
   }
 };
 
+// ============================================================================
+// FUNCIONES SIMPLIFICADAS
+// ============================================================================
 
+export const updatePassword = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { currentPassword, newPassword } = req.body;
 
-// Funciones opcionales para el futuro
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren la contraseña actual y la nueva contraseña'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Funcionalidad de cambio de contraseña en desarrollo'
+    });
+    
+  } catch (error) {
+    console.error('Error en cambio de contraseña:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al procesar cambio de contraseña'
+    });
+  }
+};
+
+export const deleteAccount = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado'
+      });
+    }
+
+    // Soft delete de la cuenta
+    await prisma.users.update({
+      where: { userId: userId },
+      data: {
+        deletedAt: new Date(),
+        status: 'inactive'
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Cuenta eliminada correctamente'
+    });
+    
+  } catch (error) {
+    console.error('Error eliminando cuenta:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al eliminar cuenta'
+    });
+  }
+};
+
 export const updateTheme = async (req: Request, res: Response) => {
-  // Para preferencias de tema (cuando las añadas a la base de datos)
   res.json({
     success: true,
     message: 'Funcionalidad de tema en desarrollo'
@@ -494,7 +825,6 @@ export const updateTheme = async (req: Request, res: Response) => {
 };
 
 export const updateLanguage = async (req: Request, res: Response) => {
-  // Para preferencias de idioma (cuando las añadas a la base de datos)
   res.json({
     success: true,
     message: 'Funcionalidad de idioma en desarrollo'

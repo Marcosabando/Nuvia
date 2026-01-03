@@ -1,10 +1,9 @@
-// src/services/AdminService.ts
+// src/services/admin.service.ts
 import { Request, Response } from "express";
-import { pool } from "@src/config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
+import prisma from '../lib/prisma'; // ✅ Instancia única
 
 // ============================================================================
-// INTERFACES
+// INTERFACES ACTUALIZADAS
 // ============================================================================
 
 interface AdminStats {
@@ -18,18 +17,19 @@ interface AdminStats {
   systemHealth: number;
 }
 
-interface UserDetail {
+// Interfaces específicas para los tipos de Prisma
+interface UserWithCounts {
   userId: number;
   username: string;
   email: string;
   role: string;
   status: string;
-  totalImages: number;
-  totalVideos: number;
-  storageUsed: number;
-  storageLimit: number;
-  lastLogin: string | null;
-  createdAt: string;
+  createdAt: Date | null;
+  lastLogin: Date | null;
+  storageUsed: bigint | null;
+  storageLimit: bigint | null;
+  imageCount?: number | null;
+  videoCount?: number | null;
 }
 
 // ============================================================================
@@ -40,15 +40,16 @@ interface UserDetail {
  * Verificar si el usuario es administrador
  */
 const verifyAdmin = (req: Request): boolean => {
-  const user = (req as any).user;
-  return user && user.role === 'admin';
+  const user = req.user as { role: string } | undefined;
+  return !!(user && user.role === 'admin');
 };
 
 /**
  * Convertir bytes a GB
  */
-const bytesToGB = (bytes: number): number => {
-  return parseFloat((bytes / (1024 * 1024 * 1024)).toFixed(2));
+const bytesToGB = (bytes: bigint | null | undefined): number => {
+  if (bytes === null || bytes === undefined) return 0;
+  return parseFloat((Number(bytes) / (1024 * 1024 * 1024)).toFixed(2));
 };
 
 /**
@@ -56,7 +57,9 @@ const bytesToGB = (bytes: number): number => {
  */
 const calculateSystemHealth = (stats: any): number => {
   // Factor 1: Uso de almacenamiento (50% del score)
-  const storageHealth = ((stats.totalStorageGB - stats.usedStorageGB) / stats.totalStorageGB) * 50;
+  const storageHealth = stats.totalStorageGB > 0 
+    ? ((stats.totalStorageGB - stats.usedStorageGB) / stats.totalStorageGB) * 50 
+    : 0;
   
   // Factor 2: Usuarios activos vs totales (30% del score)
   const userActivityHealth = stats.totalUsers > 0 
@@ -88,43 +91,67 @@ export const getAdminStats = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Total de usuarios (usando el nuevo campo deletedAt)
-    const [totalUsersResult] = await pool.query<RowDataPacket[]>(
-      'SELECT COUNT(*) as count FROM users WHERE deletedAt IS NULL'
-    );
+    // Total de usuarios
+    const totalUsers = await prisma.users.count({
+      where: { deletedAt: null }
+    });
 
-    // Usuarios activos (usando status = 'active' y login en últimos 30 días)
-    const [activeUsersResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as count FROM users 
-       WHERE lastLogin > DATE_SUB(NOW(), INTERVAL 30 DAY) 
-       AND status = 'active' 
-       AND deletedAt IS NULL`
-    );
+    // Usuarios activos (login en últimos 30 días)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Usar contadores de la tabla users (más eficiente)
-    const [totalMediaResult] = await pool.query<RowDataPacket[]>(
-      'SELECT SUM(imageCount) as totalImages, SUM(videoCount) as totalVideos FROM users WHERE deletedAt IS NULL'
-    );
+    const activeUsers = await prisma.users.count({
+      where: {
+        deletedAt: null,
+        status: 'active',
+        lastLogin: { gt: thirtyDaysAgo }
+      }
+    });
 
-    // Almacenamiento usado (directo de la tabla users)
-    const [storageResult] = await pool.query<RowDataPacket[]>(
-      'SELECT SUM(storageUsed) as usedBytes FROM users WHERE deletedAt IS NULL'
-    );
+    // Total de imágenes y videos (contando directamente desde las tablas)
+    const totalImages = await prisma.images.count({
+      where: { deletedAt: null }
+    });
+
+    const totalVideos = await prisma.videos.count({
+      where: { deletedAt: null }
+    });
+
+    // Almacenamiento usado
+    const storageResult = await prisma.users.aggregate({
+      where: { deletedAt: null },
+      _sum: { storageUsed: true }
+    });
 
     // Subidas de hoy
-    const [todayUploadsResult] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        (SELECT COUNT(*) FROM images WHERE DATE(createdAt) = CURDATE() AND deletedAt IS NULL) +
-        (SELECT COUNT(*) FROM videos WHERE DATE(createdAt) = CURDATE() AND deletedAt IS NULL) as count`
-    );
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const totalUsers = totalUsersResult[0].count;
-    const activeUsers = activeUsersResult[0].count;
-    const totalImages = totalMediaResult[0].totalImages || 0;
-    const totalVideos = totalMediaResult[0].totalVideos || 0;
-    const usedStorageGB = bytesToGB(storageResult[0].usedBytes || 0);
+    const todayImages = await prisma.images.count({
+      where: {
+        deletedAt: null,
+        createdAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      }
+    });
+
+    const todayVideos = await prisma.videos.count({
+      where: {
+        deletedAt: null,
+        createdAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      }
+    });
+
+    const usedStorageGB = bytesToGB(storageResult._sum.storageUsed);
     const totalStorageGB = 1000; // 1TB por defecto
-    const uploadsToday = todayUploadsResult[0].count;
+    const uploadsToday = todayImages + todayVideos;
 
     const statsData = {
       totalUsers,
@@ -183,60 +210,79 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     const offset = (page - 1) * limit;
     const searchTerm = req.query.search as string || '';
 
-    let query = `
-      SELECT 
-        u.userId,
-        u.username,
-        u.email,
-        u.role,
-        u.status,
-        u.storageLimit,
-        u.storageUsed,
-        u.imageCount as totalImages,
-        u.videoCount as totalVideos,
-        u.lastLogin,
-        u.createdAt
-      FROM users u
-      WHERE u.deletedAt IS NULL
-    `;
-
-    const params: any[] = [];
+    // Construir condiciones de búsqueda
+    const where: any = {
+      deletedAt: null,
+    };
 
     if (searchTerm) {
-      query += ` AND (u.username LIKE ? OR u.email LIKE ?)`;
-      params.push(`%${searchTerm}%`, `%${searchTerm}%`);
+      where.OR = [
+        { username: { contains: searchTerm } },
+        { email: { contains: searchTerm } }
+      ];
     }
 
-    query += ` ORDER BY u.createdAt DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    // Obtener usuarios con conteos reales de imágenes y videos
+    const users = await prisma.users.findMany({
+      where,
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        role: true,
+        status: true,
+        storageLimit: true,
+        storageUsed: true,
+        lastLogin: true,
+        createdAt: true,
+      },
+      skip: offset,
+      take: limit,
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const [users] = await pool.query<RowDataPacket[]>(query, params);
+    // Obtener conteos reales para cada usuario
+    const usersWithCounts = await Promise.all(
+      users.map(async (user) => {
+        const [imageCount, videoCount] = await Promise.all([
+          prisma.images.count({
+            where: { 
+              userId: user.userId,
+              deletedAt: null 
+            }
+          }),
+          prisma.videos.count({
+            where: { 
+              userId: user.userId,
+              deletedAt: null 
+            }
+          })
+        ]);
+
+        return {
+          ...user,
+          imageCount,
+          videoCount
+        };
+      })
+    );
 
     // Contar total de usuarios
-    let countQuery = `SELECT COUNT(*) as total FROM users WHERE deletedAt IS NULL`;
-    const countParams: any[] = [];
+    const total = await prisma.users.count({ where });
 
-    if (searchTerm) {
-      countQuery += ` AND (username LIKE ? OR email LIKE ?)`;
-      countParams.push(`%${searchTerm}%`, `%${searchTerm}%`);
-    }
-
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
-    const total = countResult[0].total;
-
-    const formattedUsers = users.map(user => ({
+    const formattedUsers = usersWithCounts.map((user) => ({
       id: user.userId.toString(),
       userId: user.userId,
       username: user.username,
       email: user.email,
       role: user.role || 'user',
       status: user.status || 'active',
-      totalImages: user.totalImages || 0,
-      totalVideos: user.totalVideos || 0,
-      storageUsed: bytesToGB(user.storageUsed || 0),
-      storageLimit: bytesToGB(user.storageLimit || 5368709120), // 5GB default
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt
+      totalImages: user.imageCount || 0,
+      totalVideos: user.videoCount || 0,
+      storageUsed: bytesToGB(user.storageUsed),
+      storageLimit: bytesToGB(user.storageLimit),
+      lastLogin: user.lastLogin ? user.lastLogin.toISOString() : null,
+      createdAt: user.createdAt ? user.createdAt.toISOString() : 'N/A'
     }));
 
     res.json({
@@ -274,17 +320,14 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
 
     const userId = parseInt(req.params.id);
 
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        u.*,
-        u.imageCount as totalImages,
-        u.videoCount as totalVideos
-       FROM users u
-       WHERE u.userId = ? AND u.deletedAt IS NULL`,
-      [userId]
-    );
+    const user = await prisma.users.findFirst({
+      where: {
+        userId: userId,
+        deletedAt: null
+      }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'
@@ -292,19 +335,34 @@ export const getUserDetails = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const user = users[0];
-    const userDetail: UserDetail = {
+    // Obtener conteos reales
+    const [imageCount, videoCount] = await Promise.all([
+      prisma.images.count({
+        where: { 
+          userId: user.userId,
+          deletedAt: null 
+        }
+      }),
+      prisma.videos.count({
+        where: { 
+          userId: user.userId,
+          deletedAt: null 
+        }
+      })
+    ]);
+
+    const userDetail = {
       userId: user.userId,
       username: user.username,
       email: user.email,
       role: user.role || 'user',
       status: user.status || 'active',
-      totalImages: user.totalImages || 0,
-      totalVideos: user.totalVideos || 0,
-      storageUsed: bytesToGB(user.storageUsed || 0),
-      storageLimit: bytesToGB(user.storageLimit || 5368709120),
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt
+      totalImages: imageCount,
+      totalVideos: videoCount,
+      storageUsed: bytesToGB(user.storageUsed),
+      storageLimit: bytesToGB(user.storageLimit),
+      lastLogin: user.lastLogin ? user.lastLogin.toISOString() : null,
+      createdAt: user.createdAt ? user.createdAt.toISOString() : 'N/A'
     };
 
     res.json({
@@ -335,7 +393,7 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
     }
 
     const userId = parseInt(req.params.id);
-    const currentUserId = (req as any).user.userId;
+    const currentUserId = req.user?.userId;
 
     // No permitir suspenderse a sí mismo
     if (userId === currentUserId) {
@@ -347,12 +405,14 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
     }
 
     // Obtener estado actual
-    const [users] = await pool.query<RowDataPacket[]>(
-      'SELECT status FROM users WHERE userId = ? AND deletedAt IS NULL',
-      [userId]
-    );
+    const user = await prisma.users.findFirst({
+      where: {
+        userId: userId,
+        deletedAt: null
+      }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'
@@ -360,13 +420,13 @@ export const toggleUserStatus = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const currentStatus = users[0].status || 'active';
+    const currentStatus = user.status || 'active';
     const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
 
-    await pool.query<ResultSetHeader>(
-      'UPDATE users SET status = ? WHERE userId = ?',
-      [newStatus, userId]
-    );
+    await prisma.users.update({
+      where: { userId: userId },
+      data: { status: newStatus }
+    });
 
     res.json({
       success: true,
@@ -411,14 +471,17 @@ export const updateUserStorage = async (req: Request, res: Response): Promise<vo
     }
 
     // Convertir GB a bytes
-    const storageLimitBytes = storageLimit * 1024 * 1024 * 1024;
+    const storageLimitBytes = BigInt(storageLimit) * BigInt(1024 * 1024 * 1024);
 
-    const [result] = await pool.query<ResultSetHeader>(
-      'UPDATE users SET storageLimit = ? WHERE userId = ? AND deletedAt IS NULL',
-      [storageLimitBytes, userId]
-    );
+    const result = await prisma.users.updateMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      data: { storageLimit: storageLimitBytes }
+    });
 
-    if (result.affectedRows === 0) {
+    if (result.count === 0) {
       res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'
@@ -448,8 +511,6 @@ export const updateUserStorage = async (req: Request, res: Response): Promise<vo
  * DELETE /api/admin/users/:id
  */
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
-  
   try {
     if (!verifyAdmin(req)) {
       res.status(403).json({
@@ -460,7 +521,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     }
 
     const userId = parseInt(req.params.id);
-    const currentUserId = (req as any).user.userId;
+    const currentUserId = req.user?.userId;
 
     // No permitir eliminarse a sí mismo
     if (userId === currentUserId) {
@@ -471,28 +532,37 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    await connection.beginTransaction();
-
     // Soft delete de imágenes del usuario
-    await connection.query(
-      'UPDATE images SET deletedAt = NOW() WHERE userId = ? AND deletedAt IS NULL',
-      [userId]
-    );
+    await prisma.images.updateMany({
+      where: { 
+        userId: userId,
+        deletedAt: null 
+      },
+      data: { deletedAt: new Date() }
+    });
 
     // Soft delete de videos del usuario
-    await connection.query(
-      'UPDATE videos SET deletedAt = NOW() WHERE userId = ? AND deletedAt IS NULL',
-      [userId]
-    );
+    await prisma.videos.updateMany({
+      where: { 
+        userId: userId,
+        deletedAt: null 
+      },
+      data: { deletedAt: new Date() }
+    });
 
     // Soft delete del usuario
-    const [result] = await connection.query<ResultSetHeader>(
-      'UPDATE users SET deletedAt = NOW(), status = ? WHERE userId = ? AND deletedAt IS NULL',
-      ['inactive', userId]
-    );
+    const result = await prisma.users.updateMany({
+      where: { 
+        userId: userId,
+        deletedAt: null 
+      },
+      data: { 
+        deletedAt: new Date(),
+        status: 'inactive' 
+      }
+    });
 
-    if (result.affectedRows === 0) {
-      await connection.rollback();
+    if (result.count === 0) {
       res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'
@@ -500,22 +570,17 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    await connection.commit();
-
     res.json({
       success: true,
       message: 'Usuario eliminado exitosamente',
       data: { userId }
     });
   } catch (error) {
-    await connection.rollback();
     console.error('Error eliminando usuario:', error);
     res.status(500).json({
       success: false,
       error: 'Error al eliminar usuario'
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -537,30 +602,55 @@ export const exportData = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        u.userId,
-        u.username,
-        u.email,
-        u.role,
-        u.status,
-        u.createdAt,
-        u.lastLogin,
-        u.imageCount as totalImages,
-        u.videoCount as totalVideos,
-        u.storageUsed
-       FROM users u
-       WHERE u.deletedAt IS NULL
-       ORDER BY u.createdAt DESC`
+    const users = await prisma.users.findMany({
+      where: { deletedAt: null },
+      select: {
+        userId: true,
+        username: true,
+        email: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        lastLogin: true,
+        storageUsed: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Obtener conteos reales para cada usuario
+    const usersWithCounts = await Promise.all(
+      users.map(async (user) => {
+        const [imageCount, videoCount] = await Promise.all([
+          prisma.images.count({
+            where: { 
+              userId: user.userId,
+              deletedAt: null 
+            }
+          }),
+          prisma.videos.count({
+            where: { 
+              userId: user.userId,
+              deletedAt: null 
+            }
+          })
+        ]);
+
+        return {
+          ...user,
+          imageCount,
+          videoCount
+        };
+      })
     );
 
     // Crear CSV
     let csv = 'ID,Usuario,Email,Rol,Estado,Fecha Registro,Último Acceso,Imágenes,Videos,Almacenamiento (GB)\n';
     
-    users.forEach(row => {
-      const storageGB = bytesToGB(row.storageUsed || 0);
-      const lastLogin = row.lastLogin || 'Nunca';
-      csv += `${row.userId},"${row.username}","${row.email}",${row.role || 'user'},${row.status || 'active'},${row.createdAt},${lastLogin},${row.totalImages || 0},${row.totalVideos || 0},${storageGB}\n`;
+    usersWithCounts.forEach((user) => {
+      const storageGB = bytesToGB(user.storageUsed);
+      const lastLogin = user.lastLogin ? user.lastLogin.toISOString() : 'Nunca';
+      const createdAt = user.createdAt ? user.createdAt.toISOString() : 'N/A';
+      csv += `${user.userId},"${user.username}","${user.email}",${user.role || 'user'},${user.status || 'active'},${createdAt},${lastLogin},${user.imageCount || 0},${user.videoCount || 0},${storageGB}\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -610,46 +700,86 @@ export const searchSystem = async (req: Request, res: Response): Promise<void> =
       videos: []
     };
 
-    const pattern = `%${searchTerm}%`;
-
     // Buscar usuarios
     if (!searchType || searchType === 'users') {
-      const [users] = await pool.query<RowDataPacket[]>(
-        `SELECT userId, username, email, role, status 
-         FROM users 
-         WHERE (username LIKE ? OR email LIKE ?) AND deletedAt IS NULL
-         LIMIT 20`,
-        [pattern, pattern]
-      );
+      const users = await prisma.users.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { username: { contains: searchTerm } },
+            { email: { contains: searchTerm } }
+          ]
+        },
+        select: {
+          userId: true,
+          username: true,
+          email: true,
+          role: true,
+          status: true
+        },
+        take: 20
+      });
       results.users = users;
     }
 
     // Buscar imágenes
     if (!searchType || searchType === 'images') {
-      const [images] = await pool.query<RowDataPacket[]>(
-        `SELECT i.imageId, i.title, i.filename, i.createdAt, u.username 
-         FROM images i
-         JOIN users u ON i.userId = u.userId
-         WHERE (i.title LIKE ? OR i.filename LIKE ? OR i.originalFilename LIKE ?) 
-         AND i.deletedAt IS NULL
-         LIMIT 20`,
-        [pattern, pattern, pattern]
-      );
-      results.images = images;
+      const images = await prisma.images.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { title: { contains: searchTerm } },
+            { filename: { contains: searchTerm } },
+            { originalFilename: { contains: searchTerm } }
+          ]
+        },
+        include: {
+          users: {
+            select: {
+              username: true
+            }
+          }
+        },
+        take: 20
+      });
+      
+      results.images = images.map((img) => ({
+        imageId: img.imageId,
+        title: img.title,
+        filename: img.filename,
+        createdAt: img.createdAt,
+        username: img.users.username
+      }));
     }
 
     // Buscar videos
     if (!searchType || searchType === 'videos') {
-      const [videos] = await pool.query<RowDataPacket[]>(
-        `SELECT v.videoId, v.title, v.filename, v.createdAt, u.username 
-         FROM videos v
-         JOIN users u ON v.userId = u.userId
-         WHERE (v.title LIKE ? OR v.filename LIKE ? OR v.originalFilename LIKE ?) 
-         AND v.deletedAt IS NULL
-         LIMIT 20`,
-        [pattern, pattern, pattern]
-      );
-      results.videos = videos;
+      const videos = await prisma.videos.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { title: { contains: searchTerm } },
+            { filename: { contains: searchTerm } },
+            { originalFilename: { contains: searchTerm } }
+          ]
+        },
+        include: {
+          users: {
+            select: {
+              username: true
+            }
+          }
+        },
+        take: 20
+      });
+      
+      results.videos = videos.map((vid) => ({
+        videoId: vid.videoId,
+        title: vid.title,
+        filename: vid.filename,
+        createdAt: vid.createdAt,
+        username: vid.users.username
+      }));
     }
 
     res.json({
@@ -681,30 +811,63 @@ export const getSystemActivity = async (req: Request, res: Response): Promise<vo
 
     const limit = parseInt(req.query.limit as string) || 50;
 
-    const [activity] = await pool.query<RowDataPacket[]>(
-      `(SELECT 
-        'image' as type,
-        i.imageId as id,
-        i.filename,
-        u.username,
-        i.createdAt
-       FROM images i
-       JOIN users u ON i.userId = u.userId
-       WHERE i.deletedAt IS NULL)
-       UNION ALL
-       (SELECT 
-        'video' as type,
-        v.videoId as id,
-        v.filename,
-        u.username,
-        v.createdAt
-       FROM videos v
-       JOIN users u ON v.userId = u.userId
-       WHERE v.deletedAt IS NULL)
-       ORDER BY createdAt DESC
-       LIMIT ?`,
-      [limit]
-    );
+    // Obtener imágenes recientes
+    const images = await prisma.images.findMany({
+      where: { deletedAt: null },
+      select: {
+        imageId: true,
+        filename: true,
+        createdAt: true,
+        users: {
+          select: {
+            username: true
+          }
+        }
+      },
+      take: limit,
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Obtener videos recientes
+    const videos = await prisma.videos.findMany({
+      where: { deletedAt: null },
+      select: {
+        videoId: true,
+        filename: true,
+        createdAt: true,
+        users: {
+          select: {
+            username: true
+          }
+        }
+      },
+      take: limit,
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Combinar y ordenar
+    const activity = [
+      ...images.map((img) => ({
+        type: 'image',
+        id: img.imageId,
+        filename: img.filename,
+        username: img.users.username,
+        createdAt: img.createdAt
+      })),
+      ...videos.map((vid) => ({
+        type: 'video',
+        id: vid.videoId,
+        filename: vid.filename,
+        username: vid.users.username,
+        createdAt: vid.createdAt
+      }))
+    ]
+    .sort((a, b) => {
+      const timeA = a.createdAt?.getTime() || 0;
+      const timeB = b.createdAt?.getTime() || 0;
+      return timeB - timeA;
+    })
+    .slice(0, limit);
 
     res.json({
       success: true,

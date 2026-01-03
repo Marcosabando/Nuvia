@@ -1,9 +1,9 @@
-// src/routes/videos.ts
+// src/routes/videos.ts - VERSIÓN CORREGIDA
 import auth from "@src/middleware/auth";
 import { Router } from "express";
 import * as VideoService from "@src/services/VideoService";
-import * as TrashService from "@src/services/TrashService"; // ✅ Añadir esta importación
-import { uploadMultipleVideos, uploadSingle, uploadSingleVideo } from "@src/middleware/multer";
+import * as TrashService from "@src/services/TrashService";
+import { uploadSingleVideo, uploadMultipleVideos } from "@src/middleware/multer";
 
 const router = Router();
 
@@ -17,7 +17,20 @@ router.use(auth);
 // 📤 UPLOAD - Subir videos
 // ============================================================================ 
 
-router.post("/upload", uploadSingleVideo, VideoService.uploadVideo);
+// ✅ CORREGIDO: Cambiar uploadSingleVideo a .single('video') si el frontend usa "video"
+// o a .single('file') si el frontend usa "file"
+router.post("/upload", 
+  (req, res, next) => {
+    console.log("🎬 Iniciando upload de video...");
+    console.log("🔍 Content-Type:", req.headers["content-type"]);
+    console.log("🔍 Method:", req.method);
+    console.log("🔍 URL:", req.url);
+    next();
+  },
+  uploadSingleVideo, 
+  VideoService.uploadVideo
+);
+
 router.post("/upload-multiple", uploadMultipleVideos, VideoService.uploadMultipleVideos);
 
 // ============================================================================
@@ -47,7 +60,7 @@ router.get("/:id", VideoService.getVideoById);
 // ============================================================================
 
 router.delete("/:id", VideoService.deleteVideo); // Hard delete
-router.patch("/:id/soft-delete", TrashService.softDeleteVideo); // ✅ Cambiar a TrashService
+router.patch("/:id/soft-delete", VideoService.softDeleteVideo); // Soft delete (usar VideoService, no TrashService)
 router.patch("/:id/restore", VideoService.restoreVideo);
 
 // ============================================================================
