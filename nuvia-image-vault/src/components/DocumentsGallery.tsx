@@ -64,7 +64,7 @@ const getDocumentThumbnailUrl = (document: any): string | null => {
 const getDocumentPreviewUrl = (documentId: number): string | null => {
   const token = localStorage.getItem("authToken");
   if (!token) return null;
-  return `${API_CONFIG.BASE_URL}/documents/${documentId}/preview?token=${encodeURIComponent(token)}`;
+  return `${API_CONFIG.BASE_URL}/documents/${documentId}/download?token=${encodeURIComponent(token)}`;
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -116,10 +116,9 @@ const handleDownload = async (document: any) => {
   try {
     const response = await apiService.get(
       `/documents/${document.id}/download`,
-      { responseType: 'blob' } // ⚠️ Importante para archivos binarios
+      { responseType: 'blob' }
     );
 
-    // Crear URL temporal y descargar
     const blob = response as unknown as Blob;
     const url = window.URL.createObjectURL(blob);
     const link = window.document.createElement('a');
@@ -128,10 +127,10 @@ const handleDownload = async (document: any) => {
     link.click();
     window.URL.revokeObjectURL(url);
 
-    alert("Documento descargado");
+    // Eliminado el alert que causaba confusión
   } catch (error) {
     console.error("Error descargando:", error);
-    alert( "Error al descargar el documento");
+    alert("Error al descargar el documento");
   }
 };
 
@@ -422,8 +421,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                                       {document.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
                                     </DropdownMenuItem>
 
-                                    <DropdownMenuItem
-                                      onClick={() => handleDownload(document)}>
+                                    <DropdownMenuItem onClick={() => handleDownload(document)}>
                                       <Download className="w-4 h-4 mr-2" />
                                       Descargar
                                     </DropdownMenuItem>
@@ -511,7 +509,8 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30">
+                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                onClick={(e) => e.stopPropagation()}>
                                 <MoreHorizontal className="w-3 h-3" />
                               </Button>
                             </DropdownMenuTrigger>

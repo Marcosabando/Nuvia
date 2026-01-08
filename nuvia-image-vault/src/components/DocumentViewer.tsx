@@ -5,11 +5,11 @@ interface Props {
   documentId: number;
 }
 
-type ViewMode = 'object' | 'iframe' | 'link' | 'error';
+type ViewMode = "object" | "iframe" | "link" | "error";
 
 export default function DocumentViewer({ documentId }: Props) {
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('object');
+  const [viewMode, setViewMode] = useState<ViewMode>("object");
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -29,66 +29,81 @@ export default function DocumentViewer({ documentId }: Props) {
   const testConnection = async () => {
     if (!previewUrl) return;
 
-    console.log('[DOC_VIEWER] Testing URL:', previewUrl);
+    console.log("[DOC_VIEWER] Testing URL:", previewUrl);
 
     try {
-      // No usar credentials en HEAD - el token ya está en la URL
+      // Hacemos una solicitud sin Range para obtener la respuesta completa
+      // Pero podemos limitar la cantidad de datos que leemos para verificar la firma
       const response = await fetch(previewUrl, {
-        method: 'HEAD',
-        // credentials: 'include', // ❌ NO necesario - token en URL
+        method: "GET",
+        // No enviar encabezado Range para obtener la respuesta completa
+        // El servidor debería responder con 200 y el archivo completo, o 206 si hay un rango por defecto
       });
 
       const debug = {
         status: response.status,
         statusText: response.statusText,
-        contentType: response.headers.get('content-type'),
-        contentLength: response.headers.get('content-length'),
-        xFrameOptions: response.headers.get('x-frame-options'),
-        csp: response.headers.get('content-security-policy'),
-        cors: response.headers.get('access-control-allow-origin'),
+        contentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+        acceptRanges: response.headers.get("accept-ranges"),
+        contentRange: response.headers.get("content-range"),
+        xFrameOptions: response.headers.get("x-frame-options"),
+        csp: response.headers.get("content-security-policy"),
+        cors: response.headers.get("access-control-allow-origin"),
         timestamp: new Date().toISOString(),
       };
 
       setDebugInfo(debug);
-      console.log('[DOC_VIEWER] Debug info:', debug);
+      console.log("[DOC_VIEWER] Debug info:", debug);
 
-      if (response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (!contentType?.includes('pdf')) {
-          setError(`Tipo inesperado: ${contentType}`);
-          setViewMode('error');
-        } else {
-          setViewMode('object');
-        }
+      // Si la respuesta es exitosa (200 o 206)
+      if (response.ok || response.status === 206) {
+        // Solo leemos los primeros 4 bytes para verificar la firma
+        const blob = await response.blob();
+        const slice = blob.slice(0, 4);
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const bytes = new Uint8Array(e.target?.result as ArrayBuffer);
+          console.log("[DOC_VIEWER] PDF signature check:", bytes);
+          // Verificar la firma del PDF
+          if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+            setViewMode("object");
+            setError(null);
+          } else {
+            setError("El archivo no es un PDF válido");
+            setViewMode("error");
+          }
+        };
+        reader.readAsArrayBuffer(slice);
       } else {
         setError(`Error ${response.status}: ${response.statusText}`);
-        setViewMode('error');
+        setViewMode("error");
       }
     } catch (err: any) {
-      console.error('[DOC_VIEWER] Connection test failed:', err);
+      console.error("[DOC_VIEWER] Connection test failed:", err);
       setDebugInfo({ error: err.message });
       setError(`Error de conexión: ${err.message}`);
-      setViewMode('error');
+      setViewMode("error");
     } finally {
       setLoading(false);
     }
   };
 
   const handleObjectError = () => {
-    console.log('[DOC_VIEWER] Object tag failed, switching to iframe');
-    setViewMode('iframe');
+    console.log("[DOC_VIEWER] Object tag failed, switching to iframe");
+    setViewMode("iframe");
     setError(null);
   };
 
   const handleIframeError = () => {
-    console.log('[DOC_VIEWER] Iframe failed, showing link fallback');
-    setViewMode('link');
-    setError('Tu navegador no puede mostrar PDFs incrustados');
+    console.log("[DOC_VIEWER] Iframe failed, showing link fallback");
+    setViewMode("link");
+    setError("Tu navegador no puede mostrar PDFs incrustados");
   };
 
   const openInNewTab = () => {
     if (previewUrl) {
-      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      window.open(previewUrl, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -99,7 +114,7 @@ export default function DocumentViewer({ documentId }: Props) {
       const response = await fetch(previewUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `documento-${documentId}.pdf`;
       document.body.appendChild(a);
@@ -107,8 +122,8 @@ export default function DocumentViewer({ documentId }: Props) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('[DOC_VIEWER] Download failed:', err);
-      alert('Error al descargar el documento');
+      console.error("[DOC_VIEWER] Download failed:", err);
+      alert("Error al descargar el documento");
     }
   };
 
@@ -116,12 +131,7 @@ export default function DocumentViewer({ documentId }: Props) {
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
         <div className="text-center p-8 max-w-md">
-          <svg
-            className="w-16 h-16 mx-auto text-yellow-500 mb-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg className="w-16 h-16 mx-auto text-yellow-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -153,9 +163,8 @@ export default function DocumentViewer({ documentId }: Props) {
       <button
         onClick={() => setShowDebug(!showDebug)}
         className="absolute top-2 left-2 z-10 bg-gray-800 text-white px-3 py-1 rounded text-xs hover:bg-gray-700 transition"
-        title="Toggle Debug Info"
-      >
-        {showDebug ? '🔍 Hide' : '🔍 Debug'}
+        title="Toggle Debug Info">
+        {showDebug ? "🔍 Hide" : "🔍 Debug"}
       </button>
 
       {/* Action Buttons */}
@@ -163,15 +172,13 @@ export default function DocumentViewer({ documentId }: Props) {
         <button
           onClick={openInNewTab}
           className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition"
-          title="Abrir en nueva pestaña"
-        >
+          title="Abrir en nueva pestaña">
           📤 Nueva pestaña
         </button>
         <button
           onClick={downloadFile}
           className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition"
-          title="Descargar"
-        >
+          title="Descargar">
           💾 Descargar
         </button>
       </div>
@@ -181,36 +188,52 @@ export default function DocumentViewer({ documentId }: Props) {
         <div className="absolute top-12 left-2 right-2 z-10 bg-yellow-50 border border-yellow-300 rounded p-3 text-xs font-mono max-h-48 overflow-auto shadow-lg">
           <div className="font-bold mb-2 text-yellow-800">🔍 Debug Info:</div>
           <div className="space-y-1">
-            <div><strong>Status:</strong> {debugInfo.status}</div>
-            <div><strong>Content-Type:</strong> {debugInfo.contentType || 'N/A'}</div>
-            <div><strong>Size:</strong> {debugInfo.contentLength ? `${(parseInt(debugInfo.contentLength) / 1024 / 1024).toFixed(2)} MB` : 'N/A'}</div>
-            <div><strong>Mode:</strong> {viewMode}</div>
-            <div><strong>X-Frame-Options:</strong> {debugInfo.xFrameOptions || 'none'}</div>
-            <div><strong>CORS:</strong> {debugInfo.cors || 'N/A'}</div>
-            <div className="break-all"><strong>URL:</strong> {previewUrl}</div>
+            <div>
+              <strong>Status:</strong> {debugInfo.status}
+            </div>
+            <div>
+              <strong>Content-Type:</strong> {debugInfo.contentType || "N/A"}
+            </div>
+            <div>
+              <strong>Size:</strong>{" "}
+              {debugInfo.contentLength ? `${(parseInt(debugInfo.contentLength) / 1024 / 1024).toFixed(2)} MB` : "N/A"}
+            </div>
+            <div>
+              <strong>Mode:</strong> {viewMode}
+            </div>
+            <div>
+              <strong>X-Frame-Options:</strong> {debugInfo.xFrameOptions || "none"}
+            </div>
+            <div>
+              <strong>CORS:</strong> {debugInfo.cors || "N/A"}
+            </div>
+            <div>
+              <strong>Accept-Ranges:</strong> {debugInfo.acceptRanges || "N/A"}
+            </div>
+            <div className="break-all">
+              <strong>URL:</strong> {previewUrl}
+            </div>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      {viewMode === 'object' && (
+      {viewMode === "object" && (
         <object
           data={previewUrl}
           type="application/pdf"
           className="w-full h-full"
           onLoad={() => {
-            console.log('[DOC_VIEWER] Object loaded successfully');
+            console.log("[DOC_VIEWER] Object loaded successfully");
             setError(null);
           }}
-          onError={handleObjectError}
-        >
+          onError={handleObjectError}>
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
             <div className="text-center p-8">
               <p className="text-gray-600 mb-4">El navegador no puede mostrar el PDF</p>
               <button
                 onClick={openInNewTab}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              >
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                 Abrir en nueva pestaña
               </button>
             </div>
@@ -218,13 +241,13 @@ export default function DocumentViewer({ documentId }: Props) {
         </object>
       )}
 
-      {viewMode === 'iframe' && (
+      {viewMode === "iframe" && (
         <iframe
           src={previewUrl}
           className="w-full h-full border-0"
           title="Document Preview"
           onLoad={() => {
-            console.log('[DOC_VIEWER] Iframe loaded successfully');
+            console.log("[DOC_VIEWER] Iframe loaded successfully");
             setError(null);
           }}
           onError={handleIframeError}
@@ -232,15 +255,14 @@ export default function DocumentViewer({ documentId }: Props) {
         />
       )}
 
-      {viewMode === 'link' && (
+      {viewMode === "link" && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
           <div className="text-center p-8 max-w-md">
             <svg
               className="w-20 h-20 mx-auto text-purple-600 mb-4"
               fill="none"
               stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+              viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -248,24 +270,18 @@ export default function DocumentViewer({ documentId }: Props) {
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Documento disponible
-            </h3>
-            <p className="text-gray-600 mb-6">
-              {error || 'Tu navegador no puede mostrar el PDF incrustado.'}
-            </p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Documento disponible</h3>
+            <p className="text-gray-600 mb-6">{error || "Tu navegador no puede mostrar el PDF incrustado."}</p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={openInNewTab}
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-              >
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
                 <span>📤</span>
                 Abrir en nueva pestaña
               </button>
               <button
                 onClick={downloadFile}
-                className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-              >
+                className="flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
                 <span>💾</span>
                 Descargar PDF
               </button>
@@ -274,15 +290,10 @@ export default function DocumentViewer({ documentId }: Props) {
         </div>
       )}
 
-      {viewMode === 'error' && (
+      {viewMode === "error" && (
         <div className="absolute inset-0 flex items-center justify-center bg-red-50">
           <div className="text-center p-8 max-w-md">
-            <svg
-              className="w-16 h-16 mx-auto text-red-500 mb-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -290,14 +301,11 @@ export default function DocumentViewer({ documentId }: Props) {
                 d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Error al cargar documento
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Error al cargar documento</h3>
             <p className="text-red-600 mb-6">{error}</p>
             <button
               onClick={testConnection}
-              className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
-            >
+              className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
               🔄 Reintentar
             </button>
           </div>
