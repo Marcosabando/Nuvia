@@ -114,14 +114,11 @@ const getCategoryColor = (category: string) => {
 
 const handleDownload = async (document: any) => {
   try {
-    const response = await apiService.get(
-      `/documents/${document.id}/download`,
-      { responseType: 'blob' }
-    );
+    const response = await apiService.get(`/documents/${document.id}/download`, { responseType: "blob" });
 
     const blob = response as unknown as Blob;
     const url = window.URL.createObjectURL(blob);
-    const link = window.document.createElement('a');
+    const link = window.document.createElement("a");
     link.href = url;
     link.download = document.originalFilename;
     link.click();
@@ -365,11 +362,11 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                                 }}
                               />
                             ) : document.mimeType?.includes("pdf") && getDocumentPreviewUrl(document.id) ? (
-                              <object
-                                data={getDocumentPreviewUrl(document.id)!}
-                                type="application/pdf"
+                              <iframe
+                                src={`${getDocumentPreviewUrl(document.id)}#toolbar=0&navpanes=0&scrollbar=0`}
                                 className="w-full h-full"
                                 style={{ pointerEvents: "none" }}
+                                title="PDF preview"
                               />
                             ) : (
                               <DocumentIcon className="w-8 h-8 sm:w-10 sm:h-10" style={{ color: categoryColor }} />

@@ -32,12 +32,9 @@ export default function DocumentViewer({ documentId }: Props) {
     console.log("[DOC_VIEWER] Testing URL:", previewUrl);
 
     try {
-      // Hacemos una solicitud sin Range para obtener la respuesta completa
-      // Pero podemos limitar la cantidad de datos que leemos para verificar la firma
+      // Hacer una petición HEAD en lugar de GET para verificar sin descargar
       const response = await fetch(previewUrl, {
-        method: "GET",
-        // No enviar encabezado Range para obtener la respuesta completa
-        // El servidor debería responder con 200 y el archivo completo, o 206 si hay un rango por defecto
+        method: "HEAD",
       });
 
       const debug = {
@@ -56,27 +53,15 @@ export default function DocumentViewer({ documentId }: Props) {
       setDebugInfo(debug);
       console.log("[DOC_VIEWER] Debug info:", debug);
 
-      // Si la respuesta es exitosa (200 o 206)
-      if (response.ok || response.status === 206) {
-        // Solo leemos los primeros 4 bytes para verificar la firma
-        const blob = await response.blob();
-        const slice = blob.slice(0, 4);
-        const reader = new FileReader();
-        reader.onload = function (e) {
-          const bytes = new Uint8Array(e.target?.result as ArrayBuffer);
-          console.log("[DOC_VIEWER] PDF signature check:", bytes);
-          // Verificar la firma del PDF
-          if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
-            setViewMode("object");
-            setError(null);
-          } else {
-            setError("El archivo no es un PDF válido");
-            setViewMode("error");
-          }
-        };
-        reader.readAsArrayBuffer(slice);
-      } else {
+      // Si la respuesta es exitosa y es un PDF
+      if (response.ok && debug.contentType?.includes("pdf")) {
+        setViewMode("object");
+        setError(null);
+      } else if (!response.ok) {
         setError(`Error ${response.status}: ${response.statusText}`);
+        setViewMode("error");
+      } else if (!debug.contentType?.includes("pdf")) {
+        setError("El archivo no es un PDF válido");
         setViewMode("error");
       }
     } catch (err: any) {
