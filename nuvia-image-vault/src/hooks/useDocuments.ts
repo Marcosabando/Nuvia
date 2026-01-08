@@ -12,6 +12,7 @@ interface DocumentData {
   originalFilename: string;
   filename: string;
   documentPath: string;
+  thumbnailPath?: string;
   fileSize: number;
   mimeType: string;
   pageCount?: number;
@@ -110,6 +111,7 @@ export const useDocuments = (): UseDocumentsReturn => {
           originalFilename: doc.originalFilename,
           filename: doc.filename,
           documentPath: doc.documentPath,
+          thumbnailPath: doc.thumbnailPath,
           fileSize: doc.fileSize,
           mimeType: doc.mimeType,
           pageCount: doc.pageCount,

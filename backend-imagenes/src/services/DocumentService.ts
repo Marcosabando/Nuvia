@@ -1,9 +1,9 @@
 // src/services/DocumentService.ts - VERSIÓN COMPLETA CON PREVIEW
 import { Request, Response } from "express";
-import db from "@src/config/database";
-import { ResultSetHeader, RowDataPacket } from "mysql2";
+import prisma from '../lib/prisma'; // ✅ Instancia única
 import path from "path";
 import fs from "fs";
+import jwt from "jsonwebtoken";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -125,7 +125,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
     console.log('📤 [UPLOAD] Iniciando subida para usuario:', userId);
     
     if (!req.file) {
-      console.error('❌ [UPLOAD] No se proporcionó archivo');
+      console.error(' [UPLOAD] No se proporcionó archivo');
       return res.status(400).json({
         success: false,
         error: "No se proporcionó ningún archivo"
@@ -133,7 +133,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
     }
 
     const file = req.file;
-    console.log('✅ [UPLOAD] Archivo recibido:', {
+    console.log(' [UPLOAD] Archivo recibido:', {
       originalname: file.originalname,
       filename: file.filename,
       mimetype: file.mimetype,
@@ -198,7 +198,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      data: newDocument[0],
+      data: document,
       message: "Documento subido exitosamente"
     });
 
@@ -209,9 +209,9 @@ export const uploadDocument = async (req: Request, res: Response) => {
     if (req.file?.path && fs.existsSync(req.file.path)) {
       try {
         fs.unlinkSync(req.file.path);
-        console.log('🧹 Archivo eliminado tras error');
+        console.log(' Archivo eliminado tras error');
       } catch (cleanupError) {
-        console.error('❌ Error limpiando archivo:', cleanupError);
+        console.error(' Error limpiando archivo:', cleanupError);
       }
     }
     
@@ -224,7 +224,7 @@ export const uploadDocument = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// 📋 OBTENER TODOS LOS DOCUMENTOS DEL USUARIO
+// OBTENER TODOS LOS DOCUMENTOS DEL USUARIO
 // ============================================================================
 export const getUserDocuments = async (req: Request, res: Response) => {
   const userId = verifyAuth(req, res);
@@ -233,33 +233,38 @@ export const getUserDocuments = async (req: Request, res: Response) => {
   try {
     console.log('📁 [GET-DOCS] Obteniendo documentos para usuario:', userId);
 
-    const [documents] = await db.query<RowDataPacket[]>(
-      `SELECT 
-        documentId as id,
-        documentId,
-        userId,
-        title,
-        description,
-        category,
-        tags,
-        originalFilename,
-        filename,
-        documentPath,
-        fileSize,
-        mimeType,
-        pageCount,
-        wordCount,
-        language,
-        isFavorite,
-        isPublic,
-        version,
-        createdAt,
-        updatedAt
-      FROM documents
-      WHERE userId = ? AND deletedAt IS NULL
-      ORDER BY createdAt DESC`,
-      [userId]
-    );
+    const documents = await prisma.documents.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null,
+      },
+      select: {
+        documentId: true,
+        userId: true,
+        title: true,
+        description: true,
+        category: true,
+        tags: true,
+        originalFilename: true,
+        filename: true,
+        documentPath: true,
+        thumbnailPath: true,
+        previewPath: true,
+        fileSize: true,
+        mimeType: true,
+        pageCount: true,
+        wordCount: true,
+        language: true,
+        isFavorite: true,
+        isPublic: true,
+        version: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
     console.log(`✅ [GET-DOCS] Encontrados ${documents.length} documentos`);
 
@@ -289,13 +294,21 @@ export const getDocumentById = async (req: Request, res: Response) => {
     const documentId = parseInt(req.params.id);
     console.log(`🔍 [GET-DOC] Buscando documento ${documentId} para usuario ${userId}`);
 
-    const [document] = await db.query<RowDataPacket[]>(
-      `SELECT d.*, u.username, u.email
-       FROM documents d
-       INNER JOIN users u ON d.userId = u.userId
-       WHERE d.documentId = ? AND d.userId = ? AND d.deletedAt IS NULL`,
-      [documentId, userId]
-    );
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+      include: {
+        users: { // ✅ CORREGIDO: 'users' no 'user'
+          select: {
+            username: true,
+            email: true,
+          },
+        },
+      },
+    });
 
     if (document.length === 0) {
       console.log(`❌ [GET-DOC] Documento ${documentId} no encontrado para usuario ${userId}`);
@@ -312,7 +325,7 @@ export const getDocumentById = async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      data: document[0]
+      data: document
     });
 
   } catch (error: any) {
@@ -757,47 +770,53 @@ export const searchDocuments = async (req: Request, res: Response) => {
     const values: any[] = [userId];
 
     if (q && typeof q === 'string' && q.trim().length > 0) {
-      query += ` AND (title LIKE ? OR description LIKE ? OR tags LIKE ? OR originalFilename LIKE ?)`;
-      const searchPattern = `%${q.trim()}%`;
-      values.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      const searchPattern = q.trim();
+      where.OR = [
+        { title: { contains: searchPattern } },
+        { description: { contains: searchPattern } },
+        { tags: { contains: searchPattern } },
+        { originalFilename: { contains: searchPattern } },
+      ];
     }
 
     if (category && typeof category === 'string') {
-      query += ` AND category = ?`;
-      values.push(category);
+      const validCategories = ['office', 'text', 'design', 'code', 'archive', 'other'];
+      where.category = validCategories.includes(category) ? category : 'other';
     }
 
     if (isFavorite !== undefined) {
-      query += ` AND isFavorite = ?`;
-      values.push(isFavorite === 'true' ? 1 : 0);
+      where.isFavorite = isFavorite === 'true';
     }
 
-    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
-    values.push(parseInt(limit as string), parseInt(offset as string));
-
-    const [documents] = await db.query<RowDataPacket[]>(query, values);
-
-    let countQuery = `SELECT COUNT(*) as total FROM documents WHERE userId = ? AND deletedAt IS NULL`;
-    const countValues: any[] = [userId];
-
-    if (q && typeof q === 'string' && q.trim().length > 0) {
-      countQuery += ` AND (title LIKE ? OR description LIKE ? OR tags LIKE ? OR originalFilename LIKE ?)`;
-      const searchPattern = `%${q.trim()}%`;
-      countValues.push(searchPattern, searchPattern, searchPattern, searchPattern);
-    }
-
-    if (category && typeof category === 'string') {
-      countQuery += ` AND category = ?`;
-      countValues.push(category);
-    }
-
-    if (isFavorite !== undefined) {
-      countQuery += ` AND isFavorite = ?`;
-      countValues.push(isFavorite === 'true' ? 1 : 0);
-    }
-
-    const [totalResult] = await db.query<RowDataPacket[]>(countQuery, countValues);
-    const total = totalResult[0]?.total || 0;
+    // ✅ CONSULTA CON PRISMA
+    const [documents, total] = await Promise.all([
+      prisma.documents.findMany({
+        where,
+        select: {
+          documentId: true,
+          userId: true,
+          title: true,
+          description: true,
+          category: true,
+          tags: true,
+          originalFilename: true,
+          fileSize: true,
+          mimeType: true,
+          pageCount: true,
+          wordCount: true,
+          isFavorite: true,
+          isPublic: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip: parseInt(offset as string),
+        take: parseInt(limit as string),
+      }),
+      prisma.documents.count({ where }),
+    ]);
 
     return res.json({
       success: true,
@@ -819,32 +838,134 @@ export const searchDocuments = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// 📊 ESTADÍSTICAS DE DOCUMENTOS
+// ⭐ MARCAR/DESMARCAR COMO FAVORITO
+// ============================================================================
+export const toggleFavorite = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+    const { isFavorite } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    if (isFavorite === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: "El campo isFavorite es requerido"
+      });
+    }
+
+    // Verificar que el documento existe
+    const existingDocument = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!existingDocument) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado"
+      });
+    }
+
+    // ✅ ACTUALIZAR FAVORITO CON PRISMA
+    await prisma.documents.update({
+      where: {
+        documentId: documentId,
+      },
+      data: {
+        isFavorite: isFavorite,
+        updatedAt: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: isFavorite ? "Documento marcado como favorito" : "Documento desmarcado como favorito"
+    });
+
+  } catch (error: any) {
+    console.error("❌ Error actualizando favorito:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al actualizar favorito"
+    });
+  }
+};
+
+// ============================================================================
+// 📊 OBTENER ESTADÍSTICAS DE DOCUMENTOS
 // ============================================================================
 export const getDocumentStats = async (req: Request, res: Response) => {
   const userId = verifyAuth(req, res);
   if (!userId) return;
 
-  try {
-    const [stats] = await db.query<RowDataPacket[]>(
-      `SELECT 
-        COUNT(*) as totalDocuments,
-        SUM(fileSize) as totalSize,
-        SUM(CASE WHEN category = 'office' THEN 1 ELSE 0 END) as officeCount,
-        SUM(CASE WHEN category = 'text' THEN 1 ELSE 0 END) as textCount,
-        SUM(CASE WHEN category = 'design' THEN 1 ELSE 0 END) as designCount,
-        SUM(CASE WHEN category = 'code' THEN 1 ELSE 0 END) as codeCount,
-        SUM(CASE WHEN category = 'archive' THEN 1 ELSE 0 END) as archiveCount,
-        SUM(CASE WHEN isFavorite = 1 THEN 1 ELSE 0 END) as favoriteCount,
-        SUM(CASE WHEN isPublic = 1 THEN 1 ELSE 0 END) as publicCount
-      FROM documents
-      WHERE userId = ? AND deletedAt IS NULL`,
-      [userId]
-    );
+    // ✅ AGREGACIONES CON PRISMA
+    const [
+      totalDocuments,
+      totalSizeResult,
+      officeCount,
+      textCount,
+      designCount,
+      codeCount,
+      archiveCount,
+      favoriteCount,
+      publicCount
+    ] = await Promise.all([
+      prisma.documents.count({
+        where: { userId, deletedAt: null },
+      }),
+      prisma.documents.aggregate({
+        where: { userId, deletedAt: null },
+        _sum: { fileSize: true },
+      }),
+      prisma.documents.count({
+        where: { userId, category: 'office', deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, category: 'text', deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, category: 'design', deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, category: 'code', deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, category: 'archive', deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, isFavorite: true, deletedAt: null },
+      }),
+      prisma.documents.count({
+        where: { userId, isPublic: true, deletedAt: null },
+      }),
+    ]);
+
+    const totalSize = totalSizeResult._sum.fileSize ? Number(totalSizeResult._sum.fileSize) : 0;
 
     return res.json({
       success: true,
-      data: stats[0] || {}
+      data: {
+        totalDocuments,
+        totalSize,
+        totalSizeFormatted: (totalSize / (1024 * 1024)).toFixed(2) + " MB",
+        officeCount,
+        textCount,
+        designCount,
+        codeCount,
+        archiveCount,
+        favoriteCount,
+        publicCount
+      }
     });
 
   } catch (error: any) {
@@ -915,38 +1036,33 @@ export const updateDocument = async (req: Request, res: Response) => {
       });
     }
 
-    values.push(documentId);
-
-    await db.query(
-      `UPDATE documents SET ${updates.join(', ')} WHERE documentId = ?`,
-      values
-    );
-
-    const [updated] = await db.query<RowDataPacket[]>(
-      `SELECT 
-        documentId as id,
-        documentId,
-        userId,
-        title,
-        description,
-        category,
-        tags,
-        originalFilename,
-        filename,
-        documentPath,
-        fileSize,
-        mimeType,
-        pageCount,
-        wordCount,
-        language,
-        isFavorite,
-        isPublic,
-        version,
-        createdAt,
-        updatedAt
-      FROM documents WHERE documentId = ?`,
-      [documentId]
-    );
+    // ✅ CONSULTA CON PRISMA
+    const documents = await prisma.documents.findMany({
+      where: {
+        userId: userId,
+        category: category as any,
+        deletedAt: null,
+      },
+      select: {
+        documentId: true,
+        userId: true,
+        title: true,
+        description: true,
+        category: true,
+        tags: true,
+        originalFilename: true,
+        fileSize: true,
+        mimeType: true,
+        pageCount: true,
+        wordCount: true,
+        isFavorite: true,
+        isPublic: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
     return res.json({
       success: true,
@@ -971,44 +1087,62 @@ export const toggleFavorite = async (req: Request, res: Response) => {
   if (!userId) return;
 
   try {
-    const documentId = parseInt(req.params.id);
-    const { isFavorite } = req.body;
+    const userId = req.user?.userId;
+    const documentId = Number(req.params.id);
 
     if (isFavorite === undefined) {
       return res.status(400).json({
         success: false,
-        error: "El campo isFavorite es requerido"
+        error: "Usuario no autenticado",
       });
     }
 
-    const [document] = await db.query<RowDataPacket[]>(
-      `SELECT documentId FROM documents 
-       WHERE documentId = ? AND userId = ? AND deletedAt IS NULL`,
-      [documentId, userId]
-    );
-
-    if (document.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "Documento no encontrado"
-      });
-    }
-
-    await db.query(
-      `UPDATE documents SET isFavorite = ? WHERE documentId = ?`,
-      [isFavorite ? 1 : 0, documentId]
-    );
-
-    return res.json({
-      success: true,
-      message: isFavorite ? "Documento marcado como favorito" : "Documento desmarcado como favorito"
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+      select: {
+        documentPath: true,
+        originalFilename: true,
+        mimeType: true,
+        fileSize: true,
+      },
     });
 
-  } catch (error: any) {
-    console.error("❌ [FAVORITE] Error:", error);
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado",
+      });
+    }
+
+    const safeRelativePath = normalizeUploadRelativePath(document.documentPath);
+    if (!safeRelativePath) {
+      return res.status(400).json({
+        success: false,
+        error: "Ruta de documento inválida",
+      });
+    }
+
+    const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
+
+    console.log("📄 Descargando archivo:", filePath);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: "Archivo no encontrado en el servidor",
+      });
+    }
+
+    return res.download(filePath, document.originalFilename);
+  } catch (error) {
+    console.error("❌ Error descargando documento:", error);
     return res.status(500).json({
       success: false,
-      error: "Error al actualizar favorito"
+      error: "Error al descargar el documento",
     });
   }
 };
@@ -1021,47 +1155,99 @@ export const deleteDocument = async (req: Request, res: Response) => {
   if (!userId) return;
 
   try {
+    console.log('[PREVIEW] Iniciando...');
+    
+    // Autenticación
+    let userId = req.user?.userId;
+    if (!userId && req.query.token) {
+      try {
+        const decoded = jwt.verify(req.query.token as string, jwtSecret) as any;
+        userId = decoded.userId;
+      } catch (err) {
+        return res.status(401).json({ error: "Token inválido" });
+      }
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: "No autenticado" });
+    }
+
     const documentId = parseInt(req.params.id);
+    const document = await prisma.documents.findFirst({
+      where: { documentId, userId, deletedAt: null }
+    });
 
-    const [document] = await db.query<RowDataPacket[]>(
-      `SELECT documentId FROM documents 
-       WHERE documentId = ? AND userId = ? AND deletedAt IS NULL`,
-      [documentId, userId]
-    );
+    if (!document) {
+      return res.status(404).json({ error: "Documento no encontrado" });
+    }
 
-    if (document.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "Documento no encontrado"
+    // Construir ruta
+    let filePath = document.documentPath;
+    
+    // Asegurar que tenga el prefijo correcto
+    if (!filePath.includes('uploads/')) {
+      filePath = path.join('uploads', filePath);
+    }
+    
+    const absolutePath = path.join(process.cwd(), filePath);
+    console.log('[PREVIEW] Ruta absoluta:', absolutePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      console.error('[PREVIEW] Archivo no existe:', absolutePath);
+      return res.status(404).json({ error: "Archivo no encontrado" });
+    }
+
+    // Leer archivo completo en memoria para verificar
+    const fileBuffer = fs.readFileSync(absolutePath);
+    const fileSize = fileBuffer.length;
+    
+    console.log('[PREVIEW] Tamaño real del archivo:', fileSize, 'bytes');
+    console.log('[PREVIEW] Primeros bytes:', fileBuffer.slice(0, 10).toString('hex'));
+    
+    // Verificar que sea un PDF
+    const isPdf = fileBuffer.slice(0, 4).toString() === '%PDF';
+    if (!isPdf) {
+      console.error('[PREVIEW] No es un PDF válido. Cabecera:', fileBuffer.slice(0, 20).toString());
+      return res.status(400).json({ 
+        error: "El archivo no es un PDF válido",
+        debug: { header: fileBuffer.slice(0, 20).toString('hex') }
       });
     }
 
-    await db.query(
-      `UPDATE documents SET deletedAt = NOW() WHERE documentId = ?`,
-      [documentId]
-    );
-
-    return res.json({
-      success: true,
-      message: "Documento eliminado exitosamente"
-    });
+    // 🔴 IMPORTANTE: IGNORAR COMPLETAMENTE LAS SOLICITUDES DE RANGO
+    // Establecer headers para PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalFilename)}"`);
+    res.setHeader('Content-Length', fileSize.toString());
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    // 🔴 CRÍTICO: NO enviar headers de rango
+    res.removeHeader('Accept-Ranges');
+    res.removeHeader('Content-Range');
+    
+    // Permitir CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.removeHeader('X-Frame-Options');
+    
+    // Enviar archivo completo
+    console.log('[PREVIEW] Enviando archivo completo de', fileSize, 'bytes');
+    res.send(fileBuffer);
+    
+    console.log('[PREVIEW] Archivo enviado exitosamente');
 
   } catch (error: any) {
-    console.error("❌ [DELETE] Error:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Error al eliminar el documento"
-    });
+    console.error('[PREVIEW] Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Error interno del servidor" });
+    }
   }
 };
 
 // ============================================================================
-// 📂 DOCUMENTOS POR CATEGORÍA
+// 🔗 OBTENER URL DE PREVIEW
 // ============================================================================
-export const getDocumentsByCategory = async (req: Request, res: Response) => {
-  const userId = verifyAuth(req, res);
-  if (!userId) return;
-
+export const getPreviewUrl = async (req: Request, res: Response) => {
   try {
     const category = req.params.category;
 
@@ -1073,28 +1259,33 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
       });
     }
 
-    const [documents] = await db.query<RowDataPacket[]>(
-      `SELECT 
-        documentId as id,
-        documentId,
-        title,
-        description,
-        category,
-        tags,
-        originalFilename,
-        fileSize,
-        mimeType,
-        pageCount,
-        wordCount,
-        isFavorite,
-        isPublic,
-        createdAt
-      FROM documents
-      WHERE userId = ? AND category = ? AND deletedAt IS NULL
-      ORDER BY createdAt DESC`,
-      [userId, category]
-    );
+    // Obtener documento
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
 
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado"
+      });
+    }
+
+    // Devolver URL directa al archivo
+    const safeRelativePath = normalizeUploadRelativePath(document.documentPath);
+    if (!safeRelativePath) {
+      return res.status(400).json({
+        success: false,
+        error: "Ruta de documento inválida",
+      });
+    }
+
+    const fileUrl = `/uploads/${safeRelativePath}`;
+    
     return res.json({
       success: true,
       data: documents,
@@ -1111,12 +1302,124 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// 🆕 CREAR NUEVO DOCUMENTO (SOLO METADATOS - SIN ARCHIVO)
+// 📤 SERVIR DOCUMENTO
 // ============================================================================
-export const createDocumentMetadata = async (req: Request, res: Response) => {
-  const userId = verifyAuth(req, res);
-  if (!userId) return;
+export const serveDocument = async (req: Request, res: Response) => {
+  try {
+    // SOPORTAR TOKEN EN QUERY PARAM (para WebViewer)
+    let userId = req.user?.userId;
+    
+    // Si no hay auth header, intentar con token en query
+    if (!userId && req.query.token) {
+      try {
+        const decoded = jwt.verify(req.query.token as string, jwtSecret) as any;
+        userId = decoded.userId;
+      } catch (err) {
+        return res.status(401).json({ 
+          success: false, 
+          error: "Token inválido" 
+        });
+      }
+    }
 
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false, 
+        error: "No autenticado" 
+      });
+    }
+
+    const documentId = parseInt(req.params.id);
+
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!document) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Documento no encontrado" 
+      });
+    }
+
+    const safeRelativePath = normalizeUploadRelativePath(document.documentPath);
+    if (!safeRelativePath) {
+      return res.status(400).json({
+        success: false,
+        error: "Ruta de documento inválida",
+      });
+    }
+
+    const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
+
+    console.log(' [SERVE] Sirviendo:', filePath);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Archivo no existe" 
+      });
+    }
+
+    // Headers correctos para CORS y caching
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
+    // Soporte de Range Requests
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const range = req.headers.range;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match) {
+        return res.status(416).send('Range Not Satisfiable');
+      }
+
+      const start = match[1] ? parseInt(match[1], 10) : 0;
+      const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= fileSize) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).send('Range Not Satisfiable');
+      }
+
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', chunkSize.toString());
+
+      const fileStream = fs.createReadStream(filePath, { start, end });
+      fileStream.pipe(res);
+      return;
+    }
+
+    // Sin Range: enviar archivo completo
+    res.setHeader('Content-Length', fileSize.toString());
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+  } catch (error: any) {
+    console.error(" [SERVE] Error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      error: "Error interno" 
+    });
+  }
+};
+
+// ============================================================================
+// 🚀 ABRIR DOCUMENTO
+// ============================================================================
+export const openDocument = async (req: Request, res: Response) => {
   try {
     const { 
       title, 
@@ -1138,32 +1441,30 @@ export const createDocumentMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    if (!originalFilename || !filename || !documentPath) {
-      return res.status(400).json({
+    // Obtener documento
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!document) {
+      return res.status(404).json({
         success: false,
         error: "Información del archivo incompleta"
       });
     }
 
-    const [result] = await db.query<ResultSetHeader>(
-      `INSERT INTO documents 
-       (userId, title, description, category, tags, originalFilename, 
-        filename, documentPath, fileSize, mimeType, isPublic)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        title.trim(),
-        description || null,
-        category || 'other',
-        tags || null,
-        originalFilename,
-        filename,
-        documentPath,
-        fileSize || 0,
-        mimeType || 'application/octet-stream',
-        isPublic || 0
-      ]
-    );
+    const filePath = path.join(process.cwd(), 'uploads', document.documentPath);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: "Archivo no encontrado en el servidor"
+      });
+    }
 
     const [newDocument] = await db.query<RowDataPacket[]>(
       `SELECT * FROM documents WHERE documentId = ?`,
@@ -1186,75 +1487,143 @@ export const createDocumentMetadata = async (req: Request, res: Response) => {
 };
 
 // ============================================================================
-// 🛠️ DEBUG: Verificar estructura de archivos
+// 🔎 PREVIEW POR NOMBRE DE ARCHIVO
 // ============================================================================
-export const debugFiles = async (req: Request, res: Response) => {
-  const userId = verifyAuth(req, res);
-  if (!userId) return;
-
+export const previewByFilename = async (req: Request, res: Response) => {
   try {
-    console.log(`🔍 [DEBUG] Verificando archivos para usuario ${userId}`);
-    
-    const [documents] = await db.query<RowDataPacket[]>(
-      `SELECT documentId, originalFilename, filename, documentPath 
-       FROM documents 
-       WHERE userId = ? AND deletedAt IS NULL
-       ORDER BY documentId DESC`,
-      [userId]
-    );
+    const userId = req.user?.userId;
+    const filename = req.params.filename;
 
-    const documentsWithStatus = await Promise.all(
-      documents.map(async (doc) => {
-        const filePath = path.join(process.cwd(), 'uploads', doc.documentPath);
-        const exists = fs.existsSync(filePath);
-        
-        return {
-          id: doc.documentId,
-          originalFilename: doc.originalFilename,
-          filename: doc.filename,
-          documentPath: doc.documentPath,
-          expectedPath: filePath,
-          fileExists: exists
-        };
-      })
-    );
+    console.log('🔍 [PREVIEW-BY-FILENAME] Buscando archivo:', filename);
 
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    const userDir = path.join(uploadsDir, userId.toString());
-    const documentsDir = path.join(userDir, 'documents');
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
 
-    const directoryStructure = {
-      uploadsDir: {
-        path: uploadsDir,
-        exists: fs.existsSync(uploadsDir),
-        contents: fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir) : []
+    // Buscar por nombre de archivo
+    const document = await prisma.documents.findFirst({
+      where: {
+        OR: [
+          { filename: filename },
+          { originalFilename: filename }
+        ],
+        userId: userId,
+        deletedAt: null,
       },
-      userDir: {
-        path: userDir,
-        exists: fs.existsSync(userDir),
-        contents: fs.existsSync(userDir) ? fs.readdirSync(userDir) : []
-      },
-      documentsDir: {
-        path: documentsDir,
-        exists: fs.existsSync(documentsDir),
-        contents: fs.existsSync(documentsDir) ? fs.readdirSync(documentsDir) : []
-      }
-    };
-
-    return res.json({
-      success: true,
-      userId,
-      documents: documentsWithStatus,
-      directoryStructure,
-      totalDocuments: documents.length,
-      existingFiles: documentsWithStatus.filter(d => d.fileExists).length
     });
+
+    if (!document) {
+      console.log('❌ [PREVIEW-BY-FILENAME] Archivo no encontrado');
+      return res.status(404).json({
+        success: false,
+        error: `Archivo "${filename}" no encontrado`
+      });
+    }
+
+    // Redirigir a la ruta de preview normal
+    return res.redirect(`/api/documents/${document.documentId}/preview`);
 
   } catch (error: any) {
     console.error("❌ [DEBUG] Error:", error);
     return res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+};
+
+// ============================================================================
+// 🗑️ MOVE TO TRASH (DOCUMENTOS) - VERSIÓN CORREGIDA
+// ============================================================================
+export const moveDocumentToTrash = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const documentId = parseInt(req.params.id);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    // 1️⃣ Find the document
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!document) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Documento no encontrado" 
+      });
+    }
+
+    // Fix path if needed
+    let correctPath = document.documentPath;
+    if (!correctPath.includes('/documents/')) {
+      const parts = correctPath.split('/');
+      if (parts.length >= 3) {
+        const userId = parts[1];
+        const filename = parts.slice(2).join('/');
+        correctPath = `uploads/${userId}/documents/${filename}`;
+      }
+    }
+
+    console.log('📄 Moving document to trash:', {
+      documentId: document.documentId,
+      documentPath: document.documentPath,
+      correctPath: correctPath,
+      filename: document.filename,
+      originalFilename: document.originalFilename
+    });
+
+    // 2️⃣ Insert into trash with Prisma transaction
+    await prisma.$transaction(async (tx) => {
+      // Insert into trash
+      await tx.trash.create({
+        data: {
+          userId: document.userId,
+          itemType: 'document',
+          itemId: document.documentId,
+          originalName: document.originalFilename,
+          originalPath: correctPath,
+          fileSize: document.fileSize,
+          mimeType: document.mimeType,
+          metadata: JSON.stringify({
+            title: document.title,
+            category: document.category,
+            tags: document.tags,
+          }),
+          createdAt: new Date(),
+        },
+      });
+
+      // Soft delete document
+      await tx.documents.update({
+        where: { documentId: document.documentId },
+        data: { deletedAt: new Date() },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: "🗑️ Document moved to trash successfully",
+      documentId: documentId,
+    });
+  } catch (error) {
+    console.error("❌ Error moving document to trash:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Internal server error", 
+      error: error instanceof Error ? error.message : String(error)
     });
   }
 };

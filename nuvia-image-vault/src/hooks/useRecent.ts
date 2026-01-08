@@ -1,11 +1,11 @@
 // 📂 UBICACIÓN: frontend/src/hooks/useRecent.ts
-
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// ✅ AÑADIR 'document' al tipo
 interface RecentItem {
   id: number;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'document';
   name: string;
   title: string;
   path: string;
@@ -17,6 +17,11 @@ interface RecentItem {
   accessedAt: string;
   dimensions?: string;
   isFavorite: boolean;
+  // ✅ Propiedades adicionales para documentos
+  category?: string;
+  extension?: string;
+  pageCount?: number;
+  author?: string;
 }
 
 interface RecentStats {
@@ -74,7 +79,29 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
       });
 
       if (response.data.success) {
-        setRecentItems(response.data.data);
+        // ✅ Asegurar que los documentos tengan tipo 'document'
+        const items = response.data.data.map((item: any) => {
+          // Si es un documento, asegurar que el tipo sea 'document'
+          if (item.mimeType && (
+            item.mimeType.includes('pdf') ||
+            item.mimeType.includes('document') ||
+            item.mimeType.includes('word') ||
+            item.mimeType.includes('excel') ||
+            item.mimeType.includes('powerpoint') ||
+            item.mimeType.includes('text/') ||
+            item.mimeType.includes('application/')
+          )) {
+            return {
+              ...item,
+              type: 'document',
+              extension: item.name?.split('.').pop()?.toLowerCase() || 
+                       item.originalFilename?.split('.').pop()?.toLowerCase()
+            };
+          }
+          return item;
+        });
+        
+        setRecentItems(items);
       }
     } catch (err: any) {
       if (err.response?.status === 401) {
@@ -147,6 +174,43 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
     return past.toLocaleDateString('es-ES');
   };
 
+  // ✅ Nueva función: Obtener icono según tipo de archivo
+  const getFileIcon = (type: string, mimeType?: string, extension?: string): string => {
+    if (type === 'image') return '🖼️';
+    if (type === 'video') return '🎬';
+    
+    // Iconos específicos para documentos
+    if (mimeType?.includes('pdf')) return '📕';
+    if (mimeType?.includes('word') || mimeType?.includes('document')) return '📄';
+    if (mimeType?.includes('excel') || mimeType?.includes('spreadsheet')) return '📊';
+    if (mimeType?.includes('powerpoint') || mimeType?.includes('presentation')) return '📑';
+    if (mimeType?.includes('text/')) return '📝';
+    if (mimeType?.includes('zip') || mimeType?.includes('rar') || mimeType?.includes('7z')) return '📦';
+    if (extension === 'pdf') return '📕';
+    if (['doc', 'docx'].includes(extension || '')) return '📄';
+    if (['xls', 'xlsx'].includes(extension || '')) return '📊';
+    if (['ppt', 'pptx'].includes(extension || '')) return '📑';
+    if (['txt', 'md', 'rtf'].includes(extension || '')) return '📝';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension || '')) return '📦';
+    
+    return '📁';
+  };
+
+  // ✅ Nueva función: Obtener nombre del tipo de archivo
+  const getFileTypeName = (type: string, mimeType?: string): string => {
+    if (type === 'image') return 'Imagen';
+    if (type === 'video') return 'Video';
+    
+    if (mimeType?.includes('pdf')) return 'PDF';
+    if (mimeType?.includes('word')) return 'Documento Word';
+    if (mimeType?.includes('excel')) return 'Hoja de cálculo';
+    if (mimeType?.includes('powerpoint')) return 'Presentación';
+    if (mimeType?.includes('text/')) return 'Texto';
+    if (mimeType?.includes('zip')) return 'Archivo comprimido';
+    
+    return 'Documento';
+  };
+
   return {
     recentItems,
     stats,
@@ -154,6 +218,8 @@ export const useRecent = (timeFilter: 'today' | 'week' | 'month' | 'all' = 'week
     error,
     refetch: fetchRecentItems,
     getFileUrl,
-    getRelativeTime
+    getRelativeTime,
+    getFileIcon,
+    getFileTypeName
   };
 };

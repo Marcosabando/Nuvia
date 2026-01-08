@@ -14,8 +14,11 @@ import {
   Trash2,
   Eye,
   X,
+  Play,
+  Calendar,
+  Maximize2,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +27,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { apiService } from "@/services/api.services";
 import { API_CONFIG } from "@/config/api.config";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 
 interface BaseFavorite {
   id: number;
@@ -59,7 +66,10 @@ const Favorites = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FavoriteItem | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [loadingRemove, setLoadingRemove] = useState<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const fetchFavorites = async () => {
@@ -126,34 +136,116 @@ const Favorites = () => {
     fetchFavorites();
   }, []);
 
+  // 🔥 FUNCIÓN CORREGIDA - Usa el método correcto para cada tipo
   const removeFromFavorites = async (item: FavoriteItem) => {
     try {
-      console.log("🗑️ Quitando de favoritos:", item);
+      setLoadingRemove(item.id);
       
-      const endpoint = item.type === 'image' 
-        ? `/images/${item.id}/favorite`
-        : `/videos/${item.id}/favorite`;
+      let endpoint = '';
+      let method = '';
       
-      const response = await apiService.post(endpoint);
+      if (item.type === 'image') {
+        // Para imágenes: POST /images/{id}/favorite
+        endpoint = `/images/${item.id}/favorite`;
+        method = 'POST';
+      } else {
+        // Para videos: PATCH /videos/{id}/favorite
+        endpoint = `/videos/${item.id}/favorite`;
+        method = 'PATCH';
+      }
       
-      if (response.success) {
-        console.log("✅ Favorito removido:", response.data);
+      console.log(`🗑️ Quitando de favoritos:`, { endpoint, method, item });
+      
+      // Usar el apiService si está configurado para diferentes métodos
+      // o usar fetch directamente
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log("✅ Favorito removido:", result);
         
+        // Actualizar estado local
         setFavorites(prev => prev.filter(fav => 
           !(fav.type === item.type && fav.id === item.id)
         ));
         
-        // Cerrar modal si el archivo seleccionado fue removido
+        // Cerrar modal si está abierto
         if (selectedFile && selectedFile.id === item.id && selectedFile.type === item.type) {
-          setIsModalOpen(false);
+          setIsPreviewOpen(false);
           setSelectedFile(null);
         }
+      } else {
+        throw new Error(result.error || result.message || `Error ${response.status}: ${response.statusText}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error removiendo favorito:", error);
+      alert(`Error al quitar de favoritos: ${error.message}`);
+    } finally {
+      setLoadingRemove(null);
     }
   };
 
+  // 🔥 ALTERNATIVA usando apiService (si soporta diferentes métodos)
+  const removeFromFavoritesAlt = async (item: FavoriteItem) => {
+    try {
+      setLoadingRemove(item.id);
+      
+      if (item.type === 'image') {
+        // Usar apiService para POST
+        const response = await apiService.post(`/images/${item.id}/favorite`);
+        if (response.success) {
+          handleSuccessRemoval(item);
+        } else {
+          throw new Error(response.error || 'Error al quitar de favoritos');
+        }
+      } else {
+        // Para videos necesitamos usar PATCH, apiService puede no tenerlo
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`${API_CONFIG.BASE_URL}/videos/${item.id}/favorite`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        const result = await response.json();
+        if (response.ok && result.success) {
+          handleSuccessRemoval(item);
+        } else {
+          throw new Error(result.error || result.message || 'Error al quitar de favoritos');
+        }
+      }
+    } catch (error: any) {
+      console.error("❌ Error removiendo favorito:", error);
+      alert(`Error al quitar de favoritos: ${error.message}`);
+    } finally {
+      setLoadingRemove(null);
+    }
+  };
+
+  const handleSuccessRemoval = (item: FavoriteItem) => {
+    // Actualizar estado local
+    setFavorites(prev => prev.filter(fav => 
+      !(fav.type === item.type && fav.id === item.id)
+    ));
+    
+    // Cerrar modal si está abierto
+    if (selectedFile && selectedFile.id === item.id && selectedFile.type === item.type) {
+      setIsPreviewOpen(false);
+      setSelectedFile(null);
+    }
+  };
+
+  // 🔥 FUNCIÓN para quitar todos los favoritos
   const clearAllFavorites = async () => {
     try {
       if (!confirm("¿Estás seguro de que quieres quitar todos los archivos de favoritos?")) {
@@ -162,40 +254,69 @@ const Favorites = () => {
 
       console.log("🧹 Limpiando todos los favoritos...");
       
-      const promises = favorites.map(fav => {
-        const endpoint = fav.type === 'image' 
-          ? `/images/${fav.id}/favorite`
-          : `/videos/${fav.id}/favorite`;
-        return apiService.post(endpoint);
-      });
-      
-      await Promise.all(promises);
-      
-      setFavorites([]);
-      setIsModalOpen(false);
-      setSelectedFile(null);
+      // Quitar cada favorito uno por uno
+      for (const fav of favorites) {
+        await removeFromFavorites(fav);
+      }
       
       console.log("✅ Todos los favoritos removidos");
     } catch (error) {
       console.error("❌ Error limpiando favoritos:", error);
+      alert("Error al limpiar favoritos");
     }
   };
 
-  const getFileUrl = (item: FavoriteItem): string => {
-    const path = item.type === 'image' 
-      ? (item as FavoriteImage).imagePath 
-      : (item as FavoriteVideo).videoPath;
-    
-    let cleanPath = path;
-    if (path.startsWith("uploads/")) {
-      cleanPath = path.replace("uploads/", "");
+  const buildUploadsUrl = (path?: string | null) => {
+    if (!path) {
+      return '';
     }
+    if (path.startsWith('http')) {
+      return path;
+    }
+
+    const cleanPath = path
+      .replace(/^https?:\/\//, '')
+      .replace(/^[\/]+/, '')
+      .replace(/^uploads[\/]/i, '');
+
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
+  const getFileUrl = (item: FavoriteItem): string => {
+    if (item.type === 'image') {
+      return buildUploadsUrl((item as FavoriteImage).imagePath);
+    } else {
+      return buildUploadsUrl((item as FavoriteVideo).videoPath);
+    }
+  };
+
+  const getThumbnailUrl = (item: FavoriteItem): string => {
+    if (item.thumbnailPath) {
+      return buildUploadsUrl(item.thumbnailPath);
+    }
+    
+    if (item.type === 'image') {
+      return getFileUrl(item);
+    }
+    
+    return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23f3f4f6' width='200' height='200'/%3E%3Cpath d='M80 60L120 80L80 100Z' fill='%239ca3af'/%3E%3Ctext x='50%25' y='85%25' text-anchor='middle' fill='%239ca3af' font-size='12'%3EVideo%3C/text%3E%3C/svg%3E";
+  };
+
+  const getThumbnailUrl = (item: FavoriteItem): string | null => {
+    if (!item.thumbnailPath) return null;
+
+    let cleanPath = item.thumbnailPath;
+    if (cleanPath.startsWith("uploads/")) {
+      cleanPath = cleanPath.replace("uploads/", "");
+    }
+
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
 
   const handleFileClick = (file: FavoriteItem) => {
     setSelectedFile(file);
-    setIsModalOpen(true);
+    setIsPreviewOpen(true);
+    setIsFullscreen(false);
   };
 
   const handleDownload = (file: FavoriteItem) => {
@@ -207,6 +328,31 @@ const Favorites = () => {
     link.click();
     document.body.removeChild(link);
   };
+
+  const handleFullscreen = () => {
+    if (videoRef.current) {
+      if (!document.fullscreenElement) {
+        videoRef.current.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+        setIsFullscreen(true);
+      } else {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 Bytes";
@@ -379,9 +525,19 @@ const Favorites = () => {
               <Button 
                 onClick={clearAllFavorites}
                 className="gap-2 bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white whitespace-nowrap"
+                disabled={loadingRemove !== null}
               >
-                <Heart className="w-4 h-4" />
-                Limpiar Favoritos
+                {loadingRemove !== null ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Procesando...
+                  </>
+                ) : (
+                  <>
+                    <Heart className="w-4 h-4" />
+                    Limpiar Favoritos
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -410,19 +566,35 @@ const Favorites = () => {
                         {/* Archivo */}
                         <div className="col-span-12 sm:col-span-6 lg:col-span-5">
                           <div className="flex items-center gap-3">
-                            {/* Miniatura del mismo tamaño que en Recent (16x16) */}
-                            <div className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
+                            {/* Miniatura - SIEMPRE visible */}
+                            <div 
+                              className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5 cursor-pointer group relative"
+                              onClick={() => handleFileClick(favorite)}
+                            >
+                              {/* Para imágenes: mostrar directamente */}
                               {favorite.type === "image" ? (
                                 <img 
-                                  src={getFileUrl(favorite)} 
+                                  src={getThumbnailUrl(favorite)} 
                                   alt={favorite.originalFilename}
                                   className="w-full h-full object-cover"
                                   loading="lazy"
+                                  onError={(e) => {
+                                    e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect fill='%23f3f4f6' width='64' height='64'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239ca3af' font-size='10'%3EImage%3C/text%3E%3C/svg%3E";
+                                  }}
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                                  <Video className="w-6 h-6 text-nuvia-mauve" />
-                                </div>
+                                getThumbnailUrl(favorite) ? (
+                                  <img
+                                    src={getThumbnailUrl(favorite)!}
+                                    alt={favorite.originalFilename}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
+                                    <Video className="w-6 h-6 text-nuvia-mauve" />
+                                  </div>
+                                )
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -469,7 +641,7 @@ const Favorites = () => {
                             <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl">
                               <DropdownMenuItem onClick={() => handleFileClick(favorite)}>
                                 <Eye className="w-4 h-4 mr-2" />
-                                Ver detalles
+                                Ver {favorite.type === 'image' ? 'imagen' : 'video'}
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDownload(favorite)}>
                                 <Download className="w-4 h-4 mr-2" />
@@ -478,9 +650,19 @@ const Favorites = () => {
                               <DropdownMenuItem 
                                 className="text-red-600"
                                 onClick={() => removeFromFavorites(favorite)}
+                                disabled={loadingRemove === favorite.id}
                               >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Quitar de favoritos
+                                {loadingRemove === favorite.id ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                    Quitando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Quitar de favoritos
+                                  </>
+                                )}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -520,91 +702,166 @@ const Favorites = () => {
         </div>
       </div>
 
-      {/* Modal para ver detalles del archivo - FONDO MORADO CON CONTENIDO BLANCO */}
-      {isModalOpen && selectedFile && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong max-w-2xl w-full max-h-[90vh] overflow-hidden border border-white/20">
-            {/* Header del modal - Fondo morado con texto blanco */}
-            <div className="flex items-center justify-between p-6 border-b border-white/20">
-              <h3 className="text-lg font-semibold text-white truncate">
-                {selectedFile.originalFilename}
-              </h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setSelectedFile(null);
-                }}
-                className="h-8 w-8 hover:bg-white/20 text-white"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-
-            {/* Contenido del modal - Fondo blanco con texto negro */}
-            <div className="bg-white p-6">
-              <div className="flex flex-col items-center space-y-6">
-                {/* Vista previa */}
-                <div className="w-full max-w-md aspect-square rounded-lg overflow-hidden border border-nuvia-silver/30 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
-                  {selectedFile.type === "image" ? (
-                    <img
-                      src={getFileUrl(selectedFile)}
-                      alt={selectedFile.originalFilename}
-                      className="w-full h-full object-contain"
-                    />
+      {/* Modal unificado para vista previa */}
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className={`${isFullscreen ? 'max-w-full w-full h-full' : 'max-w-7xl w-[95vw]'} max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-hidden ${isFullscreen ? 'h-full' : ''}`}>
+          {selectedFile && (
+            <div className={`flex flex-col h-full ${isFullscreen ? 'bg-black' : ''}`}>
+              {/* Header */}
+              <div className={`p-4 border-b ${isFullscreen ? 'border-white/20 bg-black/80' : 'border-nuvia-silver/30 bg-white/95'} backdrop-blur-sm flex items-center justify-between ${isFullscreen ? 'text-white' : ''}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  {selectedFile.type === 'image' ? (
+                    <Image className={`w-5 h-5 ${isFullscreen ? 'text-white' : 'text-nuvia-mauve'} flex-shrink-0`} />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                      <Video className="w-16 h-16 text-nuvia-mauve" />
-                    </div>
+                    <Video className={`w-5 h-5 ${isFullscreen ? 'text-white' : 'text-nuvia-mauve'} flex-shrink-0`} />
                   )}
+                  <h3 className={`text-lg font-semibold truncate ${isFullscreen ? 'text-white' : 'text-nuvia-deep'}`}>
+                    {selectedFile.originalFilename}
+                  </h3>
                 </div>
-
-                {/* Información del archivo - Fondo blanco con texto negro */}
-                <div className="w-full space-y-3">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-nuvia-mauve font-medium">Tamaño</p>
-                      <p className="text-nuvia-deep">{formatFileSize(selectedFile.fileSize)}</p>
-                    </div>
-                    <div>
-                      <p className="text-nuvia-mauve font-medium">Tipo</p>
-                      <p className="text-nuvia-deep capitalize">{selectedFile.type}</p>
-                    </div>
-                    <div>
-                      <p className="text-nuvia-mauve font-medium">Agregado</p>
-                      <p className="text-nuvia-deep">{formatDate(selectedFile.createdAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-nuvia-mauve font-medium">Formato</p>
-                      <p className="text-nuvia-deep">{selectedFile.mimeType}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Acciones del modal */}
-                <div className="flex gap-3 w-full justify-center">
+                <div className="flex items-center gap-2">
+                  {selectedFile.type === 'video' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleFullscreen}
+                      className={`h-8 w-8 ${isFullscreen ? 'hover:bg-white/20 text-white' : 'hover:bg-nuvia-peach/20'}`}
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button
-                    onClick={() => handleDownload(selectedFile)}
-                    className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsPreviewOpen(false)}
+                    className={`h-8 w-8 ${isFullscreen ? 'hover:bg-white/20 text-white' : 'hover:bg-nuvia-peach/20'}`}
                   >
-                    <Download className="w-4 h-4" />
-                    Descargar
-                  </Button>
-                  <Button
-                    onClick={() => removeFromFavorites(selectedFile)}
-                    variant="outline"
-                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Quitar de favoritos
+                    <X className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
+
+              {/* Contenido principal */}
+              <div className={`flex-1 flex flex-col md:flex-row overflow-hidden ${isFullscreen ? 'bg-black' : ''}`}>
+                {/* Vista previa - TOMA TODO EL ESPACIO DISPONIBLE */}
+                <div className={`flex-1 flex items-center justify-center p-4 ${isFullscreen ? 'bg-black' : 'bg-gradient-to-br from-white/50 to-nuvia-silver/20'}`}>
+                  {selectedFile.type === "image" ? (
+                    <div className={`w-full h-full flex items-center justify-center ${isFullscreen ? 'bg-black' : ''}`}>
+                      <img
+                        src={getFileUrl(selectedFile)}
+                        alt={selectedFile.originalFilename}
+                        className={`${isFullscreen ? 'max-h-[85vh]' : 'max-h-[65vh]'} w-auto max-w-full object-contain rounded-lg ${isFullscreen ? '' : 'shadow-xl'}`}
+                        style={{ maxHeight: isFullscreen ? '85vh' : '65vh' }}
+                      />
+                    </div>
+                  ) : (
+                    <video
+                      src={getFileUrl(selectedFile)}
+                      controls
+                      preload="metadata"
+                      poster={getThumbnailUrl(selectedFile) || undefined}
+                      className="w-full h-full object-contain"
+                    />
+                  )}
+                </div>
+
+                {/* Panel de información - SOLO en modo normal (no fullscreen) */}
+                {!isFullscreen && (
+                  <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm overflow-y-auto">
+                    <div className="p-4 space-y-4">
+                      {/* Información básica */}
+                      <div>
+                        <h4 className="font-semibold text-nuvia-deep mb-3">Información del archivo</h4>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-nuvia-mauve/70 flex items-center gap-1">
+                              {selectedFile.type === 'image' ? (
+                                <Image className="w-3 h-3" />
+                              ) : (
+                                <Video className="w-3 h-3" />
+                              )}
+                              Tipo
+                            </span>
+                            <span className="text-nuvia-deep font-medium capitalize">{selectedFile.type}</span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-nuvia-mauve/70 flex items-center gap-1">
+                              <FileText className="w-3 h-3" />
+                              Tamaño
+                            </span>
+                            <span className="text-nuvia-deep font-medium">{formatFileSize(selectedFile.fileSize)}</span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-nuvia-mauve/70 flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              Agregado
+                            </span>
+                            <span className="text-nuvia-deep font-medium">{formatDate(selectedFile.createdAt)}</span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-nuvia-mauve/70">Formato</span>
+                            <span className="text-nuvia-deep font-medium">{selectedFile.mimeType}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Estado */}
+                      <div>
+                        <h4 className="font-semibold text-nuvia-deep mb-3">Estado</h4>
+                        <div className="flex items-center gap-2">
+                          <div className={`px-3 py-1.5 rounded-full text-sm font-medium ${selectedFile.isFavorite ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-gray-50 text-gray-600 border border-gray-200'}`}>
+                            <Heart className={`w-3 h-3 inline mr-1.5 ${selectedFile.isFavorite ? 'fill-current' : ''}`} />
+                            {selectedFile.isFavorite ? 'En favoritos' : 'No en favoritos'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Acciones */}
+                      <div>
+                        <h4 className="font-semibold text-nuvia-deep mb-3">Acciones</h4>
+                        <div className="space-y-2">
+                          <Button
+                            onClick={() => handleDownload(selectedFile)}
+                            className="w-full justify-start gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white hover:shadow-nuvia-glow"
+                          >
+                            <Download className="w-4 h-4" />
+                            Descargar archivo
+                          </Button>
+                          
+                          <Button
+                            onClick={() => {
+                              setIsPreviewOpen(false);
+                              removeFromFavorites(selectedFile);
+                            }}
+                            variant="outline"
+                            className="w-full justify-start gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                            disabled={loadingRemove === selectedFile.id}
+                          >
+                            {loadingRemove === selectedFile.id ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                Quitando...
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 className="w-4 h-4" />
+                                Quitar de favoritos
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
