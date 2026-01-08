@@ -875,155 +875,92 @@ export const downloadDocument = async (req: Request, res: Response) => {
 // ============================================================================
 export const previewDocument = async (req: Request, res: Response) => {
   try {
-    console.log('[DOC_PREVIEW_REQ]', {
-      method: req.method,
-      url: req.originalUrl,
-      path: req.path,
-      origin: req.headers.origin,
-      referer: req.headers.referer,
-      host: req.headers.host,
-      range: req.headers.range,
-      secFetchDest: req.headers['sec-fetch-dest'],
-      secFetchMode: req.headers['sec-fetch-mode'],
-      secFetchSite: req.headers['sec-fetch-site'],
-      userAgent: req.headers['user-agent'],
-      hasQueryToken: typeof req.query.token === 'string',
-      hasAuthHeader: Boolean(req.headers.authorization),
-    });
-
-    // SOPORTAR TOKEN EN QUERY PARAM (para <object>/<iframe> en frontend)
+    console.log('[PREVIEW] Iniciando...');
+    
+    // Autenticación
     let userId = req.user?.userId;
     if (!userId && req.query.token) {
       try {
         const decoded = jwt.verify(req.query.token as string, jwtSecret) as any;
         userId = decoded.userId;
-        console.log('[DOC_PREVIEW_AUTH]', { tokenSource: 'query', userId });
       } catch (err) {
-        console.log('[DOC_PREVIEW_AUTH_FAIL]', { tokenSource: 'query' });
-        return res.status(401).json({
-          success: false,
-          error: "Token inválido"
-        });
+        return res.status(401).json({ error: "Token inválido" });
       }
     }
-    
-    if (userId) {
-      console.log('[DOC_PREVIEW_AUTH]', { tokenSource: req.user?.userId ? 'header' : 'query', userId });
-    }
-    
-    const documentId = parseInt(req.params.id);
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: "Usuario no autenticado"
-      });
+      return res.status(401).json({ error: "No autenticado" });
     }
 
+    const documentId = parseInt(req.params.id);
     const document = await prisma.documents.findFirst({
-      where: {
-        documentId: documentId,
-        userId: userId,
-        deletedAt: null,
-      },
+      where: { documentId, userId, deletedAt: null }
     });
 
     if (!document) {
-      return res.status(404).json({
-        success: false,
-        error: "Documento no encontrado"
+      return res.status(404).json({ error: "Documento no encontrado" });
+    }
+
+    // Construir ruta
+    let filePath = document.documentPath;
+    
+    // Asegurar que tenga el prefijo correcto
+    if (!filePath.includes('uploads/')) {
+      filePath = path.join('uploads', filePath);
+    }
+    
+    const absolutePath = path.join(process.cwd(), filePath);
+    console.log('[PREVIEW] Ruta absoluta:', absolutePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      console.error('[PREVIEW] Archivo no existe:', absolutePath);
+      return res.status(404).json({ error: "Archivo no encontrado" });
+    }
+
+    // Leer archivo completo en memoria para verificar
+    const fileBuffer = fs.readFileSync(absolutePath);
+    const fileSize = fileBuffer.length;
+    
+    console.log('[PREVIEW] Tamaño real del archivo:', fileSize, 'bytes');
+    console.log('[PREVIEW] Primeros bytes:', fileBuffer.slice(0, 10).toString('hex'));
+    
+    // Verificar que sea un PDF
+    const isPdf = fileBuffer.slice(0, 4).toString() === '%PDF';
+    if (!isPdf) {
+      console.error('[PREVIEW] No es un PDF válido. Cabecera:', fileBuffer.slice(0, 20).toString());
+      return res.status(400).json({ 
+        error: "El archivo no es un PDF válido",
+        debug: { header: fileBuffer.slice(0, 20).toString('hex') }
       });
     }
 
-    const safeRelativePath = normalizeUploadRelativePath(document.documentPath);
-    if (!safeRelativePath) {
-      return res.status(400).json({
-        success: false,
-        error: "Ruta de documento inválida",
-      });
-    }
-
-    const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
-    console.log('📂 [PREVIEW] Ruta completa:', filePath);
-
-    console.log('[DOC_PREVIEW_FILE]', {
-      exists: fs.existsSync(filePath),
-      documentId,
-      userId,
-      relativePath: safeRelativePath,
-    });
-
-    if (!fs.existsSync(filePath)) {
-      console.error('❌ [PREVIEW] Archivo no existe:', filePath);
-      return res.status(404).json({
-        success: false,
-        error: "Archivo no encontrado en el servidor"
-      });
-    }
-
-    const mimeType: string = document.mimeType;
-
-    // Headers para permitir uso en <object>/<embed> desde el frontend
+    // 🔴 IMPORTANTE: IGNORAR COMPLETAMENTE LAS SOLICITUDES DE RANGO
+    // Establecer headers para PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.originalFilename)}"`);
+    res.setHeader('Content-Length', fileSize.toString());
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    // 🔴 CRÍTICO: NO enviar headers de rango
+    res.removeHeader('Accept-Ranges');
+    res.removeHeader('Content-Range');
+    
+    // Permitir CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.removeHeader('X-Frame-Options');
-    res.setHeader(
-      'Content-Security-Policy',
-      "frame-ancestors 'self' http://localhost:3000 http://localhost:5173 http://localhost:5174 http://localhost:4173 http://localhost:8080 http://127.0.0.1:3000 http://127.0.0.1:5173 http://127.0.0.1:5174 http://127.0.0.1:4173 http://127.0.0.1:8080"
-    );
-    res.setHeader('Accept-Ranges', 'bytes');
-
-    console.log('[DOC_PREVIEW_RES_HEADERS]', {
-      contentSecurityPolicy: res.getHeader('Content-Security-Policy'),
-      xFrameOptions: res.getHeader('X-Frame-Options'),
-      crossOriginResourcePolicy: res.getHeader('Cross-Origin-Resource-Policy'),
-      accessControlAllowOrigin: res.getHeader('Access-Control-Allow-Origin'),
-    });
-
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-
-    // Soporte Range (clave para PDF embebido)
-    const range = req.headers.range;
-    if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (!match) {
-        return res.status(416).send('Range Not Satisfiable');
-      }
-
-      const start = match[1] ? parseInt(match[1], 10) : 0;
-      const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-
-      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= fileSize) {
-        res.setHeader('Content-Range', `bytes */${fileSize}`);
-        return res.status(416).send('Range Not Satisfiable');
-      }
-
-      const chunkSize = end - start + 1;
-      res.status(206);
-      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-      res.setHeader('Content-Length', chunkSize.toString());
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Content-Disposition', 'inline');
-
-      const fileStream = fs.createReadStream(filePath, { start, end });
-      return fileStream.pipe(res);
-    }
-
-    // Sin Range: enviar completo
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', 'inline');
-    res.setHeader('Content-Length', fileSize.toString());
-    const fileStream = fs.createReadStream(filePath);
-    return fileStream.pipe(res);
+    
+    // Enviar archivo completo
+    console.log('[PREVIEW] Enviando archivo completo de', fileSize, 'bytes');
+    res.send(fileBuffer);
+    
+    console.log('[PREVIEW] Archivo enviado exitosamente');
 
   } catch (error: any) {
-    console.error("❌ [PREVIEW] Error:", error.message);
-    return res.status(500).json({
-      success: false,
-      error: "Error al previsualizar el documento"
-    });
+    console.error('[PREVIEW] Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Error interno del servidor" });
+    }
   }
 };
 
