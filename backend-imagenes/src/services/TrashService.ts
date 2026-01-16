@@ -7,10 +7,6 @@ import fs from "fs/promises";
 // 📋 GET TRASH ITEMS
 // ============================================================================
 
-/**
- * Get all trash items for user
- * GET /api/trash
- */
 export const getTrashItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -21,7 +17,6 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
 
     const prisma = new PrismaClient();
 
-    // Build where clause
     const whereClause: any = {
       userId: userId
     };
@@ -30,7 +25,6 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
       whereClause.itemType = itemType;
     }
 
-    // Get items with pagination
     const items = await prisma.trash.findMany({
       where: whereClause,
       orderBy: {
@@ -40,7 +34,6 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
       take: limit
     });
 
-    // Count total
     const total = await prisma.trash.count({
       where: whereClause
     });
@@ -58,7 +51,6 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
       },
     });
   } catch (error) {
-    console.error("Error getting trash items:", error);
     res.status(500).json({
       success: false,
       error: "Error getting trash items",
@@ -66,28 +58,21 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-/**
- * Get trash statistics
- * GET /api/trash/stats
- */
 export const getTrashStats = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
 
     const prisma = new PrismaClient();
 
-    // Get all trash items for user
     const trashItems = await prisma.trash.findMany({
       where: { userId: userId }
     });
 
-    // Calculate stats
     const totalItems = trashItems.length;
     const totalSize = trashItems.reduce((sum: number, item: any) => sum + Number(item.fileSize), 0);
     const totalImages = trashItems.filter((item: any) => item.itemType === 'image').length;
     const totalVideos = trashItems.filter((item: any) => item.itemType === 'video').length;
     
-    // Calculate expiring soon (within 7 days)
     const now = new Date();
     const weekFromNow = new Date();
     weekFromNow.setDate(weekFromNow.getDate() + 7);
@@ -111,7 +96,6 @@ export const getTrashStats = async (req: Request, res: Response): Promise<void> 
       },
     });
   } catch (error) {
-    console.error("Error getting trash stats:", error);
     res.status(500).json({
       success: false,
       error: "Error getting trash statistics",
@@ -122,9 +106,7 @@ export const getTrashStats = async (req: Request, res: Response): Promise<void> 
 // ============================================================================
 // 🛠️ HELPER FUNCTIONS
 // ============================================================================
-/**
- * Helper: Move item to trash
- */
+
 const moveToTrash = async (
   prisma: PrismaClient,
   userId: number,
@@ -133,7 +115,6 @@ const moveToTrash = async (
   type: "image" | "video"
 ): Promise<void> => {
   try {
-    // Get item info based on type
     let item: any;
     let originalPath: string;
     let originalFilename: string;
@@ -169,18 +150,11 @@ const moveToTrash = async (
       originalPath = item.videoPath;
       originalFilename = item.originalFilename || item.filename;
     }
-
-    console.log(`📁 Path original de BD para ${type}:`, originalPath);
     
-    // Si ya tiene el formato correcto (uploads/userId/type/filename), usarlo directamente
-    // Si no, construirlo
     if (!originalPath.startsWith('uploads/')) {
       originalPath = `uploads/${userId}/${type}s/${item.filename}`;
     }
 
-    console.log(`✅ Path final guardado en trash para ${type}:`, originalPath);
-
-    // Build metadata based on type
     const metadata = type === "image"
       ? { 
           width: item.width, 
@@ -197,13 +171,10 @@ const moveToTrash = async (
           codec: item.codec
         };
 
-    // Calculate permanent delete date (30 days from now)
     const permanentDeleteAt = new Date();
     permanentDeleteAt.setDate(permanentDeleteAt.getDate() + 30);
 
-    // Start transaction
     await prisma.$transaction(async (tx: any) => {
-      // Mark as deleted in original table
       if (type === "image") {
         await tx.images.update({
           where: { imageId: id },
@@ -216,7 +187,6 @@ const moveToTrash = async (
         });
       }
 
-      // Insert into trash
       await tx.trash.create({
         data: {
           userId: userId,
@@ -232,21 +202,11 @@ const moveToTrash = async (
         }
       });
     });
-
-    console.log(`✅ ${type} movido a trash correctamente:`, {
-      itemId: id,
-      originalName: originalFilename,
-      savedPath: originalPath
-    });
   } catch (error) {
-    console.error(`Error moving ${type} to trash:`, error);
     throw error;
   }
 };
 
-/**
- * Helper: Restore item from trash
- */
 const restoreFromTrash = async (
   prisma: PrismaClient,
   userId: number,
@@ -254,7 +214,6 @@ const restoreFromTrash = async (
   itemId: number
 ): Promise<void> => {
   await prisma.$transaction(async (tx: any) => {
-    // Restore in original table
     if (itemType === "image") {
       await tx.images.update({
         where: { imageId: itemId },
@@ -267,7 +226,6 @@ const restoreFromTrash = async (
       });
     }
 
-    // Remove from trash
     await tx.trash.deleteMany({
       where: {
         itemType: itemType,
@@ -278,14 +236,9 @@ const restoreFromTrash = async (
   });
 };
 
-/**
- * Helper: Delete trash item permanently
- */
 const deleteTrashItem = async (prisma: PrismaClient, item: any): Promise<void> => {
   try {
-    // Start transaction
     await prisma.$transaction(async (tx: any) => {
-      // Delete from original table
       if (item.itemType === "image") {
         await tx.images.delete({
           where: { imageId: item.itemId }
@@ -296,21 +249,15 @@ const deleteTrashItem = async (prisma: PrismaClient, item: any): Promise<void> =
         });
       }
 
-      // Delete from trash
       await tx.trash.delete({
         where: { trashId: item.trashId }
       });
     });
 
-    // Delete physical file
     try {
       await fs.unlink(item.originalPath);
-      console.log(`✅ Archivo eliminado: ${item.originalPath}`);
-    } catch (err) {
-      console.warn(`⚠️ No se pudo eliminar archivo: ${item.originalPath}`, err);
-    }
+    } catch (err) {}
   } catch (error) {
-    console.error("Error deleting trash item:", error);
     throw error;
   }
 };
@@ -319,10 +266,6 @@ const deleteTrashItem = async (prisma: PrismaClient, item: any): Promise<void> =
 // 🗑️ SOFT DELETE (TRASH) - IMAGES & VIDEOS
 // ============================================================================
 
-/**
- * Move image to trash (soft delete)
- * DELETE /api/images/:id
- */
 export const softDeleteImage = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -338,7 +281,6 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
       data: { imageId },
     });
   } catch (error) {
-    console.error("Error moving image to trash:", error);
     res.status(500).json({
       success: false,
       error: "Error moving image to trash",
@@ -347,10 +289,6 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
   }
 };
 
-/**
- * Move video to trash (soft delete)
- * DELETE /api/videos/:id
- */
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -366,7 +304,6 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       data: { videoId },
     });
   } catch (error) {
-    console.error("Error moving video to trash:", error);
     res.status(500).json({
       success: false,
       error: "Error moving video to trash",
@@ -379,10 +316,6 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
 // ♻️ RESTORE ITEMS
 // ============================================================================
 
-/**
- * Restore item from trash (general)
- * POST /api/trash/:id/restore
- */
 export const restoreItem = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -390,7 +323,6 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
 
     const prisma = new PrismaClient();
 
-    // Get trash item
     const trashItem = await prisma.trash.findFirst({
       where: {
         trashId: trashId,
@@ -407,7 +339,6 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Restore based on type
     await restoreFromTrash(prisma, userId, trashItem.itemType as "image" | "video", trashItem.itemId);
     await prisma.$disconnect();
 
@@ -421,7 +352,6 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
       },
     });
   } catch (error) {
-    console.error("Error restoring item:", error);
     res.status(500).json({
       success: false,
       error: "Error restoring item",
@@ -430,11 +360,6 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-/**
- * Restore multiple items
- * POST /api/trash/restore-multiple
- * Body: { ids: number[] }
- */
 export const restoreMultipleItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -450,7 +375,6 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
 
     const prisma = new PrismaClient();
 
-    // Get all trash items
     const trashItems = await prisma.trash.findMany({
       where: {
         trashId: { in: ids },
@@ -460,15 +384,11 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
 
     let restoredCount = 0;
 
-    // Restore each item
     for (const item of trashItems) {
       try {
         await restoreFromTrash(prisma, userId, item.itemType as "image" | "video", item.itemId);
         restoredCount++;
-      } catch (error) {
-        console.error(`Error restoring item ${item.trashId}:`, error);
-        // Continue with other items
-      }
+      } catch (error) {}
     }
 
     await prisma.$disconnect();
@@ -479,7 +399,6 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
       data: { restoredCount },
     });
   } catch (error) {
-    console.error("Error restoring multiple items:", error);
     res.status(500).json({
       success: false,
       error: "Error restoring items",
@@ -491,10 +410,6 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
 // 🔥 PERMANENT DELETE
 // ============================================================================
 
-/**
- * Delete item permanently (general)
- * DELETE /api/trash/:id
- */
 export const deleteItemPermanently = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -502,7 +417,6 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
 
     const prisma = new PrismaClient();
 
-    // Get trash item
     const trashItem = await prisma.trash.findFirst({
       where: {
         trashId: trashId,
@@ -519,7 +433,6 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Delete permanently
     await deleteTrashItem(prisma, trashItem);
     await prisma.$disconnect();
 
@@ -528,7 +441,6 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
       message: `${trashItem.itemType} permanently deleted`,
     });
   } catch (error) {
-    console.error("Error permanently deleting item:", error);
     res.status(500).json({
       success: false,
       error: "Error permanently deleting item",
@@ -536,17 +448,12 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
   }
 };
 
-/**
- * Empty trash (delete all items)
- * DELETE /api/trash/empty
- */
 export const emptyTrash = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
 
     const prisma = new PrismaClient();
 
-    // Get all trash items
     const trashItems = await prisma.trash.findMany({
       where: { userId: userId }
     });
@@ -561,17 +468,12 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Delete all items
     for (const item of trashItems) {
       try {
         await deleteTrashItem(prisma, item);
-      } catch (error) {
-        console.error(`Error deleting item ${item.trashId}:`, error);
-        // Continue with other items
-      }
+      } catch (error) {}
     }
 
-    // Clear trash table (though items should already be deleted one by one)
     await prisma.trash.deleteMany({
       where: { userId: userId }
     });
@@ -584,7 +486,6 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
       data: { deletedCount: trashItems.length },
     });
   } catch (error) {
-    console.error("Error emptying trash:", error);
     res.status(500).json({
       success: false,
       error: "Error emptying trash",
@@ -596,16 +497,10 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
 // 🧹 CLEANUP EXPIRED ITEMS (Automatic)
 // ============================================================================
 
-/**
- * Clean expired trash items (for cron job)
- */
 export const cleanExpiredTrash = async (): Promise<void> => {
   try {
-    console.log("🧹 Iniciando limpieza de papelera...");
-
     const prisma = new PrismaClient();
 
-    // Get expired items (permanentDeleteAt <= NOW)
     const expiredItems = await prisma.trash.findMany({
       where: {
         permanentDeleteAt: {
@@ -615,24 +510,16 @@ export const cleanExpiredTrash = async (): Promise<void> => {
     });
 
     if (expiredItems.length === 0) {
-      console.log("✅ No hay elementos expirados en la papelera.");
       await prisma.$disconnect();
       return;
     }
 
-    console.log(`🗑️ Eliminando ${expiredItems.length} elementos expirados...`);
-
-    // Delete all expired items
     for (const item of expiredItems) {
       try {
         await deleteTrashItem(prisma, item);
-      } catch (error) {
-        console.error(`Error eliminando item expirado ${item.trashId}:`, error);
-        // Continue with other items
-      }
+      } catch (error) {}
     }
 
-    // Remove expired items from trash (they should already be deleted)
     await prisma.trash.deleteMany({
       where: {
         permanentDeleteAt: {
@@ -642,9 +529,7 @@ export const cleanExpiredTrash = async (): Promise<void> => {
     });
 
     await prisma.$disconnect();
-    console.log(`✅ Limpieza completada. ${expiredItems.length} elementos eliminados.`);
   } catch (error) {
-    console.error("❌ Error durante la limpieza de papelera:", error);
     throw error;
   }
 };

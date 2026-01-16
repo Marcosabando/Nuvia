@@ -1,4 +1,4 @@
-// src/services/VideoService.ts - VERSIÓN COMPLETA CORREGIDA
+// src/services/VideoService.ts - VERSIÓN LIMPIA
 import { Request, Response } from "express";
 import prisma from '../lib/prisma';
 import path from "path";
@@ -49,7 +49,6 @@ const extractVideoMetadata = async (filePath: string): Promise<VideoMetadata> =>
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (error: Error | null, data: FfprobeData) => {
       if (error) {
-        console.error('Error obteniendo metadata de video:', error);
         return resolve({});
       }
 
@@ -86,8 +85,7 @@ const generateVideoThumbnail = async (userId: number, sourcePath: string, filena
 
   return new Promise((resolve) => {
     ffmpeg(sourcePath)
-      .on('error', (error: Error) => {
-        console.error('Error generando thumbnail de video:', error);
+      .on('error', () => {
         resolve(null);
       })
       .on('end', () => {
@@ -139,8 +137,8 @@ export const uploadVideo = async (req: Request, res: Response): Promise<void> =>
     let thumbnailPath: string | null = null;
     try {
       thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
-    } catch (thumbnailError) {
-      console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+    } catch {
+      // Silently fail thumbnail generation
     }
 
     const video = await prisma.videos.create({
@@ -215,8 +213,8 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
       let thumbnailPath: string | null = null;
       try {
         thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
-      } catch (thumbnailError) {
-        console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+      } catch {
+        // Silently fail thumbnail generation
       }
 
       const video = await prisma.videos.create({
@@ -467,7 +465,7 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
       try {
         await fs.unlink(absoluteVideoPath);
       } catch (fsError) {
-        console.error("Error deleting video file:", fsError);
+        // Silently fail file deletion
       }
     }
 
@@ -476,8 +474,8 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
       if (absoluteThumbnailPath) {
         try {
           await fs.unlink(absoluteThumbnailPath);
-        } catch (fsError) {
-          console.error("Error deleting thumbnail file:", fsError);
+        } catch {
+          // Silently fail thumbnail deletion
         }
       }
     }
@@ -495,7 +493,7 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-// ✅ Soft delete (move to trash) - VERSIÓN CORREGIDA
+// ✅ Soft delete (move to trash)
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -543,7 +541,6 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       codec: video.codec
     };
 
-    // ✅ TRANSACCIÓN CORREGIDA
     await prisma.$transaction(async (tx) => {
       await tx.videos.update({
         where: { videoId: videoId },
@@ -757,7 +754,7 @@ export const updateVideoDescription = async (req: Request, res: Response): Promi
   }
 };
 
-// ✅ Update video metadata (duration, resolution, fps, etc.)
+// ✅ Update video metadata
 export const updateVideoMetadata = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;

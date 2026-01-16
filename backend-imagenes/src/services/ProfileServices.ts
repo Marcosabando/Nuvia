@@ -8,7 +8,6 @@ import fs from 'fs';
 // HELPER FUNCTIONS
 // ============================================================================
 
-// Convertir BigInt a Number de forma segura
 const safeBigIntToNumber = (value: bigint | null | undefined): number => {
   if (value === null || value === undefined) return 0;
   return Number(value);
@@ -20,7 +19,6 @@ const safeBigIntToNumber = (value: bigint | null | undefined): number => {
 
 export const getUserProfile = async (req: Request, res: Response) => {
   try {
-    // ✅ Usar el tipo correcto
     const userId = req.user?.userId;
     
     if (!userId) {
@@ -30,7 +28,6 @@ export const getUserProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener datos básicos del usuario (SIN los campos que no existen)
     const user = await prisma.users.findFirst({
       where: {
         userId: userId,
@@ -46,8 +43,8 @@ export const getUserProfile = async (req: Request, res: Response) => {
         role: true,
         status: true,
         emailVerified: true,
-        storageUsed: true, // ✅ Existe en tu schema
-        storageLimit: true, // ✅ Existe en tu schema
+        storageUsed: true,
+        storageLimit: true,
         createdAt: true,
         lastLogin: true,
         updatedAt: true
@@ -61,7 +58,6 @@ export const getUserProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Calcular estadísticas en tiempo real (porque no existen en el modelo)
     const [imageCount, videoCount, albumCount, documentCount] = await Promise.all([
       prisma.images.count({
         where: { 
@@ -91,22 +87,17 @@ export const getUserProfile = async (req: Request, res: Response) => {
 
     const totalMediaCount = imageCount + videoCount + documentCount;
     
-    // ✅ Convertir BigInt a Number de forma segura
     const storageUsed = safeBigIntToNumber(user.storageUsed);
     const storageLimit = safeBigIntToNumber(user.storageLimit);
     
-    // ✅ Calcular porcentaje (con verificación de null)
     const storagePercentage = storageLimit > 0 
       ? Math.round((storageUsed / storageLimit) * 100)
       : 0;
 
-    // ✅ Construir respuesta con todos los datos
     const userProfile = {
       ...user,
-      // Convertir storage a Number
       storageUsed: storageUsed,
       storageLimit: storageLimit,
-      // Añadir estadísticas calculadas
       imageCount,
       videoCount,
       albumCount,
@@ -123,7 +114,6 @@ export const getUserProfile = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error obteniendo perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al obtener perfil del usuario'
@@ -146,7 +136,6 @@ export const getUserStats = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener perfil básico
     const user = await prisma.users.findFirst({
       where: {
         userId: userId,
@@ -176,7 +165,6 @@ export const getUserStats = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener TODAS las estadísticas de forma paralela
     const [
       imageCount,
       videoCount,
@@ -239,21 +227,17 @@ export const getUserStats = async (req: Request, res: Response) => {
 
     const totalMediaCount = imageCount + videoCount + documentCount;
     
-    // ✅ Convertir BigInt a Number de forma segura
     const storageUsed = safeBigIntToNumber(user.storageUsed);
     const storageLimit = safeBigIntToNumber(user.storageLimit);
     
-    // ✅ Calcular porcentaje (con verificación de null)
     const storagePercentage = storageLimit > 0 
       ? Math.round((storageUsed / storageLimit) * 100)
       : 0;
 
     const stats = {
       ...user,
-      // Convertir storage a Number
       storageUsed: storageUsed,
       storageLimit: storageLimit,
-      // Añadir estadísticas calculadas
       imageCount,
       videoCount,
       albumCount,
@@ -273,7 +257,6 @@ export const getUserStats = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error obteniendo estadísticas:', error);
     res.status(500).json({
       success: false,
       error: 'Error al obtener estadísticas del usuario'
@@ -303,10 +286,8 @@ export const updateProfileImage = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Ruta correcta para la imagen de perfil
     const profileImagePath = `/uploads/${userId}/profile/${req.file.filename}`;
     
-    // Obtener imagen anterior para eliminarla
     const user = await prisma.users.findFirst({
       where: { userId: userId },
       select: { profileImagePath: true }
@@ -314,7 +295,6 @@ export const updateProfileImage = async (req: Request, res: Response) => {
     
     const oldImagePath = user?.profileImagePath;
     
-    // Actualizar en la base de datos
     await prisma.users.update({
       where: { userId: userId },
       data: {
@@ -323,7 +303,6 @@ export const updateProfileImage = async (req: Request, res: Response) => {
       }
     });
 
-    // Eliminar imagen anterior si existe y no es la por defecto
     if (oldImagePath && !oldImagePath.includes('default-avatar')) {
       const fullOldPath = path.join(process.cwd(), 'public', oldImagePath);
       if (fs.existsSync(fullOldPath)) {
@@ -338,7 +317,6 @@ export const updateProfileImage = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando imagen de perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar imagen de perfil'
@@ -362,7 +340,6 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si el username o email ya existen (excluyendo al usuario actual)
     if (username || email) {
       const whereConditions: any[] = [];
       if (username) whereConditions.push({ username: username });
@@ -384,7 +361,6 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       }
     }
 
-    // Construir datos de actualización
     const updateData: any = {
       updatedAt: new Date()
     };
@@ -401,7 +377,6 @@ export const updateUserProfile = async (req: Request, res: Response) => {
       });
     }
 
-    // Actualizar usuario
     const updatedUser = await prisma.users.update({
       where: { userId: userId },
       data: updateData,
@@ -427,7 +402,6 @@ export const updateUserProfile = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando perfil:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar perfil'
@@ -450,7 +424,6 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener la imagen de perfil actual
     const user = await prisma.users.findFirst({
       where: { 
         userId: userId,
@@ -470,7 +443,6 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si es la imagen por defecto
     if (user.profileImagePath.includes('default-avatar')) {
       return res.status(400).json({
         success: false,
@@ -478,7 +450,6 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Extraer información del archivo
     const fullPath = path.join(process.cwd(), 'public', user.profileImagePath);
     let fileSize = 0;
     
@@ -487,20 +458,16 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
       fileSize = stats.size;
     }
 
-    // ✅ Usar itemType válido: 'image' (no 'profile_image')
-    // ✅ Asegurar que profileImagePath no sea null
     const originalPath = user.profileImagePath || '';
     
-    // Usar transacción para mover a la papelera y actualizar perfil
     await prisma.$transaction(async (tx) => {
-      // Insertar en trash con itemType válido
       await tx.trash.create({
         data: {
           userId: user.userId,
-          itemType: 'image', // ✅ VALOR VÁLIDO
-          itemId: user.userId, // Usamos el userId como itemId para imágenes de perfil
+          itemType: 'image',
+          itemId: user.userId,
           originalName: `${user.username}-profile-image`,
-          originalPath: originalPath, // ✅ Asegurar que no sea null
+          originalPath: originalPath,
           fileSize: BigInt(fileSize),
           mimeType: 'image/jpeg',
           metadata: JSON.stringify({
@@ -512,12 +479,10 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
         },
       });
 
-      // Eliminar archivo físico si existe
       if (fs.existsSync(fullPath)) {
         fs.unlinkSync(fullPath);
       }
 
-      // Actualizar perfil con imagen por defecto
       await tx.users.update({
         where: { userId: user.userId },
         data: { 
@@ -536,7 +501,6 @@ export const moveProfileImageToTrash = async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Error moviendo imagen de perfil a la papelera:', error);
     res.status(500).json({
       success: false,
       error: 'Error al eliminar imagen de perfil'
@@ -567,7 +531,6 @@ export const updateUsername = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si el username ya existe
     const existingUser = await prisma.users.findFirst({
       where: {
         username: username,
@@ -601,7 +564,6 @@ export const updateUsername = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando username:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar nombre de usuario'
@@ -639,7 +601,6 @@ export const updateBio = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando bio:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar biografía'
@@ -666,7 +627,6 @@ export const updateEmail = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si el email ya existe
     const existingUser = await prisma.users.findFirst({
       where: {
         email: email,
@@ -700,7 +660,6 @@ export const updateEmail = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando email:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar email'
@@ -738,7 +697,6 @@ export const updateLocation = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error actualizando location:', error);
     res.status(500).json({
       success: false,
       error: 'Error al actualizar ubicación'
@@ -775,7 +733,6 @@ export const updatePassword = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error en cambio de contraseña:', error);
     res.status(500).json({
       success: false,
       error: 'Error al procesar cambio de contraseña'
@@ -794,7 +751,6 @@ export const deleteAccount = async (req: Request, res: Response) => {
       });
     }
 
-    // Soft delete de la cuenta
     await prisma.users.update({
       where: { userId: userId },
       data: {
@@ -809,7 +765,6 @@ export const deleteAccount = async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error eliminando cuenta:', error);
     res.status(500).json({
       success: false,
       error: 'Error al eliminar cuenta'

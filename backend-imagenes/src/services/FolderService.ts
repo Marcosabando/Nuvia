@@ -1,6 +1,6 @@
 // src/services/folder.service.ts
 import { Request, Response } from "express";
-import prisma from '../lib/prisma'; // ✅ Instancia única
+import prisma from '../lib/prisma';
 
 // ============================================================================
 // 📋 OBTENER TODAS LAS CARPETAS DEL USUARIO
@@ -48,7 +48,6 @@ export const getUserFolders = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo carpetas:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener las carpetas"
@@ -71,7 +70,6 @@ export const createFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Validación
     if (!name || name.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -79,7 +77,6 @@ export const createFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si ya existe una carpeta con el mismo nombre
     const existing = await prisma.folders.findFirst({
       where: {
         userId: userId,
@@ -95,7 +92,6 @@ export const createFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener el último sortOrder
     const lastFolder = await prisma.folders.findFirst({
       where: { userId: userId },
       orderBy: { sortOrder: 'desc' },
@@ -104,7 +100,6 @@ export const createFolder = async (req: Request, res: Response) => {
     
     const nextOrder = (lastFolder?.sortOrder || 0) + 1;
 
-    // Crear carpeta
     const newFolder = await prisma.folders.create({
       data: {
         userId: userId,
@@ -127,7 +122,6 @@ export const createFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error creando carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al crear la carpeta"
@@ -171,7 +165,6 @@ export const getFolderById = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener la carpeta"
@@ -195,7 +188,6 @@ export const updateFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que la carpeta existe y pertenece al usuario
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -214,7 +206,6 @@ export const updateFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // No permitir editar carpetas del sistema
     if (folder.isSystem) {
       return res.status(403).json({
         success: false,
@@ -222,7 +213,6 @@ export const updateFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Construir datos de actualización
     const updateData: any = {
       updatedAt: new Date()
     };
@@ -239,7 +229,6 @@ export const updateFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Actualizar carpeta
     const updated = await prisma.folders.update({
       where: { folderId: folderId },
       data: updateData
@@ -252,7 +241,6 @@ export const updateFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error actualizando carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al actualizar la carpeta"
@@ -275,7 +263,6 @@ export const deleteFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que la carpeta existe
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -295,7 +282,6 @@ export const deleteFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // No permitir eliminar carpetas del sistema
     if (folder.isSystem) {
       return res.status(403).json({
         success: false,
@@ -303,7 +289,6 @@ export const deleteFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Advertir si la carpeta tiene contenido - ✅ Corregido: manejo de null
     if (folder.itemCount && folder.itemCount > 0) {
       return res.status(400).json({
         success: false,
@@ -311,7 +296,6 @@ export const deleteFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Soft delete
     await prisma.folders.update({
       where: { folderId: folderId },
       data: { deletedAt: new Date() }
@@ -323,7 +307,6 @@ export const deleteFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error eliminando carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al eliminar la carpeta"
@@ -346,7 +329,6 @@ export const getFolderContent = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que la carpeta existe
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -362,7 +344,6 @@ export const getFolderContent = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Obtener imágenes de la carpeta - FORMA CORRECTA
     const folderImages = await prisma.folder_images.findMany({
       where: { folderId: folderId },
       include: {
@@ -397,7 +378,6 @@ export const getFolderContent = async (req: Request, res: Response) => {
       orderBy: { sortOrder: 'asc' }
     });
 
-    // ✅ Obtener videos de la carpeta - FORMA CORRECTA
     const folderVideos = await prisma.folder_videos.findMany({
       where: { folderId: folderId },
       include: {
@@ -435,7 +415,6 @@ export const getFolderContent = async (req: Request, res: Response) => {
       orderBy: { sortOrder: 'asc' }
     });
 
-    // ✅ Filtrar solo imágenes y videos no eliminados
     const images = folderImages
       .filter(fi => fi.images && fi.images.deletedAt === null)
       .map(fi => ({
@@ -461,7 +440,6 @@ export const getFolderContent = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo contenido de carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener el contenido de la carpeta"
@@ -485,7 +463,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar carpeta
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -501,7 +478,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar imagen
     const image = await prisma.images.findFirst({
       where: {
         imageId: imageId,
@@ -517,7 +493,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si ya está en la carpeta
     const existing = await prisma.folder_images.findFirst({
       where: {
         folderId: folderId,
@@ -532,7 +507,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener el último sortOrder para esta carpeta
     const lastItem = await prisma.folder_images.findFirst({
       where: { folderId: folderId },
       orderBy: { sortOrder: 'desc' },
@@ -541,7 +515,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
     
     const nextOrder = (lastItem?.sortOrder || 0) + 1;
 
-    // Añadir imagen
     await prisma.folder_images.create({
       data: {
         folderId: folderId,
@@ -550,7 +523,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
       }
     });
 
-    // Actualizar contador de items en la carpeta
     await prisma.folders.update({
       where: { folderId: folderId },
       data: { 
@@ -565,7 +537,6 @@ export const addImageToFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error añadiendo imagen a carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al añadir imagen a la carpeta"
@@ -589,7 +560,6 @@ export const removeImageFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar permisos
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -604,7 +574,6 @@ export const removeImageFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Eliminar relación
     const result = await prisma.folder_images.deleteMany({
       where: {
         folderId: folderId,
@@ -619,7 +588,6 @@ export const removeImageFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Actualizar contador de items en la carpeta
     await prisma.folders.update({
       where: { folderId: folderId },
       data: { 
@@ -634,7 +602,6 @@ export const removeImageFromFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error eliminando imagen de carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al eliminar imagen de la carpeta"
@@ -658,7 +625,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar carpeta
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -674,7 +640,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar video
     const video = await prisma.videos.findFirst({
       where: {
         videoId: videoId,
@@ -690,7 +655,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si ya está en la carpeta
     const existing = await prisma.folder_videos.findFirst({
       where: {
         folderId: folderId,
@@ -705,7 +669,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener el último sortOrder para esta carpeta
     const lastItem = await prisma.folder_videos.findFirst({
       where: { folderId: folderId },
       orderBy: { sortOrder: 'desc' },
@@ -714,7 +677,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
     
     const nextOrder = (lastItem?.sortOrder || 0) + 1;
 
-    // Añadir video
     await prisma.folder_videos.create({
       data: {
         folderId: folderId,
@@ -723,7 +685,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
       }
     });
 
-    // Actualizar contador de items en la carpeta
     await prisma.folders.update({
       where: { folderId: folderId },
       data: { 
@@ -738,7 +699,6 @@ export const addVideoToFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error añadiendo video a carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al añadir video a la carpeta"
@@ -762,7 +722,6 @@ export const removeVideoFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar permisos
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -777,7 +736,6 @@ export const removeVideoFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Eliminar relación
     const result = await prisma.folder_videos.deleteMany({
       where: {
         folderId: folderId,
@@ -792,7 +750,6 @@ export const removeVideoFromFolder = async (req: Request, res: Response) => {
       });
     }
 
-    // Actualizar contador de items en la carpeta
     await prisma.folders.update({
       where: { folderId: folderId },
       data: { 
@@ -807,7 +764,6 @@ export const removeVideoFromFolder = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error eliminando video de carpeta:", error);
     return res.status(500).json({
       success: false,
       error: "Error al eliminar video de la carpeta"
@@ -830,7 +786,6 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // 1️⃣ Find the folder
     const folder = await prisma.folders.findFirst({
       where: {
         folderId: folderId,
@@ -846,7 +801,6 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si es una carpeta del sistema
     if (folder.isSystem) {
       return res.status(400).json({
         success: false,
@@ -854,7 +808,6 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar si la carpeta tiene contenido
     if (folder.itemCount && folder.itemCount > 0) {
       return res.status(400).json({
         success: false,
@@ -862,15 +815,7 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    console.log('📁 Moving folder to trash:', {
-      folderId: folder.folderId,
-      name: folder.name,
-      itemCount: folder.itemCount
-    });
-
-    // 2️⃣ Insert into trash with Prisma transaction
     await prisma.$transaction(async (tx) => {
-      // Insert into trash
       await tx.trash.create({
         data: {
           userId: folder.userId,
@@ -890,7 +835,6 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
         },
       });
 
-      // Soft delete folder
       await tx.folders.update({
         where: { folderId: folder.folderId },
         data: { deletedAt: new Date() },
@@ -903,7 +847,6 @@ export const moveFolderToTrash = async (req: Request, res: Response) => {
       folderId: folderId,
     });
   } catch (error) {
-    console.error("❌ Error moviendo carpeta a la papelera:", error);
     res.status(500).json({ 
       success: false, 
       message: "Error interno del servidor", 

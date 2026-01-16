@@ -1,6 +1,6 @@
 // src/services/document.service.ts
 import { Request, Response } from "express";
-import prisma from '../lib/prisma'; // ✅ Instancia única
+import prisma from '../lib/prisma';
 import path from "path";
 import fs from "fs";
 import jwt from "jsonwebtoken";
@@ -40,7 +40,6 @@ const getDocumentViewerHTML = (document: any): string => {
     return `<iframe src="${fileUrl}" sandbox="allow-same-origin"></iframe>`;
   }
   
-  // Para otros tipos, mostrar mensaje y botón de descarga
   return `
     <div style="text-align: center; padding: 40px;">
       <h3>Este tipo de archivo no se puede previsualizar directamente</h3>
@@ -59,20 +58,14 @@ export const uploadDocument = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     
-    console.log(' [UPLOAD] Iniciando subida de documento');
-    console.log(' [UPLOAD] UserID:', userId);
-    
     if (!userId) {
-      console.error(' [UPLOAD] Usuario no autenticado');
       return res.status(401).json({
         success: false,
         error: "Usuario no autenticado"
       });
     }
 
-    // Verificar que se subió un archivo
     if (!req.file) {
-      console.error(' [UPLOAD] No se proporcionó archivo');
       return res.status(400).json({
         success: false,
         error: "No se proporcionó ningún archivo"
@@ -80,42 +73,23 @@ export const uploadDocument = async (req: Request, res: Response) => {
     }
 
     const file = req.file;
-    console.log(' [UPLOAD] Archivo recibido:', {
-      originalname: file.originalname,
-      filename: file.filename,
-      mimetype: file.mimetype,
-      size: file.size
-    });
     
-    // Validar que el archivo tiene los datos mínimos necesarios
     if (!file.filename || !file.originalname || !file.path) {
-      console.error(' [UPLOAD] Archivo incompleto');
       return res.status(400).json({
         success: false,
         error: "Información del archivo incompleta"
       });
     }
     
-    // Obtener metadatos del body
     const { title, description, tags, isPublic, category: bodyCategory } = req.body;
-    
-    // Usar el título proporcionado o el nombre original del archivo
     const documentTitle = title?.trim() || path.parse(file.originalname).name;
-    
-    // Extraer información del documento
     const documentInfo = (file as any).documentInfo || {};
     const category = bodyCategory || documentInfo.category || 'other';
     
-    // Validar categoría
     const validCategories = ['office', 'text', 'design', 'code', 'archive', 'other'];
     const finalCategory = validCategories.includes(category) ? category as any : 'other';
-    
-    // Crear ruta relativa para guardar en la BD
     const relativePath = `${userId}/documents/${file.filename}`;
 
-    console.log(' [UPLOAD] Guardando en BD...');
-
-    // ✅ INSERTAR CON PRISMA
     const document = await prisma.documents.create({
       data: {
         userId: userId,
@@ -142,8 +116,6 @@ export const uploadDocument = async (req: Request, res: Response) => {
       },
     });
 
-    console.log(' [UPLOAD] Documento insertado con ID:', document.documentId);
-
     return res.status(201).json({
       success: true,
       data: document,
@@ -151,16 +123,10 @@ export const uploadDocument = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error(" [UPLOAD] Error:", error.message);
-    
-    // Limpiar archivo si hay error
     if (req.file?.path && fs.existsSync(req.file.path)) {
       try {
         fs.unlinkSync(req.file.path);
-        console.log(' Archivo eliminado tras error');
-      } catch (cleanupError) {
-        console.error(' Error limpiando archivo:', cleanupError);
-      }
+      } catch (cleanupError) {}
     }
     
     return res.status(500).json({
@@ -225,7 +191,6 @@ export const getUserDocuments = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo documentos:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener los documentos"
@@ -259,7 +224,6 @@ export const createDocumentMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    // Validación
     if (!title || title.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -274,11 +238,9 @@ export const createDocumentMetadata = async (req: Request, res: Response) => {
       });
     }
 
-    // Validar categoría
     const validCategories = ['office', 'text', 'design', 'code', 'archive', 'other'];
     const finalCategory = validCategories.includes(category) ? category as any : 'other';
 
-    // ✅ CREAR DOCUMENTO CON PRISMA
     const document = await prisma.documents.create({
       data: {
         userId: userId,
@@ -312,7 +274,6 @@ export const createDocumentMetadata = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error creando documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al crear el documento"
@@ -342,7 +303,7 @@ export const getDocumentById = async (req: Request, res: Response) => {
         deletedAt: null,
       },
       include: {
-        users: { // ✅ CORREGIDO: 'users' no 'user'
+        users: {
           select: {
             username: true,
             email: true,
@@ -364,7 +325,6 @@ export const getDocumentById = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener el documento"
@@ -388,7 +348,6 @@ export const updateDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que el documento existe y pertenece al usuario
     const existingDocument = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -404,14 +363,12 @@ export const updateDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Validar categoría si se proporciona
     let finalCategory = existingDocument.category;
     if (category !== undefined) {
       const validCategories = ['office', 'text', 'design', 'code', 'archive', 'other'];
       finalCategory = validCategories.includes(category) ? category as any : 'other';
     }
 
-    // Construir datos de actualización
     const updateData: any = {
       updatedAt: new Date(),
     };
@@ -423,7 +380,6 @@ export const updateDocument = async (req: Request, res: Response) => {
     if (isFavorite !== undefined) updateData.isFavorite = isFavorite;
     if (isPublic !== undefined) updateData.isPublic = isPublic;
 
-    // ✅ ACTUALIZAR CON PRISMA
     const updatedDocument = await prisma.documents.update({
       where: {
         documentId: documentId,
@@ -438,7 +394,6 @@ export const updateDocument = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error actualizando documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al actualizar el documento"
@@ -461,7 +416,6 @@ export const deleteDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que el documento existe
     const existingDocument = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -477,7 +431,6 @@ export const deleteDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ SOFT DELETE CON PRISMA
     await prisma.documents.update({
       where: {
         documentId: documentId,
@@ -494,7 +447,6 @@ export const deleteDocument = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error eliminando documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al eliminar el documento"
@@ -517,13 +469,11 @@ export const searchDocuments = async (req: Request, res: Response) => {
       });
     }
 
-    // Construir condiciones de búsqueda
     const where: any = {
       userId: userId,
       deletedAt: null,
     };
 
-    // Aplicar filtros
     if (q && typeof q === 'string' && q.trim().length > 0) {
       const searchPattern = q.trim();
       where.OR = [
@@ -543,7 +493,6 @@ export const searchDocuments = async (req: Request, res: Response) => {
       where.isFavorite = isFavorite === 'true';
     }
 
-    // ✅ CONSULTA CON PRISMA
     const [documents, total] = await Promise.all([
       prisma.documents.findMany({
         where,
@@ -584,7 +533,6 @@ export const searchDocuments = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error buscando documentos:", error);
     return res.status(500).json({
       success: false,
       error: "Error al buscar documentos"
@@ -615,7 +563,6 @@ export const toggleFavorite = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar que el documento existe
     const existingDocument = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -631,7 +578,6 @@ export const toggleFavorite = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ ACTUALIZAR FAVORITO CON PRISMA
     await prisma.documents.update({
       where: {
         documentId: documentId,
@@ -648,7 +594,6 @@ export const toggleFavorite = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error actualizando favorito:", error);
     return res.status(500).json({
       success: false,
       error: "Error al actualizar favorito"
@@ -670,7 +615,6 @@ export const getDocumentStats = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ AGREGACIONES CON PRISMA
     const [
       totalDocuments,
       totalSizeResult,
@@ -731,7 +675,6 @@ export const getDocumentStats = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo estadísticas:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener estadísticas de documentos"
@@ -762,7 +705,6 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ CONSULTA CON PRISMA
     const documents = await prisma.documents.findMany({
       where: {
         userId: userId,
@@ -797,7 +739,6 @@ export const getDocumentsByCategory = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo documentos por categoría:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener documentos por categoría"
@@ -851,8 +792,6 @@ export const downloadDocument = async (req: Request, res: Response) => {
 
     const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
 
-    console.log("📄 Descargando archivo:", filePath);
-
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
@@ -862,7 +801,6 @@ export const downloadDocument = async (req: Request, res: Response) => {
 
     return res.download(filePath, document.originalFilename);
   } catch (error) {
-    console.error("❌ Error descargando documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al descargar el documento",
@@ -875,31 +813,12 @@ export const downloadDocument = async (req: Request, res: Response) => {
 // ============================================================================
 export const previewDocument = async (req: Request, res: Response) => {
   try {
-    console.log('[DOC_PREVIEW_REQ]', {
-      method: req.method,
-      url: req.originalUrl,
-      path: req.path,
-      origin: req.headers.origin,
-      referer: req.headers.referer,
-      host: req.headers.host,
-      range: req.headers.range,
-      secFetchDest: req.headers['sec-fetch-dest'],
-      secFetchMode: req.headers['sec-fetch-mode'],
-      secFetchSite: req.headers['sec-fetch-site'],
-      userAgent: req.headers['user-agent'],
-      hasQueryToken: typeof req.query.token === 'string',
-      hasAuthHeader: Boolean(req.headers.authorization),
-    });
-
-    // SOPORTAR TOKEN EN QUERY PARAM (para <object>/<iframe> en frontend)
     let userId = req.user?.userId;
     if (!userId && req.query.token) {
       try {
         const decoded = jwt.verify(req.query.token as string, jwtSecret) as any;
         userId = decoded.userId;
-        console.log('[DOC_PREVIEW_AUTH]', { tokenSource: 'query', userId });
       } catch (err) {
-        console.log('[DOC_PREVIEW_AUTH_FAIL]', { tokenSource: 'query' });
         return res.status(401).json({
           success: false,
           error: "Token inválido"
@@ -907,18 +826,14 @@ export const previewDocument = async (req: Request, res: Response) => {
       }
     }
     
-    if (userId) {
-      console.log('[DOC_PREVIEW_AUTH]', { tokenSource: req.user?.userId ? 'header' : 'query', userId });
-    }
-    
-    const documentId = parseInt(req.params.id);
-
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: "Usuario no autenticado"
       });
     }
+
+    const documentId = parseInt(req.params.id);
 
     const document = await prisma.documents.findFirst({
       where: {
@@ -944,17 +859,8 @@ export const previewDocument = async (req: Request, res: Response) => {
     }
 
     const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
-    console.log('📂 [PREVIEW] Ruta completa:', filePath);
-
-    console.log('[DOC_PREVIEW_FILE]', {
-      exists: fs.existsSync(filePath),
-      documentId,
-      userId,
-      relativePath: safeRelativePath,
-    });
 
     if (!fs.existsSync(filePath)) {
-      console.error('❌ [PREVIEW] Archivo no existe:', filePath);
       return res.status(404).json({
         success: false,
         error: "Archivo no encontrado en el servidor"
@@ -963,7 +869,6 @@ export const previewDocument = async (req: Request, res: Response) => {
 
     const mimeType: string = document.mimeType;
 
-    // Headers para permitir uso en <object>/<embed> desde el frontend
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -974,17 +879,9 @@ export const previewDocument = async (req: Request, res: Response) => {
     );
     res.setHeader('Accept-Ranges', 'bytes');
 
-    console.log('[DOC_PREVIEW_RES_HEADERS]', {
-      contentSecurityPolicy: res.getHeader('Content-Security-Policy'),
-      xFrameOptions: res.getHeader('X-Frame-Options'),
-      crossOriginResourcePolicy: res.getHeader('Cross-Origin-Resource-Policy'),
-      accessControlAllowOrigin: res.getHeader('Access-Control-Allow-Origin'),
-    });
-
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
 
-    // Soporte Range (clave para PDF embebido)
     const range = req.headers.range;
     if (range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -1011,7 +908,6 @@ export const previewDocument = async (req: Request, res: Response) => {
       return fileStream.pipe(res);
     }
 
-    // Sin Range: enviar completo
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Content-Length', fileSize.toString());
@@ -1019,7 +915,6 @@ export const previewDocument = async (req: Request, res: Response) => {
     return fileStream.pipe(res);
 
   } catch (error: any) {
-    console.error("❌ [PREVIEW] Error:", error.message);
     return res.status(500).json({
       success: false,
       error: "Error al previsualizar el documento"
@@ -1042,7 +937,6 @@ export const getPreviewUrl = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener documento
     const document = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -1058,7 +952,6 @@ export const getPreviewUrl = async (req: Request, res: Response) => {
       });
     }
 
-    // Devolver URL directa al archivo
     const safeRelativePath = normalizeUploadRelativePath(document.documentPath);
     if (!safeRelativePath) {
       return res.status(400).json({
@@ -1084,7 +977,6 @@ export const getPreviewUrl = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Error obteniendo URL de preview:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener URL de preview"
@@ -1097,10 +989,8 @@ export const getPreviewUrl = async (req: Request, res: Response) => {
 // ============================================================================
 export const serveDocument = async (req: Request, res: Response) => {
   try {
-    // SOPORTAR TOKEN EN QUERY PARAM (para WebViewer)
     let userId = req.user?.userId;
     
-    // Si no hay auth header, intentar con token en query
     if (!userId && req.query.token) {
       try {
         const decoded = jwt.verify(req.query.token as string, jwtSecret) as any;
@@ -1147,8 +1037,6 @@ export const serveDocument = async (req: Request, res: Response) => {
 
     const filePath = path.join(process.cwd(), 'uploads', safeRelativePath);
 
-    console.log(' [SERVE] Sirviendo:', filePath);
-
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ 
         success: false, 
@@ -1156,14 +1044,12 @@ export const serveDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Headers correctos para CORS y caching
     res.setHeader('Content-Type', document.mimeType);
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-
-    // Soporte de Range Requests
+    
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
     res.setHeader('Accept-Ranges', 'bytes');
@@ -1193,13 +1079,11 @@ export const serveDocument = async (req: Request, res: Response) => {
       return;
     }
 
-    // Sin Range: enviar archivo completo
     res.setHeader('Content-Length', fileSize.toString());
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
 
   } catch (error: any) {
-    console.error(" [SERVE] Error:", error);
     return res.status(500).json({ 
       success: false, 
       error: "Error interno" 
@@ -1222,7 +1106,6 @@ export const openDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Obtener documento
     const document = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -1247,7 +1130,6 @@ export const openDocument = async (req: Request, res: Response) => {
       });
     }
 
-    // Crear página HTML simple para abrir el documento
     const html = `
       <!DOCTYPE html>
       <html>
@@ -1283,7 +1165,6 @@ export const openDocument = async (req: Request, res: Response) => {
           </div>
           
           <script>
-            // Auto-cerrar después de 5 segundos si es una imagen
             if ('${document.mimeType}'.startsWith('image/')) {
               setTimeout(() => {
                 if (confirm('¿Deseas cerrar esta ventana?')) {
@@ -1299,7 +1180,6 @@ export const openDocument = async (req: Request, res: Response) => {
     res.send(html);
 
   } catch (error: any) {
-    console.error("❌ Error abriendo documento:", error);
     return res.status(500).json({
       success: false,
       error: "Error al abrir el documento"
@@ -1315,8 +1195,6 @@ export const previewByFilename = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const filename = req.params.filename;
 
-    console.log('🔍 [PREVIEW-BY-FILENAME] Buscando archivo:', filename);
-
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -1324,7 +1202,6 @@ export const previewByFilename = async (req: Request, res: Response) => {
       });
     }
 
-    // Buscar por nombre de archivo
     const document = await prisma.documents.findFirst({
       where: {
         OR: [
@@ -1337,18 +1214,15 @@ export const previewByFilename = async (req: Request, res: Response) => {
     });
 
     if (!document) {
-      console.log('❌ [PREVIEW-BY-FILENAME] Archivo no encontrado');
       return res.status(404).json({
         success: false,
         error: `Archivo "${filename}" no encontrado`
       });
     }
 
-    // Redirigir a la ruta de preview normal
     return res.redirect(`/api/documents/${document.documentId}/preview`);
 
   } catch (error: any) {
-    console.error("❌ Error en preview por nombre:", error);
     return res.status(500).json({
       success: false,
       error: "Error al buscar documento"
@@ -1371,7 +1245,6 @@ export const moveDocumentToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // 1️⃣ Find the document
     const document = await prisma.documents.findFirst({
       where: {
         documentId: documentId,
@@ -1387,7 +1260,6 @@ export const moveDocumentToTrash = async (req: Request, res: Response) => {
       });
     }
 
-    // Fix path if needed
     let correctPath = document.documentPath;
     if (!correctPath.includes('/documents/')) {
       const parts = correctPath.split('/');
@@ -1398,17 +1270,7 @@ export const moveDocumentToTrash = async (req: Request, res: Response) => {
       }
     }
 
-    console.log('📄 Moving document to trash:', {
-      documentId: document.documentId,
-      documentPath: document.documentPath,
-      correctPath: correctPath,
-      filename: document.filename,
-      originalFilename: document.originalFilename
-    });
-
-    // 2️⃣ Insert into trash with Prisma transaction
     await prisma.$transaction(async (tx) => {
-      // Insert into trash
       await tx.trash.create({
         data: {
           userId: document.userId,
@@ -1427,7 +1289,6 @@ export const moveDocumentToTrash = async (req: Request, res: Response) => {
         },
       });
 
-      // Soft delete document
       await tx.documents.update({
         where: { documentId: document.documentId },
         data: { deletedAt: new Date() },
@@ -1440,7 +1301,6 @@ export const moveDocumentToTrash = async (req: Request, res: Response) => {
       documentId: documentId,
     });
   } catch (error) {
-    console.error("❌ Error moving document to trash:", error);
     res.status(500).json({ 
       success: false, 
       message: "Internal server error", 

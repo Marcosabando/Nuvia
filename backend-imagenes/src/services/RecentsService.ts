@@ -1,6 +1,6 @@
 // src/services/recents.service.ts
 import { Request, Response } from "express";
-import prisma from '../lib/prisma'; // ✅ Instancia única
+import prisma from '../lib/prisma';
 
 // ============================================================================
 // 🛠️ HELPER FUNCTIONS
@@ -48,7 +48,6 @@ export const getRecentItems = async (req: Request, res: Response) => {
     const { timeFilter = "week", limit = 20 } = req.query;
     const dateFilter = getDateFilter(timeFilter as string);
 
-    // Obtener imágenes recientes
     const recentImages = await prisma.images.findMany({
       where: {
         userId: userId,
@@ -75,7 +74,6 @@ export const getRecentItems = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Obtener videos recientes
     const recentVideos = await prisma.videos.findMany({
       where: {
         userId: userId,
@@ -102,7 +100,6 @@ export const getRecentItems = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Combinar y ordenar por fecha de actualización
     const allItems = [
       ...recentImages.map((img) => ({
         id: img.imageId,
@@ -113,11 +110,11 @@ export const getRecentItems = async (req: Request, res: Response) => {
         thumbnailPath: img.thumbnailPath,
         fileSize: img.fileSize,
         mimeType: img.mimeType,
-        uploadDate: img.createdAt || new Date(), // ✅ Manejo de null
-        updatedAt: img.updatedAt || new Date(),   // ✅ Manejo de null
+        uploadDate: img.createdAt || new Date(),
+        updatedAt: img.updatedAt || new Date(),
         width: img.width,
         height: img.height,
-        isFavorite: img.isFavorite || false,      // ✅ Manejo de null
+        isFavorite: img.isFavorite || false,
       })),
       ...recentVideos.map((vid) => ({
         id: vid.videoId,
@@ -128,16 +125,15 @@ export const getRecentItems = async (req: Request, res: Response) => {
         thumbnailPath: vid.thumbnailPath,
         fileSize: vid.fileSize,
         mimeType: vid.mimeType,
-        uploadDate: vid.createdAt || new Date(),   // ✅ Manejo de null
-        updatedAt: vid.updatedAt || new Date(),     // ✅ Manejo de null
+        uploadDate: vid.createdAt || new Date(),
+        updatedAt: vid.updatedAt || new Date(),
         width: vid.width,
         height: vid.height,
-        isFavorite: vid.isFavorite || false,        // ✅ Manejo de null
+        isFavorite: vid.isFavorite || false,
       }))
     ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
      .slice(0, parseInt(limit as string));
 
-    // Formatear items
     const formattedItems = allItems.map((item) => ({
       id: item.id,
       type: item.type,
@@ -160,7 +156,6 @@ export const getRecentItems = async (req: Request, res: Response) => {
       count: formattedItems.length,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo elementos recientes:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener elementos recientes"
@@ -181,7 +176,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       });
     }
 
-    // Última actividad
     const lastImage = await prisma.images.findFirst({
       where: { userId: userId, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -194,7 +188,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       select: { updatedAt: true }
     });
 
-    // ✅ Manejo seguro de valores null
     const lastImageDate = lastImage?.updatedAt || null;
     const lastVideoDate = lastVideo?.updatedAt || null;
 
@@ -207,7 +200,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       lastActivity = lastVideoDate;
     }
 
-    // Item más reciente
     const mostRecentImage = await prisma.images.findFirst({
       where: { userId: userId, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -218,7 +210,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       }
     });
 
-    // Total de items hoy
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -238,7 +229,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       }
     });
 
-    // Total de items esta semana
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -258,7 +248,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       }
     });
 
-    // Total de items este mes
     const monthAgo = new Date();
     monthAgo.setDate(monthAgo.getDate() - 30);
 
@@ -295,7 +284,6 @@ export const getRecentStats = async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo estadísticas recientes:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener estadísticas"
@@ -353,10 +341,10 @@ export const getRecentImages = async (req: Request, res: Response) => {
       size: formatFileSize(Number(img.fileSize)),
       sizeBytes: Number(img.fileSize),
       mimeType: img.mimeType,
-      uploadedAt: img.createdAt || new Date(),   // ✅ Manejo de null
-      accessedAt: img.updatedAt || new Date(),    // ✅ Manejo de null
+      uploadedAt: img.createdAt || new Date(),
+      accessedAt: img.updatedAt || new Date(),
       dimensions: img.width && img.height ? `${img.width}x${img.height}` : null,
-      isFavorite: img.isFavorite || false,        // ✅ Manejo de null
+      isFavorite: img.isFavorite || false,
     }));
 
     return res.json({
@@ -365,7 +353,6 @@ export const getRecentImages = async (req: Request, res: Response) => {
       count: formattedImages.length,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo imágenes recientes:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener imágenes recientes"
@@ -423,10 +410,10 @@ export const getRecentVideos = async (req: Request, res: Response) => {
       size: formatFileSize(Number(vid.fileSize)),
       sizeBytes: Number(vid.fileSize),
       mimeType: vid.mimeType,
-      uploadedAt: vid.createdAt || new Date(),   // ✅ Manejo de null
-      accessedAt: vid.updatedAt || new Date(),    // ✅ Manejo de null
+      uploadedAt: vid.createdAt || new Date(),
+      accessedAt: vid.updatedAt || new Date(),
       dimensions: vid.width && vid.height ? `${vid.width}x${vid.height}` : null,
-      isFavorite: vid.isFavorite || false,        // ✅ Manejo de null
+      isFavorite: vid.isFavorite || false,
     }));
 
     return res.json({
@@ -435,7 +422,6 @@ export const getRecentVideos = async (req: Request, res: Response) => {
       count: formattedVideos.length,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo videos recientes:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener videos recientes"
@@ -460,7 +446,6 @@ export const getTimeline = async (req: Request, res: Response) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days as string));
 
-    // Obtener imágenes agrupadas por fecha - ✅ Corrección: usar Prisma's raw query con tipos correctos
     const imageStats = await prisma.$queryRaw<Array<{
       date: Date;
       count: bigint;
@@ -478,7 +463,6 @@ export const getTimeline = async (req: Request, res: Response) => {
       ORDER BY date DESC
     `;
 
-    // Obtener videos agrupadas por fecha
     const videoStats = await prisma.$queryRaw<Array<{
       date: Date;
       count: bigint;
@@ -496,14 +480,12 @@ export const getTimeline = async (req: Request, res: Response) => {
       ORDER BY date DESC
     `;
 
-    // Combinar resultados
     const timelineMap = new Map<string, {
       date: Date;
       count: number;
       totalSize: number;
     }>();
 
-    // Procesar imágenes
     imageStats.forEach((stat) => {
       const dateStr = stat.date.toISOString().split('T')[0];
       timelineMap.set(dateStr, {
@@ -513,7 +495,6 @@ export const getTimeline = async (req: Request, res: Response) => {
       });
     });
 
-    // Procesar videos
     videoStats.forEach((stat) => {
       const dateStr = stat.date.toISOString().split('T')[0];
       if (timelineMap.has(dateStr)) {
@@ -529,7 +510,6 @@ export const getTimeline = async (req: Request, res: Response) => {
       }
     });
 
-    // Convertir a array y ordenar
     const timeline = Array.from(timelineMap.values())
       .map(day => ({
         date: day.date,
@@ -544,7 +524,6 @@ export const getTimeline = async (req: Request, res: Response) => {
       data: timeline,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo línea de tiempo:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener línea de tiempo"
@@ -567,7 +546,6 @@ export const getMostViewed = async (req: Request, res: Response) => {
 
     const { limit = 10 } = req.query;
 
-    // Obtener imágenes más recientes
     const recentImages = await prisma.images.findMany({
       where: {
         userId: userId,
@@ -589,7 +567,6 @@ export const getMostViewed = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Obtener videos más recientes
     const recentVideos = await prisma.videos.findMany({
       where: {
         userId: userId,
@@ -611,7 +588,6 @@ export const getMostViewed = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Combinar y ordenar
     const allItems = [
       ...recentImages.map((img) => ({
         id: img.imageId,
@@ -620,8 +596,8 @@ export const getMostViewed = async (req: Request, res: Response) => {
         path: img.imagePath,
         thumbnailPath: img.thumbnailPath,
         fileSize: img.fileSize,
-        updatedAt: img.updatedAt || new Date(),    // ✅ Manejo de null
-        isFavorite: img.isFavorite || false,       // ✅ Manejo de null
+        updatedAt: img.updatedAt || new Date(),
+        isFavorite: img.isFavorite || false,
       })),
       ...recentVideos.map((vid) => ({
         id: vid.videoId,
@@ -630,8 +606,8 @@ export const getMostViewed = async (req: Request, res: Response) => {
         path: vid.videoPath,
         thumbnailPath: vid.thumbnailPath,
         fileSize: vid.fileSize,
-        updatedAt: vid.updatedAt || new Date(),    // ✅ Manejo de null
-        isFavorite: vid.isFavorite || false,       // ✅ Manejo de null
+        updatedAt: vid.updatedAt || new Date(),
+        isFavorite: vid.isFavorite || false,
       }))
     ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
      .slice(0, parseInt(limit as string));
@@ -654,7 +630,6 @@ export const getMostViewed = async (req: Request, res: Response) => {
       count: formattedItems.length,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo items más vistos:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener items más vistos"
@@ -677,7 +652,6 @@ export const getRecentActivity = async (req: Request, res: Response) => {
 
     const { limit = 20 } = req.query;
 
-    // Obtener imágenes recientemente actualizadas
     const recentImages = await prisma.images.findMany({
       where: {
         userId: userId,
@@ -701,7 +675,6 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Obtener videos recientemente actualizados
     const recentVideos = await prisma.videos.findMany({
       where: {
         userId: userId,
@@ -725,7 +698,6 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       take: parseInt(limit as string)
     });
 
-    // Combinar y ordenar por fecha de actualización
     const allActivity = [
       ...recentImages.map((img) => ({
         id: img.imageId,
@@ -776,7 +748,6 @@ export const getRecentActivity = async (req: Request, res: Response) => {
       count: formattedActivity.length,
     });
   } catch (error: any) {
-    console.error("❌ Error obteniendo actividad reciente:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener actividad reciente"
