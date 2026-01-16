@@ -1,482 +1,6 @@
-// 📂 UBICACIÓN: src/services/RecentsService.ts
-
+// src/services/recents.service.ts
 import { Request, Response } from "express";
-import pool from "@src/config/database";
-import { RowDataPacket } from "mysql2";
-
-interface RecentItem extends RowDataPacket {
-  id: number;
-  type: "image" | "video";
-  title: string | null;
-  originalFilename: string;
-  path: string;
-  thumbnailPath: string | null;
-  fileSize: number;
-  mimeType: string;
-  uploadDate: Date;
-  updatedAt: Date;
-  width: number | null;
-  height: number | null;
-  isFavorite: boolean;
-}
-
-// ============================================================================
-// 📋 OBTENER ITEMS RECIENTES (imágenes + videos combinados)
-// ============================================================================
-export const getRecentItems = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-  const { timeFilter = "week", limit = 20 } = req.query;
-
-  try {
-    // Calcular fecha de filtro
-    let dateFilter = "";
-    switch (timeFilter) {
-      case "today":
-        dateFilter = "AND DATE(uploadDate) = CURDATE()";
-        break;
-      case "week":
-        dateFilter = "AND uploadDate >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-        break;
-      case "month":
-        dateFilter = "AND uploadDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-        break;
-      default:
-        dateFilter = "";
-    }
-
-    // Query unificado para imágenes y videos
-    const query = `
-      SELECT * FROM (
-        SELECT 
-          imageId as id,
-          'image' as type,
-          title,
-          originalFilename as name,
-          imagePath as path,
-          thumbnailPath,
-          fileSize,
-          mimeType,
-          uploadDate,
-          updatedAt,
-          width,
-          height,
-          isFavorite
-        FROM images
-        WHERE userId = ? AND deletedAt IS NULL ${dateFilter}
-        
-        UNION ALL
-        
-        SELECT 
-          videoId as id,
-          'video' as type,
-          title,
-          originalFilename as name,
-          videoPath as path,
-          thumbnailPath,
-          fileSize,
-          mimeType,
-          uploadDate,
-          updatedAt,
-          width,
-          height,
-          isFavorite
-        FROM videos
-        WHERE userId = ? AND deletedAt IS NULL ${dateFilter}
-      ) AS combined
-      ORDER BY updatedAt DESC
-      LIMIT ?
-    `;
-
-    const [items] = await pool.query<RecentItem[]>(query, [
-      userId,
-      userId,
-      parseInt(limit as string),
-    ]);
-
-    // Formatear items
-    const formattedItems = items.map((item) => ({
-      id: item.id,
-      type: item.type,
-      name: item.name,
-      title: item.title || item.name,
-      path: item.path,
-      thumbnailPath: item.thumbnailPath,
-      size: formatFileSize(item.fileSize),
-      sizeBytes: item.fileSize,
-      mimeType: item.mimeType,
-      uploadedAt: item.uploadDate,
-      accessedAt: item.updatedAt,
-      dimensions:
-        item.width && item.height ? `${item.width}x${item.height}` : null,
-      isFavorite: Boolean(item.isFavorite),
-    }));
-
-    res.json({
-      success: true,
-      data: formattedItems,
-      count: formattedItems.length,
-    });
-  } catch (error) {
-    console.error("Error fetching recent items:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener elementos recientes",
-    });
-  }
-};
-
-// ============================================================================
-// 📊 OBTENER ESTADÍSTICAS DE RECIENTES
-// ============================================================================
-export const getRecentStats = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-
-  try {
-    // Última actividad
-    const [lastActivity] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT MAX(updatedAt) as lastAccess
-      FROM (
-        SELECT updatedAt FROM images WHERE userId = ? AND deletedAt IS NULL
-        UNION ALL
-        SELECT updatedAt FROM videos WHERE userId = ? AND deletedAt IS NULL
-      ) as combined
-    `,
-      [userId, userId]
-    );
-
-    // Item más reciente
-    const [mostRecent] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT 
-        COALESCE(title, originalFilename) as name,
-        updatedAt,
-        'image' as type
-      FROM images
-      WHERE userId = ? AND deletedAt IS NULL
-      ORDER BY updatedAt DESC
-      LIMIT 1
-    `,
-      [userId]
-    );
-
-    // Total de items hoy
-    const [todayCount] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT COUNT(*) as count
-      FROM (
-        SELECT imageId FROM images 
-        WHERE userId = ? AND deletedAt IS NULL AND DATE(uploadDate) = CURDATE()
-        UNION ALL
-        SELECT videoId FROM videos 
-        WHERE userId = ? AND deletedAt IS NULL AND DATE(uploadDate) = CURDATE()
-      ) as today
-    `,
-      [userId, userId]
-    );
-
-    // Total de items esta semana
-    const [weekCount] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT COUNT(*) as count
-      FROM (
-        SELECT imageId FROM images 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        UNION ALL
-        SELECT videoId FROM videos 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      ) as week
-    `,
-      [userId, userId]
-    );
-
-    // Total de items este mes
-    const [monthCount] = await pool.query<RowDataPacket[]>(
-      `
-      SELECT COUNT(*) as count
-      FROM (
-        SELECT imageId FROM images 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-        UNION ALL
-        SELECT videoId FROM videos 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-      ) as month
-    `,
-      [userId, userId]
-    );
-
-    res.json({
-      success: true,
-      data: {
-        lastActivity: lastActivity[0]?.lastAccess || null,
-        mostRecent: mostRecent[0] || null,
-        counts: {
-          today: todayCount[0]?.count || 0,
-          week: weekCount[0]?.count || 0,
-          month: monthCount[0]?.count || 0,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Error fetching recent stats:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener estadísticas",
-    });
-  }
-};
-
-// ============================================================================
-// 🖼️ OBTENER SOLO IMÁGENES RECIENTES
-// ============================================================================
-export const getRecentImages = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-  const { limit = 10 } = req.query;
-
-  try {
-    const [images] = await pool.query<RecentItem[]>(
-      `
-      SELECT 
-        imageId as id,
-        'image' as type,
-        title,
-        originalFilename as name,
-        imagePath as path,
-        thumbnailPath,
-        fileSize,
-        mimeType,
-        uploadDate,
-        updatedAt,
-        width,
-        height,
-        isFavorite
-      FROM images
-      WHERE userId = ? AND deletedAt IS NULL
-      ORDER BY updatedAt DESC
-      LIMIT ?
-    `,
-      [userId, parseInt(limit as string)]
-    );
-
-    const formattedImages = images.map((img) => ({
-      id: img.id,
-      type: img.type,
-      name: img.name,
-      title: img.title || img.name,
-      path: img.path,
-      thumbnailPath: img.thumbnailPath,
-      size: formatFileSize(img.fileSize),
-      sizeBytes: img.fileSize,
-      mimeType: img.mimeType,
-      uploadedAt: img.uploadDate,
-      accessedAt: img.updatedAt,
-      dimensions: img.width && img.height ? `${img.width}x${img.height}` : null,
-      isFavorite: Boolean(img.isFavorite),
-    }));
-
-    res.json({
-      success: true,
-      data: formattedImages,
-      count: formattedImages.length,
-    });
-  } catch (error) {
-    console.error("Error fetching recent images:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener imágenes recientes",
-    });
-  }
-};
-
-// ============================================================================
-// 🎬 OBTENER SOLO VIDEOS RECIENTES
-// ============================================================================
-export const getRecentVideos = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-  const { limit = 10 } = req.query;
-
-  try {
-    const [videos] = await pool.query<RecentItem[]>(
-      `
-      SELECT 
-        videoId as id,
-        'video' as type,
-        title,
-        originalFilename as name,
-        videoPath as path,
-        thumbnailPath,
-        fileSize,
-        mimeType,
-        uploadDate,
-        updatedAt,
-        width,
-        height,
-        isFavorite
-      FROM videos
-      WHERE userId = ? AND deletedAt IS NULL
-      ORDER BY updatedAt DESC
-      LIMIT ?
-    `,
-      [userId, parseInt(limit as string)]
-    );
-
-    const formattedVideos = videos.map((vid) => ({
-      id: vid.id,
-      type: vid.type,
-      name: vid.name,
-      title: vid.title || vid.name,
-      path: vid.path,
-      thumbnailPath: vid.thumbnailPath,
-      size: formatFileSize(vid.fileSize),
-      sizeBytes: vid.fileSize,
-      mimeType: vid.mimeType,
-      uploadedAt: vid.uploadDate,
-      accessedAt: vid.updatedAt,
-      dimensions: vid.width && vid.height ? `${vid.width}x${vid.height}` : null,
-      isFavorite: Boolean(vid.isFavorite),
-    }));
-
-    res.json({
-      success: true,
-      data: formattedVideos,
-      count: formattedVideos.length,
-    });
-  } catch (error) {
-    console.error("Error fetching recent videos:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener videos recientes",
-    });
-  }
-};
-
-// ============================================================================
-// 📈 OBTENER LÍNEA DE TIEMPO AGRUPADA POR FECHA
-// ============================================================================
-export const getTimeline = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-  const { days = 30 } = req.query;
-
-  try {
-    const query = `
-      SELECT 
-        DATE(uploadDate) as date,
-        COUNT(*) as count,
-        SUM(fileSize) as totalSize
-      FROM (
-        SELECT uploadDate, fileSize FROM images 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL ? DAY)
-        
-        UNION ALL
-        
-        SELECT uploadDate, fileSize FROM videos 
-        WHERE userId = ? AND deletedAt IS NULL 
-        AND uploadDate >= DATE_SUB(NOW(), INTERVAL ? DAY)
-      ) as combined
-      GROUP BY DATE(uploadDate)
-      ORDER BY date DESC
-    `;
-
-    const [timeline] = await pool.query<RowDataPacket[]>(query, [
-      userId,
-      parseInt(days as string),
-      userId,
-      parseInt(days as string),
-    ]);
-
-    const formattedTimeline = timeline.map((day) => ({
-      date: day.date,
-      count: day.count,
-      totalSize: formatFileSize(day.totalSize),
-    }));
-
-    res.json({
-      success: true,
-      data: formattedTimeline,
-    });
-  } catch (error) {
-    console.error("Error fetching timeline:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener línea de tiempo",
-    });
-  }
-};
-
-// ============================================================================
-// 🔥 OBTENER ITEMS MÁS VISTOS/ACCEDIDOS
-// ============================================================================
-export const getMostViewed = async (req: Request, res: Response) => {
-  const userId = (req as any).user.userId;
-  const { limit = 10 } = req.query;
-
-  try {
-    const query = `
-      SELECT * FROM (
-        SELECT 
-          imageId as id,
-          'image' as type,
-          COALESCE(title, originalFilename) as name,
-          imagePath as path,
-          thumbnailPath,
-          fileSize,
-          updatedAt,
-          isFavorite
-        FROM images
-        WHERE userId = ? AND deletedAt IS NULL
-        
-        UNION ALL
-        
-        SELECT 
-          videoId as id,
-          'video' as type,
-          COALESCE(title, originalFilename) as name,
-          videoPath as path,
-          thumbnailPath,
-          fileSize,
-          updatedAt,
-          isFavorite
-        FROM videos
-        WHERE userId = ? AND deletedAt IS NULL
-      ) AS combined
-      ORDER BY updatedAt DESC
-      LIMIT ?
-    `;
-
-    const [items] = await pool.query<RowDataPacket[]>(query, [
-      userId,
-      userId,
-      parseInt(limit as string),
-    ]);
-
-    const formattedItems = items.map((item) => ({
-      id: item.id,
-      type: item.type,
-      name: item.name,
-      path: item.path,
-      thumbnailPath: item.thumbnailPath,
-      size: formatFileSize(item.fileSize),
-      lastAccessed: item.updatedAt,
-      isFavorite: Boolean(item.isFavorite),
-    }));
-
-    res.json({
-      success: true,
-      data: formattedItems,
-    });
-  } catch (error) {
-    console.error("Error fetching most viewed:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener items más vistos",
-    });
-  }
-};
+import prisma from '../lib/prisma';
 
 // ============================================================================
 // 🛠️ HELPER FUNCTIONS
@@ -485,7 +9,748 @@ export const getMostViewed = async (req: Request, res: Response) => {
 const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const getDateFilter = (timeFilter: string): { gte?: Date } => {
+  const now = new Date();
+  let filterDate = new Date();
+
+  switch (timeFilter) {
+    case "today":
+      filterDate.setHours(0, 0, 0, 0);
+      return { gte: filterDate };
+    case "week":
+      filterDate.setDate(now.getDate() - 7);
+      return { gte: filterDate };
+    case "month":
+      filterDate.setDate(now.getDate() - 30);
+      return { gte: filterDate };
+    default:
+      return {};
+  }
+};
+
+// ============================================================================
+// 📋 OBTENER ITEMS RECIENTES (imágenes + videos combinados)
+// ============================================================================
+export const getRecentItems = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { timeFilter = "week", limit = 20 } = req.query;
+    const dateFilter = getDateFilter(timeFilter as string);
+
+    const recentImages = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter })
+      },
+      select: {
+        imageId: true,
+        title: true,
+        originalFilename: true,
+        imagePath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        createdAt: true,
+        updatedAt: true,
+        width: true,
+        height: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const recentVideos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter })
+      },
+      select: {
+        videoId: true,
+        title: true,
+        originalFilename: true,
+        videoPath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        createdAt: true,
+        updatedAt: true,
+        width: true,
+        height: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const allItems = [
+      ...recentImages.map((img) => ({
+        id: img.imageId,
+        type: "image" as const,
+        name: img.originalFilename,
+        title: img.title || img.originalFilename,
+        path: img.imagePath,
+        thumbnailPath: img.thumbnailPath,
+        fileSize: img.fileSize,
+        mimeType: img.mimeType,
+        uploadDate: img.createdAt || new Date(),
+        updatedAt: img.updatedAt || new Date(),
+        width: img.width,
+        height: img.height,
+        isFavorite: img.isFavorite || false,
+      })),
+      ...recentVideos.map((vid) => ({
+        id: vid.videoId,
+        type: "video" as const,
+        name: vid.originalFilename,
+        title: vid.title || vid.originalFilename,
+        path: vid.videoPath,
+        thumbnailPath: vid.thumbnailPath,
+        fileSize: vid.fileSize,
+        mimeType: vid.mimeType,
+        uploadDate: vid.createdAt || new Date(),
+        updatedAt: vid.updatedAt || new Date(),
+        width: vid.width,
+        height: vid.height,
+        isFavorite: vid.isFavorite || false,
+      }))
+    ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+     .slice(0, parseInt(limit as string));
+
+    const formattedItems = allItems.map((item) => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      title: item.title,
+      path: item.path,
+      thumbnailPath: item.thumbnailPath,
+      size: formatFileSize(Number(item.fileSize)),
+      sizeBytes: Number(item.fileSize),
+      mimeType: item.mimeType,
+      uploadedAt: item.uploadDate,
+      accessedAt: item.updatedAt,
+      dimensions: item.width && item.height ? `${item.width}x${item.height}` : null,
+      isFavorite: item.isFavorite,
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedItems,
+      count: formattedItems.length,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener elementos recientes"
+    });
+  }
+};
+
+// ============================================================================
+// 📊 OBTENER ESTADÍSTICAS DE RECIENTES
+// ============================================================================
+export const getRecentStats = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const lastImage = await prisma.images.findFirst({
+      where: { userId: userId, deletedAt: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
+    const lastVideo = await prisma.videos.findFirst({
+      where: { userId: userId, deletedAt: null },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
+    const lastImageDate = lastImage?.updatedAt || null;
+    const lastVideoDate = lastVideo?.updatedAt || null;
+
+    let lastActivity = null;
+    if (lastImageDate && lastVideoDate) {
+      lastActivity = lastImageDate > lastVideoDate ? lastImageDate : lastVideoDate;
+    } else if (lastImageDate) {
+      lastActivity = lastImageDate;
+    } else if (lastVideoDate) {
+      lastActivity = lastVideoDate;
+    }
+
+    const mostRecentImage = await prisma.images.findFirst({
+      where: { userId: userId, deletedAt: null },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        title: true,
+        originalFilename: true,
+        updatedAt: true
+      }
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const todayImages = await prisma.images.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: today }
+      }
+    });
+
+    const todayVideos = await prisma.videos.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: today }
+      }
+    });
+
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const weekImages = await prisma.images.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: weekAgo }
+      }
+    });
+
+    const weekVideos = await prisma.videos.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: weekAgo }
+      }
+    });
+
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+
+    const monthImages = await prisma.images.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: monthAgo }
+      }
+    });
+
+    const monthVideos = await prisma.videos.count({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        createdAt: { gte: monthAgo }
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        lastActivity: lastActivity,
+        mostRecent: mostRecentImage ? {
+          name: mostRecentImage.title || mostRecentImage.originalFilename,
+          updatedAt: mostRecentImage.updatedAt,
+          type: 'image'
+        } : null,
+        counts: {
+          today: todayImages + todayVideos,
+          week: weekImages + weekVideos,
+          month: monthImages + monthVideos,
+        },
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener estadísticas"
+    });
+  }
+};
+
+// ============================================================================
+// 🖼️ OBTENER SOLO IMÁGENES RECIENTES
+// ============================================================================
+export const getRecentImages = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { limit = 10 } = req.query;
+
+    const images = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        imageId: true,
+        title: true,
+        originalFilename: true,
+        imagePath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        createdAt: true,
+        updatedAt: true,
+        width: true,
+        height: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const formattedImages = images.map((img) => ({
+      id: img.imageId,
+      type: 'image' as const,
+      name: img.originalFilename,
+      title: img.title || img.originalFilename,
+      path: img.imagePath,
+      thumbnailPath: img.thumbnailPath,
+      size: formatFileSize(Number(img.fileSize)),
+      sizeBytes: Number(img.fileSize),
+      mimeType: img.mimeType,
+      uploadedAt: img.createdAt || new Date(),
+      accessedAt: img.updatedAt || new Date(),
+      dimensions: img.width && img.height ? `${img.width}x${img.height}` : null,
+      isFavorite: img.isFavorite || false,
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedImages,
+      count: formattedImages.length,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener imágenes recientes"
+    });
+  }
+};
+
+// ============================================================================
+// 🎬 OBTENER SOLO VIDEOS RECIENTES
+// ============================================================================
+export const getRecentVideos = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { limit = 10 } = req.query;
+
+    const videos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        videoId: true,
+        title: true,
+        originalFilename: true,
+        videoPath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        createdAt: true,
+        updatedAt: true,
+        width: true,
+        height: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const formattedVideos = videos.map((vid) => ({
+      id: vid.videoId,
+      type: 'video' as const,
+      name: vid.originalFilename,
+      title: vid.title || vid.originalFilename,
+      path: vid.videoPath,
+      thumbnailPath: vid.thumbnailPath,
+      size: formatFileSize(Number(vid.fileSize)),
+      sizeBytes: Number(vid.fileSize),
+      mimeType: vid.mimeType,
+      uploadedAt: vid.createdAt || new Date(),
+      accessedAt: vid.updatedAt || new Date(),
+      dimensions: vid.width && vid.height ? `${vid.width}x${vid.height}` : null,
+      isFavorite: vid.isFavorite || false,
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedVideos,
+      count: formattedVideos.length,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener videos recientes"
+    });
+  }
+};
+
+// ============================================================================
+// 📈 OBTENER LÍNEA DE TIEMPO AGRUPADA POR FECHA
+// ============================================================================
+export const getTimeline = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { days = 30 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days as string));
+
+    const imageStats = await prisma.$queryRaw<Array<{
+      date: Date;
+      count: bigint;
+      totalSize: bigint;
+    }>>`
+      SELECT 
+        DATE(createdAt) as date,
+        COUNT(*) as count,
+        SUM(fileSize) as totalSize
+      FROM images
+      WHERE userId = ${userId} 
+        AND deletedAt IS NULL 
+        AND createdAt >= ${startDate}
+      GROUP BY DATE(createdAt)
+      ORDER BY date DESC
+    `;
+
+    const videoStats = await prisma.$queryRaw<Array<{
+      date: Date;
+      count: bigint;
+      totalSize: bigint;
+    }>>`
+      SELECT 
+        DATE(createdAt) as date,
+        COUNT(*) as count,
+        SUM(fileSize) as totalSize
+      FROM videos
+      WHERE userId = ${userId} 
+        AND deletedAt IS NULL 
+        AND createdAt >= ${startDate}
+      GROUP BY DATE(createdAt)
+      ORDER BY date DESC
+    `;
+
+    const timelineMap = new Map<string, {
+      date: Date;
+      count: number;
+      totalSize: number;
+    }>();
+
+    imageStats.forEach((stat) => {
+      const dateStr = stat.date.toISOString().split('T')[0];
+      timelineMap.set(dateStr, {
+        date: stat.date,
+        count: Number(stat.count),
+        totalSize: Number(stat.totalSize) || 0,
+      });
+    });
+
+    videoStats.forEach((stat) => {
+      const dateStr = stat.date.toISOString().split('T')[0];
+      if (timelineMap.has(dateStr)) {
+        const existing = timelineMap.get(dateStr)!;
+        existing.count += Number(stat.count);
+        existing.totalSize += Number(stat.totalSize) || 0;
+      } else {
+        timelineMap.set(dateStr, {
+          date: stat.date,
+          count: Number(stat.count),
+          totalSize: Number(stat.totalSize) || 0,
+        });
+      }
+    });
+
+    const timeline = Array.from(timelineMap.values())
+      .map(day => ({
+        date: day.date,
+        count: day.count,
+        totalSize: formatFileSize(day.totalSize),
+        totalSizeBytes: day.totalSize,
+      }))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return res.json({
+      success: true,
+      data: timeline,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener línea de tiempo"
+    });
+  }
+};
+
+// ============================================================================
+// 🔥 OBTENER ITEMS MÁS VISTOS/ACCEDIDOS
+// ============================================================================
+export const getMostViewed = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { limit = 10 } = req.query;
+
+    const recentImages = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        imageId: true,
+        title: true,
+        originalFilename: true,
+        imagePath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        updatedAt: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const recentVideos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null
+      },
+      select: {
+        videoId: true,
+        title: true,
+        originalFilename: true,
+        videoPath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        updatedAt: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const allItems = [
+      ...recentImages.map((img) => ({
+        id: img.imageId,
+        type: 'image' as const,
+        name: img.title || img.originalFilename,
+        path: img.imagePath,
+        thumbnailPath: img.thumbnailPath,
+        fileSize: img.fileSize,
+        updatedAt: img.updatedAt || new Date(),
+        isFavorite: img.isFavorite || false,
+      })),
+      ...recentVideos.map((vid) => ({
+        id: vid.videoId,
+        type: 'video' as const,
+        name: vid.title || vid.originalFilename,
+        path: vid.videoPath,
+        thumbnailPath: vid.thumbnailPath,
+        fileSize: vid.fileSize,
+        updatedAt: vid.updatedAt || new Date(),
+        isFavorite: vid.isFavorite || false,
+      }))
+    ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+     .slice(0, parseInt(limit as string));
+
+    const formattedItems = allItems.map((item) => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      path: item.path,
+      thumbnailPath: item.thumbnailPath,
+      size: formatFileSize(Number(item.fileSize)),
+      sizeBytes: Number(item.fileSize),
+      lastAccessed: item.updatedAt,
+      isFavorite: item.isFavorite,
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedItems,
+      count: formattedItems.length,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener items más vistos"
+    });
+  }
+};
+
+// ============================================================================
+// 🆕 OBTENER ACTIVIDAD RECIENTE POR TIPO
+// ============================================================================
+export const getRecentActivity = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado"
+      });
+    }
+
+    const { limit = 20 } = req.query;
+
+    const recentImages = await prisma.images.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        updatedAt: { not: null }
+      },
+      select: {
+        imageId: true,
+        title: true,
+        originalFilename: true,
+        imagePath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        updatedAt: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const recentVideos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: null,
+        updatedAt: { not: null }
+      },
+      select: {
+        videoId: true,
+        title: true,
+        originalFilename: true,
+        videoPath: true,
+        thumbnailPath: true,
+        fileSize: true,
+        mimeType: true,
+        updatedAt: true,
+        isFavorite: true,
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      take: parseInt(limit as string)
+    });
+
+    const allActivity = [
+      ...recentImages.map((img) => ({
+        id: img.imageId,
+        type: 'image' as const,
+        name: img.title || img.originalFilename,
+        originalName: img.originalFilename,
+        path: img.imagePath,
+        thumbnailPath: img.thumbnailPath,
+        fileSize: img.fileSize,
+        mimeType: img.mimeType,
+        updatedAt: img.updatedAt!,
+        isFavorite: img.isFavorite || false,
+        action: 'updated' as const,
+      })),
+      ...recentVideos.map((vid) => ({
+        id: vid.videoId,
+        type: 'video' as const,
+        name: vid.title || vid.originalFilename,
+        originalName: vid.originalFilename,
+        path: vid.videoPath,
+        thumbnailPath: vid.thumbnailPath,
+        fileSize: vid.fileSize,
+        mimeType: vid.mimeType,
+        updatedAt: vid.updatedAt!,
+        isFavorite: vid.isFavorite || false,
+        action: 'updated' as const,
+      }))
+    ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+     .slice(0, parseInt(limit as string));
+
+    const formattedActivity = allActivity.map((item) => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      originalName: item.originalName,
+      path: item.path,
+      thumbnailPath: item.thumbnailPath,
+      size: formatFileSize(Number(item.fileSize)),
+      mimeType: item.mimeType,
+      updatedAt: item.updatedAt,
+      isFavorite: item.isFavorite,
+      action: item.action,
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedActivity,
+      count: formattedActivity.length,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Error al obtener actividad reciente"
+    });
+  }
 };

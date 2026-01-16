@@ -1,80 +1,53 @@
-// src/routes/DocumentsRoutes.ts
 import auth from "@src/middleware/auth";
 import { Router } from "express";
 import * as DocumentService from "@src/services/DocumentService";
 import { uploadSingleDocument } from "@src/middleware/multer";
 
 const router = Router();
-
-// ============================================================================
-// 🔒 TODAS LAS RUTAS REQUIEREN AUTENTICACIÓN
-// ============================================================================
-
 router.use(auth);
 
 // ============================================================================
-// 📤 SUBIR DOCUMENTO - Debe ir ANTES de rutas con parámetros
+// 📤 SUBIR DOCUMENTO
 // ============================================================================
-
-router.post("/upload", uploadSingleDocument, DocumentService.createDocument);
+router.post("/upload", uploadSingleDocument, DocumentService.uploadDocument);
 
 // ============================================================================
-// 📊 ESTADÍSTICAS - Debe ir ANTES de rutas con parámetros
+// 📊 ESTADÍSTICAS Y BÚSQUEDA (sin parámetros variables)
 // ============================================================================
-
 router.get("/stats", DocumentService.getDocumentStats);
-
-// ============================================================================
-// 🔍 BUSCAR DOCUMENTOS - Debe ir ANTES de rutas con parámetros
-// ============================================================================
-
 router.get("/search", DocumentService.searchDocuments);
 
 // ============================================================================
-// 📁 OBTENER TODOS LOS DOCUMENTOS
+// 📂 RUTAS ESPECÍFICAS CON TEXTO FIJO (antes de :id)
 // ============================================================================
-
-router.get("/", DocumentService.getUserDocuments);
-
-// ============================================================================
-// 🆕 CREAR DOCUMENTO (METADATOS)
-// ============================================================================
-
-router.post("/", DocumentService.createDocument);
-
-// ============================================================================
-// 📂 DOCUMENTOS POR CATEGORÍA
-// ============================================================================
-
 router.get("/category/:category", DocumentService.getDocumentsByCategory);
 
 // ============================================================================
-// 👤 DOCUMENTOS ESPECÍFICOS (RUTAS CON PARÁMETROS)
+// 📄 RUTAS CON :id ESPECÍFICAS (más restrictivas primero)
 // ============================================================================
+router.get("/:id/file", DocumentService.serveDocument);
+router.get("/:id/download", DocumentService.downloadDocument);
+router.get("/:id/preview", DocumentService.previewDocument);
+router.get("/:id/preview-url", DocumentService.getPreviewUrl);
+router.get("/:id/open", DocumentService.openDocument);
 
 // ============================================================================
-// 📄 OBTENER DOCUMENTO POR ID
+// ✏️ ACCIONES PATCH/PUT (antes del GET genérico)
 // ============================================================================
-
-router.get("/:id", DocumentService.getDocumentById);
-
-// ============================================================================
-// ✏️ ACTUALIZAR DOCUMENTO
-// ============================================================================
-
+router.patch("/:id/favorite", DocumentService.toggleFavorite);
 router.put("/:id", DocumentService.updateDocument);
 router.patch("/:id", DocumentService.updateDocument);
 
 // ============================================================================
-// ⭐ MARCAR/DESMARCAR COMO FAVORITO
+// 🗑️ DELETE
 // ============================================================================
-
-router.patch("/:id/favorite", DocumentService.toggleFavorite);
-
-// ============================================================================
-// 🗑️ ELIMINAR DOCUMENTO
-// ============================================================================
-
 router.delete("/:id", DocumentService.deleteDocument);
+
+// ============================================================================
+// 📁 CRUD BÁSICO (al final)
+// ============================================================================
+router.get("/", DocumentService.getUserDocuments);          // Lista todos
+router.post("/", DocumentService.createDocumentMetadata);   // Crear metadatos
+router.get("/:id", DocumentService.getDocumentById);        // Get uno (DEBE IR AL FINAL)
 
 export default router;

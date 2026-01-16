@@ -1,0 +1,532 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model activity {
+  activityId   Int                   @id @default(autoincrement())
+  userId       Int
+  action       String                @db.VarChar(50)
+  resourceType activity_resourceType
+  resourceId   Int?
+  details      Json?
+  ipAddress    String?               @db.VarChar(45)
+  userAgent    String?               @db.Text
+  createdAt    DateTime?             @default(now()) @db.Timestamp(0)
+  users        users                 @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "activity_ibfk_1")
+
+  @@index([action, createdAt(sort: Desc)], map: "idx_activity_action_created")
+  @@index([createdAt], map: "idx_activity_cleanup")
+  @@index([resourceType, resourceId, createdAt(sort: Desc)], map: "idx_activity_resource_type")
+  @@index([userId, createdAt(sort: Desc)], map: "idx_activity_user_created")
+}
+
+model album_images {
+  albumId   Int
+  imageId   Int
+  sortOrder Int?      @default(0)
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  albums    albums    @relation(fields: [albumId], references: [albumId], onDelete: Cascade, onUpdate: NoAction, map: "album_images_ibfk_1")
+  images    images    @relation(fields: [imageId], references: [imageId], onDelete: Cascade, onUpdate: NoAction, map: "album_images_ibfk_2")
+
+  @@id([albumId, imageId])
+  @@index([albumId, sortOrder], map: "idx_album_img_album_sort")
+  @@index([imageId], map: "idx_album_img_image")
+}
+
+model album_videos {
+  albumId   Int
+  videoId   Int
+  sortOrder Int?      @default(0)
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  albums    albums    @relation(fields: [albumId], references: [albumId], onDelete: Cascade, onUpdate: NoAction, map: "album_videos_ibfk_1")
+  videos    videos    @relation(fields: [videoId], references: [videoId], onDelete: Cascade, onUpdate: NoAction, map: "album_videos_ibfk_2")
+
+  @@id([albumId, videoId])
+  @@index([albumId, sortOrder], map: "idx_album_vid_album_sort")
+  @@index([videoId], map: "idx_album_vid_video")
+}
+
+model albums {
+  albumId      Int            @id @default(autoincrement())
+  userId       Int
+  name         String         @db.VarChar(200)
+  description  String?        @db.Text
+  coverImageId Int?
+  coverVideoId Int?
+  isPublic     Boolean?       @default(false)
+  isSystem     Boolean?       @default(false)
+  deletedAt    DateTime?      @db.Timestamp(0)
+  imageCount   Int?           @default(0)
+  videoCount   Int?           @default(0)
+  totalItems   Int?           @default(0)
+  createdAt    DateTime?      @default(now()) @db.Timestamp(0)
+  updatedAt    DateTime?      @default(now()) @db.Timestamp(0)
+  album_images album_images[]
+  album_videos album_videos[]
+  users        users          @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "albums_ibfk_1")
+  images       images?        @relation(fields: [coverImageId], references: [imageId], onUpdate: NoAction, map: "albums_ibfk_2")
+  videos       videos?        @relation(fields: [coverVideoId], references: [videoId], onUpdate: NoAction, map: "albums_ibfk_3")
+  shares       shares[]
+
+  @@index([coverImageId], map: "coverImageId")
+  @@index([coverVideoId], map: "coverVideoId")
+  @@index([isPublic, createdAt(sort: Desc)], map: "idx_albums_public_created")
+  @@index([name(length: 200), description(length: 200)], map: "idx_albums_search")
+  @@index([isSystem], map: "idx_albums_system")
+  @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_albums_user_deleted_created")
+}
+
+model categories {
+  categoryId       Int                @id @default(autoincrement())
+  name             String             @db.VarChar(100)
+  description      String?            @db.Text
+  color            String?            @default("#007bff") @db.VarChar(7)
+  slug             String             @unique(map: "slug") @db.VarChar(120)
+  isSystem         Boolean?           @default(false)
+  itemCount        Int?               @default(0)
+  createdAt        DateTime?          @default(now()) @db.Timestamp(0)
+  updatedAt        DateTime?          @default(now()) @db.Timestamp(0)
+  image_categories image_categories[]
+  video_categories video_categories[]
+
+  @@index([name], map: "idx_categories_name")
+  @@index([slug], map: "idx_categories_slug")
+  @@index([isSystem, itemCount(sort: Desc)], map: "idx_categories_system_count")
+}
+
+model document_comments {
+  commentId  Int       @id @default(autoincrement())
+  documentId Int
+  userId     Int
+  content    String    @db.Text
+  pageNumber Int?
+  isResolved Boolean?  @default(false)
+  createdAt  DateTime? @default(now()) @db.Timestamp(0)
+  updatedAt  DateTime? @default(now()) @db.Timestamp(0)
+  documents  documents @relation(fields: [documentId], references: [documentId], onDelete: Cascade, onUpdate: NoAction, map: "document_comments_ibfk_1")
+  users      users     @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "document_comments_ibfk_2")
+
+  @@index([documentId, createdAt(sort: Desc)], map: "idx_document_comments_doc_created")
+  @@index([documentId, isResolved], map: "idx_document_comments_doc_resolved")
+  @@index([userId], map: "idx_document_comments_user")
+}
+
+model document_shares {
+  shareId                                 Int       @id @default(autoincrement())
+  documentId                              Int
+  sharedBy                                Int
+  sharedWith                              Int?
+  canView                                 Boolean?  @default(true)
+  canDownload                             Boolean?  @default(true)
+  canEdit                                 Boolean?  @default(false)
+  shareToken                              String?   @unique(map: "shareToken") @db.VarChar(100)
+  expiresAt                               DateTime? @db.Timestamp(0)
+  createdAt                               DateTime? @default(now()) @db.Timestamp(0)
+  lastAccessedAt                          DateTime? @db.Timestamp(0)
+  documents                               documents @relation(fields: [documentId], references: [documentId], onDelete: Cascade, onUpdate: NoAction, map: "document_shares_ibfk_1")
+  users_document_shares_sharedByTousers   users     @relation("document_shares_sharedByTousers", fields: [sharedBy], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "document_shares_ibfk_2")
+  users_document_shares_sharedWithTousers users?    @relation("document_shares_sharedWithTousers", fields: [sharedWith], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "document_shares_ibfk_3")
+
+  @@index([documentId, shareToken], map: "idx_document_shares_doc_token")
+  @@index([sharedBy], map: "idx_document_shares_sharedBy")
+  @@index([sharedWith, expiresAt], map: "idx_document_shares_sharedWith_expires")
+  @@index([shareToken, expiresAt], map: "idx_document_shares_token_expires")
+}
+
+model document_versions {
+  versionId         Int       @id @default(autoincrement())
+  documentId        Int
+  versionNumber     Int
+  filename          String    @db.VarChar(255)
+  documentPath      String    @db.VarChar(500)
+  fileSize          BigInt
+  changeDescription String?   @db.Text
+  uploadedBy        Int
+  createdAt         DateTime? @default(now()) @db.Timestamp(0)
+  documents         documents @relation(fields: [documentId], references: [documentId], onDelete: Cascade, onUpdate: NoAction, map: "document_versions_ibfk_1")
+  users             users     @relation(fields: [uploadedBy], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "document_versions_ibfk_2")
+
+  @@unique([documentId, versionNumber], map: "unique_document_version")
+  @@index([documentId, versionNumber(sort: Desc)], map: "idx_document_versions_doc_version")
+  @@index([uploadedBy], map: "idx_document_versions_uploadedBy")
+}
+
+model documents {
+  documentId        Int                 @id @default(autoincrement())
+  userId            Int
+  title             String              @db.VarChar(255)
+  description       String?             @db.Text
+  category          documents_category? @default(other)
+  tags              String?             @db.VarChar(500)
+  originalFilename  String              @db.VarChar(255)
+  filename          String              @unique(map: "filename") @db.VarChar(255)
+  documentPath      String              @db.VarChar(500)
+  thumbnailPath     String?             @db.VarChar(500)
+  previewPath       String?             @db.VarChar(500)
+  fileSize          BigInt
+  mimeType          String              @db.VarChar(100)
+  pageCount         Int?
+  wordCount         Int?
+  language          String?             @db.VarChar(50)
+  isFavorite        Boolean?            @default(false)
+  isPublic          Boolean?            @default(false)
+  version           Int?                @default(1)
+  createdAt         DateTime?           @default(now()) @db.Timestamp(0)
+  updatedAt         DateTime?           @default(now()) @db.Timestamp(0)
+  deletedAt         DateTime?           @db.Timestamp(0)
+  document_comments document_comments[]
+  document_shares   document_shares[]
+  document_versions document_versions[]
+  users             users               @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "documents_ibfk_1")
+
+  @@index([category, deletedAt], map: "idx_documents_category_deleted")
+  @@index([isFavorite, userId, deletedAt], map: "idx_documents_favorite_user")
+  @@index([mimeType, userId, deletedAt], map: "idx_documents_mime_user_deleted")
+  @@index([isPublic, createdAt(sort: Desc), deletedAt], map: "idx_documents_public_created")
+  @@index([title(length: 255), description(length: 200), tags(length: 200), originalFilename(length: 255)], map: "idx_documents_search")
+  @@index([fileSize, userId], map: "idx_documents_size_user")
+  @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_documents_user_deleted_created")
+}
+
+model folder_images {
+  folderId  Int
+  imageId   Int
+  sortOrder Int?      @default(0)
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  folders   folders   @relation(fields: [folderId], references: [folderId], onDelete: Cascade, onUpdate: NoAction, map: "folder_images_ibfk_1")
+  images    images    @relation(fields: [imageId], references: [imageId], onDelete: Cascade, onUpdate: NoAction, map: "folder_images_ibfk_2")
+
+  @@id([folderId, imageId])
+  @@index([folderId, sortOrder], map: "idx_folder_img_folder_sort")
+  @@index([imageId], map: "idx_folder_img_image")
+}
+
+model folder_videos {
+  folderId  Int
+  videoId   Int
+  sortOrder Int?      @default(0)
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  folders   folders   @relation(fields: [folderId], references: [folderId], onDelete: Cascade, onUpdate: NoAction, map: "folder_videos_ibfk_1")
+  videos    videos    @relation(fields: [videoId], references: [videoId], onDelete: Cascade, onUpdate: NoAction, map: "folder_videos_ibfk_2")
+
+  @@id([folderId, videoId])
+  @@index([folderId, sortOrder], map: "idx_folder_vid_folder_sort")
+  @@index([videoId], map: "idx_folder_vid_video")
+}
+
+model folders {
+  folderId       Int             @id @default(autoincrement())
+  userId         Int
+  name           String          @db.VarChar(200)
+  description    String?         @db.Text
+  parentFolderId Int?
+  color          String?         @default("#6c757d") @db.VarChar(7)
+  isSystem       Boolean?        @default(false)
+  sortOrder      Int?            @default(0)
+  itemCount      Int?            @default(0)
+  deletedAt      DateTime?       @db.Timestamp(0)
+  createdAt      DateTime?       @default(now()) @db.Timestamp(0)
+  updatedAt      DateTime?       @default(now()) @db.Timestamp(0)
+  folder_images  folder_images[]
+  folder_videos  folder_videos[]
+  users          users           @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "folders_ibfk_1")
+  folders        folders?        @relation("foldersTofolders", fields: [parentFolderId], references: [folderId], onDelete: Cascade, onUpdate: NoAction, map: "folders_ibfk_2")
+  other_folders  folders[]       @relation("foldersTofolders")
+
+  @@index([isSystem], map: "idx_folders_system")
+  @@index([userId, parentFolderId, deletedAt, sortOrder], map: "idx_folders_user_parent_deleted")
+  @@index([parentFolderId], map: "parentFolderId")
+}
+
+model image_categories {
+  imageId    Int
+  categoryId Int
+  createdAt  DateTime?  @default(now()) @db.Timestamp(0)
+  images     images     @relation(fields: [imageId], references: [imageId], onDelete: Cascade, onUpdate: NoAction, map: "image_categories_ibfk_1")
+  categories categories @relation(fields: [categoryId], references: [categoryId], onDelete: Cascade, onUpdate: NoAction, map: "image_categories_ibfk_2")
+
+  @@id([imageId, categoryId])
+  @@index([categoryId, imageId], map: "idx_img_cat_category_image")
+}
+
+model image_tags {
+  imageId   Int
+  tagId     Int
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  images    images    @relation(fields: [imageId], references: [imageId], onDelete: Cascade, onUpdate: NoAction, map: "image_tags_ibfk_1")
+  tags      tags      @relation(fields: [tagId], references: [tagId], onDelete: Cascade, onUpdate: NoAction, map: "image_tags_ibfk_2")
+
+  @@id([imageId, tagId])
+  @@index([tagId, imageId], map: "idx_img_tag_tag_image")
+}
+
+model images {
+  imageId          Int                @id @default(autoincrement())
+  userId           Int
+  title            String?            @db.VarChar(255)
+  description      String?            @db.Text
+  originalFilename String             @db.VarChar(255)
+  filename         String             @db.VarChar(255)
+  imagePath        String             @db.VarChar(500)
+  thumbnailPath    String?            @db.VarChar(500)
+  mediumPath       String?            @db.VarChar(500)
+  fileSize         BigInt
+  mimeType         String             @db.VarChar(50)
+  width            Int?
+  height           Int?
+  isFavorite       Boolean?           @default(false)
+  isPublic         Boolean?           @default(false)
+  uploadDate       DateTime?          @default(now()) @db.Timestamp(0)
+  takenDate        DateTime?          @db.Timestamp(0)
+  cameraInfo       Json?
+  location         String?            @db.VarChar(200)
+  deletedAt        DateTime?          @db.Timestamp(0)
+  createdAt        DateTime?          @default(now()) @db.Timestamp(0)
+  updatedAt        DateTime?          @default(now()) @db.Timestamp(0)
+  yearMonth        String?            @db.Char(7)
+  album_images     album_images[]
+  albums           albums[]
+  folder_images    folder_images[]
+  image_categories image_categories[]
+  image_tags       image_tags[]
+  users            users              @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "images_ibfk_1")
+  shares           shares[]
+
+  @@index([filename], map: "idx_images_filename")
+  @@index([mimeType, deletedAt], map: "idx_images_mime_deleted")
+  @@index([isPublic, deletedAt, createdAt(sort: Desc)], map: "idx_images_public_deleted_created")
+  @@index([title(length: 255), description(length: 200)], map: "idx_images_search")
+  @@index([fileSize], map: "idx_images_size")
+  @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_images_user_deleted_created")
+  @@index([userId, isFavorite, deletedAt, createdAt(sort: Desc)], map: "idx_images_user_favorite_deleted")
+  @@index([userId, yearMonth, deletedAt], map: "idx_images_user_yearmonth")
+}
+
+model query_cache {
+  cacheId   Int       @id @default(autoincrement())
+  cacheKey  String    @unique(map: "cacheKey") @db.VarChar(255)
+  cacheData Json
+  expiresAt DateTime  @db.Timestamp(0)
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+
+  @@index([expiresAt], map: "idx_cache_expires_cleanup")
+  @@index([cacheKey, expiresAt], map: "idx_cache_key_expires")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model shares {
+  shareId           Int       @id @default(autoincrement())
+  imageId           Int?
+  videoId           Int?
+  albumId           Int?
+  sharedBy          Int
+  sharedWithEmail   String?   @db.VarChar(100)
+  token             String    @unique(map: "token") @db.VarChar(255)
+  expiresAt         DateTime? @db.Timestamp(0)
+  passwordProtected Boolean?  @default(false)
+  accessPassword    String?   @db.VarChar(255)
+  viewCount         Int?      @default(0)
+  createdAt         DateTime? @default(now()) @db.Timestamp(0)
+  images            images?   @relation(fields: [imageId], references: [imageId], onDelete: Cascade, onUpdate: NoAction, map: "shares_ibfk_1")
+  videos            videos?   @relation(fields: [videoId], references: [videoId], onDelete: Cascade, onUpdate: NoAction, map: "shares_ibfk_2")
+  albums            albums?   @relation(fields: [albumId], references: [albumId], onDelete: Cascade, onUpdate: NoAction, map: "shares_ibfk_3")
+  users             users     @relation(fields: [sharedBy], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "shares_ibfk_4")
+
+  @@index([albumId], map: "albumId")
+  @@index([expiresAt], map: "idx_shares_expires_cleanup")
+  @@index([token, expiresAt], map: "idx_shares_token_expires")
+  @@index([sharedBy, createdAt(sort: Desc)], map: "idx_shares_user_created")
+  @@index([imageId], map: "imageId")
+  @@index([videoId], map: "videoId")
+}
+
+model tags {
+  tagId       Int          @id @default(autoincrement())
+  name        String       @db.VarChar(100)
+  description String?      @db.Text
+  color       String?      @default("#6c757d") @db.VarChar(7)
+  slug        String       @unique(map: "slug") @db.VarChar(120)
+  usageCount  Int?         @default(0)
+  createdAt   DateTime?    @default(now()) @db.Timestamp(0)
+  updatedAt   DateTime?    @default(now()) @db.Timestamp(0)
+  image_tags  image_tags[]
+  video_tags  video_tags[]
+
+  @@index([name], map: "idx_tags_name")
+  @@index([slug], map: "idx_tags_slug")
+  @@index([usageCount(sort: Desc)], map: "idx_tags_usage_desc")
+}
+
+model trash {
+  trashId           Int            @id @default(autoincrement())
+  userId            Int
+  itemType          trash_itemType
+  itemId            Int
+  originalName      String         @db.VarChar(255)
+  originalPath      String         @db.VarChar(500)
+  fileSize          BigInt
+  mimeType          String?        @db.VarChar(100)
+  metadata          Json?
+  deletedAt         DateTime?      @default(now()) @db.Timestamp(0)
+  permanentDeleteAt DateTime?      @db.Timestamp(0)
+  createdAt         DateTime?      @default(now()) @db.Timestamp(0)
+  users             users          @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "trash_ibfk_1")
+
+  @@index([itemType, itemId], map: "idx_trash_item_type")
+  @@index([permanentDeleteAt, itemType], map: "idx_trash_permanent_cleanup")
+  @@index([userId, deletedAt(sort: Desc)], map: "idx_trash_user_deleted")
+}
+
+model users {
+  userId                                            Int                 @id @default(autoincrement())
+  username                                          String              @unique(map: "username") @db.VarChar(50)
+  email                                             String              @unique(map: "email") @db.VarChar(100)
+  password                                          String              @db.VarChar(255)
+  storageUsed                                       BigInt?             @default(0)
+  storageLimit                                      BigInt?             @default(5368709120)
+  imageCount                                        Int?                @default(0)
+  videoCount                                        Int?                @default(0)
+  documentCount                                     Int?                @default(0)
+  albumCount                                        Int?                @default(0)
+  totalMediaCount                                   Int?                @default(0)
+  profileImagePath                                  String?             @db.VarChar(500)
+  bio                                               String?             @db.Text
+  location                                          String?             @db.VarChar(200)
+  isActive                                          Boolean?            @default(true)
+  emailVerified                                     Boolean?            @default(false)
+  lastLogin                                         DateTime?           @db.Timestamp(0)
+  createdAt                                         DateTime?           @default(now()) @db.Timestamp(0)
+  updatedAt                                         DateTime?           @default(now()) @db.Timestamp(0)
+  role                                              users_role          @default(user)
+  status                                            users_status        @default(active)
+  deletedAt                                         DateTime?           @db.Timestamp(0)
+  activity                                          activity[]
+  albums                                            albums[]
+  document_comments                                 document_comments[]
+  document_shares_document_shares_sharedByTousers   document_shares[]   @relation("document_shares_sharedByTousers")
+  document_shares_document_shares_sharedWithTousers document_shares[]   @relation("document_shares_sharedWithTousers")
+  document_versions                                 document_versions[]
+  documents                                         documents[]
+  folders                                           folders[]
+  images                                            images[]
+  shares                                            shares[]
+  trash                                             trash[]
+  videos                                            videos[]
+
+  @@index([isActive, email], map: "idx_users_active_email")
+  @@index([email], map: "idx_users_email")
+  @@index([lastLogin(sort: Desc)], map: "idx_users_login")
+  @@index([role, status, isActive, deletedAt], map: "idx_users_role_status_active")
+  @@index([username], map: "idx_users_username")
+}
+
+model video_categories {
+  videoId    Int
+  categoryId Int
+  createdAt  DateTime?  @default(now()) @db.Timestamp(0)
+  videos     videos     @relation(fields: [videoId], references: [videoId], onDelete: Cascade, onUpdate: NoAction, map: "video_categories_ibfk_1")
+  categories categories @relation(fields: [categoryId], references: [categoryId], onDelete: Cascade, onUpdate: NoAction, map: "video_categories_ibfk_2")
+
+  @@id([videoId, categoryId])
+  @@index([categoryId, videoId], map: "idx_vid_cat_category_video")
+}
+
+model video_tags {
+  videoId   Int
+  tagId     Int
+  createdAt DateTime? @default(now()) @db.Timestamp(0)
+  videos    videos    @relation(fields: [videoId], references: [videoId], onDelete: Cascade, onUpdate: NoAction, map: "video_tags_ibfk_1")
+  tags      tags      @relation(fields: [tagId], references: [tagId], onDelete: Cascade, onUpdate: NoAction, map: "video_tags_ibfk_2")
+
+  @@id([videoId, tagId])
+  @@index([tagId, videoId], map: "idx_vid_tag_tag_video")
+}
+
+model videos {
+  videoId          Int                @id @default(autoincrement())
+  userId           Int
+  title            String?            @db.VarChar(255)
+  description      String?            @db.Text
+  originalFilename String             @db.VarChar(255)
+  filename         String             @db.VarChar(255)
+  videoPath        String             @db.VarChar(500)
+  thumbnailPath    String?            @db.VarChar(500)
+  fileSize         BigInt
+  mimeType         String             @db.VarChar(50)
+  duration         Int?
+  width            Int?
+  height           Int?
+  fps              Decimal?           @db.Decimal(5, 2)
+  bitrate          Int?
+  codec            String?            @db.VarChar(50)
+  isFavorite       Boolean?           @default(false)
+  isPublic         Boolean?           @default(false)
+  uploadDate       DateTime?          @default(now()) @db.Timestamp(0)
+  recordedDate     DateTime?          @db.Timestamp(0)
+  cameraInfo       Json?
+  location         String?            @db.VarChar(200)
+  deletedAt        DateTime?          @db.Timestamp(0)
+  createdAt        DateTime?          @default(now()) @db.Timestamp(0)
+  updatedAt        DateTime?          @default(now()) @db.Timestamp(0)
+  yearMonth        String?            @db.Char(7)
+  album_videos     album_videos[]
+  albums           albums[]
+  folder_videos    folder_videos[]
+  shares           shares[]
+  video_categories video_categories[]
+  video_tags       video_tags[]
+  users            users              @relation(fields: [userId], references: [userId], onDelete: Cascade, onUpdate: NoAction, map: "videos_ibfk_1")
+
+  @@index([duration, deletedAt], map: "idx_videos_duration_deleted")
+  @@index([filename], map: "idx_videos_filename")
+  @@index([mimeType, deletedAt], map: "idx_videos_mime_deleted")
+  @@index([isPublic, deletedAt, createdAt(sort: Desc)], map: "idx_videos_public_deleted_created")
+  @@index([title(length: 255), description(length: 200)], map: "idx_videos_search")
+  @@index([fileSize], map: "idx_videos_size")
+  @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_videos_user_deleted_created")
+  @@index([userId, isFavorite, deletedAt, createdAt(sort: Desc)], map: "idx_videos_user_favorite_deleted")
+  @@index([userId, yearMonth, deletedAt], map: "idx_videos_user_yearmonth")
+}
+
+enum trash_itemType {
+  image
+  video
+  document
+  folder
+}
+
+enum activity_resourceType {
+  image
+  video
+  album
+  category
+  tag
+  user
+  document
+}
+
+enum documents_category {
+  office
+  text
+  design
+  code
+  archive
+  other
+}
+
+enum users_role {
+  user
+  admin
+  moderator
+}
+
+enum users_status {
+  active
+  suspended
+  inactive
+}

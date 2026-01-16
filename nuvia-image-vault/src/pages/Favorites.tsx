@@ -61,6 +61,50 @@ const Favorites = () => {
   const [selectedFile, setSelectedFile] = useState<FavoriteItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Función para obtener la URL de la miniatura
+  const getThumbnailUrl = (item: FavoriteItem): string | null => {
+    if (!item.thumbnailPath) return null;
+    
+    let cleanPath = item.thumbnailPath;
+    // Limpiar la ruta si empieza con uploads/
+    if (cleanPath.startsWith("uploads/")) {
+      cleanPath = cleanPath.replace("uploads/", "");
+    }
+    // También limpiar si empieza con thumbnails/
+    if (cleanPath.startsWith("thumbnails/")) {
+      cleanPath = cleanPath.replace("thumbnails/", "");
+    }
+    
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
+  // Función para obtener la URL del archivo original
+  const getFileUrl = (item: FavoriteItem): string => {
+    const path = item.type === 'image' 
+      ? (item as FavoriteImage).imagePath 
+      : (item as FavoriteVideo).videoPath;
+    
+    let cleanPath = path;
+    if (path.startsWith("uploads/")) {
+      cleanPath = path.replace("uploads/", "");
+    }
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  };
+
+  // Función para obtener una URL segura para mostrar en la miniatura
+  const getSafeThumbnailUrl = (item: FavoriteItem): string | null => {
+    const thumbnailUrl = getThumbnailUrl(item);
+    if (thumbnailUrl) return thumbnailUrl;
+    
+    // Si no hay miniatura, para imágenes podemos usar la imagen original
+    if (item.type === 'image') {
+      return getFileUrl(item);
+    }
+    
+    // Para videos, no hay miniatura
+    return null;
+  };
+
   useEffect(() => {
     const fetchFavorites = async () => {
       try {
@@ -179,18 +223,6 @@ const Favorites = () => {
     } catch (error) {
       console.error("❌ Error limpiando favoritos:", error);
     }
-  };
-
-  const getFileUrl = (item: FavoriteItem): string => {
-    const path = item.type === 'image' 
-      ? (item as FavoriteImage).imagePath 
-      : (item as FavoriteVideo).videoPath;
-    
-    let cleanPath = path;
-    if (path.startsWith("uploads/")) {
-      cleanPath = path.replace("uploads/", "");
-    }
-    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
 
   const handleFileClick = (file: FavoriteItem) => {
@@ -401,93 +433,114 @@ const Favorites = () => {
 
                 {/* Lista de favoritos */}
                 <div className="divide-y divide-nuvia-peach/20">
-                  {filteredFavorites.map((favorite) => (
-                    <div
-                      key={`${favorite.type}-${favorite.id}`}
-                      className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
-                    >
-                      <div className="grid grid-cols-12 gap-4 items-center">
-                        {/* Archivo */}
-                        <div className="col-span-12 sm:col-span-6 lg:col-span-5">
-                          <div className="flex items-center gap-3">
-                            {/* Miniatura del mismo tamaño que en Recent (16x16) */}
-                            <div className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
-                              {favorite.type === "image" ? (
-                                <img 
-                                  src={getFileUrl(favorite)} 
-                                  alt={favorite.originalFilename}
-                                  className="w-full h-full object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                                  <Video className="w-6 h-6 text-nuvia-mauve" />
+                  {filteredFavorites.map((favorite) => {
+                    const thumbnailUrl = getSafeThumbnailUrl(favorite);
+                    
+                    return (
+                      <div
+                        key={`${favorite.type}-${favorite.id}`}
+                        className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
+                      >
+                        <div className="grid grid-cols-12 gap-4 items-center">
+                          {/* Archivo */}
+                          <div className="col-span-12 sm:col-span-6 lg:col-span-5">
+                            <div className="flex items-center gap-3">
+                              {/* Miniatura */}
+                              <div className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
+                                {thumbnailUrl ? (
+                                  <img 
+                                    src={thumbnailUrl} 
+                                    alt={favorite.originalFilename}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      // Si la miniatura falla, mostrar icono
+                                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                      const parent = e.currentTarget.parentElement;
+                                      if (parent) {
+                                        const fallbackDiv = document.createElement('div');
+                                        fallbackDiv.className = 'w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center';
+                                        fallbackDiv.innerHTML = favorite.type === 'image' 
+                                          ? '<Image class="w-6 h-6 text-nuvia-mauve" />'
+                                          : '<Video class="w-6 h-6 text-nuvia-mauve" />';
+                                        parent.appendChild(fallbackDiv);
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
+                                    {favorite.type === 'image' ? (
+                                      <Image className="w-6 h-6 text-nuvia-mauve" />
+                                    ) : (
+                                      <Video className="w-6 h-6 text-nuvia-mauve" />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p 
+                                  className="font-medium text-nuvia-deep truncate hover:text-nuvia-rose cursor-pointer transition-colors"
+                                  onClick={() => handleFileClick(favorite)}
+                                >
+                                  {favorite.originalFilename}
+                                </p>
+                                <div className="sm:hidden flex flex-wrap gap-2 mt-1">
+                                  <span className="text-xs text-nuvia-mauve/70">{formatFileSize(favorite.fileSize)}</span>
+                                  <span className="text-xs text-nuvia-mauve/70">•</span>
+                                  <span className="text-xs text-nuvia-mauve/70 capitalize">{favorite.type}</span>
+                                  <span className="text-xs text-nuvia-mauve/70">•</span>
+                                  <span className="text-xs text-nuvia-mauve/70">{formatDate(favorite.createdAt)}</span>
                                 </div>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p 
-                                className="font-medium text-nuvia-deep truncate hover:text-nuvia-rose cursor-pointer transition-colors"
-                                onClick={() => handleFileClick(favorite)}
-                              >
-                                {favorite.originalFilename}
-                              </p>
-                              <div className="sm:hidden flex flex-wrap gap-2 mt-1">
-                                <span className="text-xs text-nuvia-mauve/70">{formatFileSize(favorite.fileSize)}</span>
-                                <span className="text-xs text-nuvia-mauve/70">•</span>
-                                <span className="text-xs text-nuvia-mauve/70 capitalize">{favorite.type}</span>
-                                <span className="text-xs text-nuvia-mauve/70">•</span>
-                                <span className="text-xs text-nuvia-mauve/70">{formatDate(favorite.createdAt)}</span>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Tamaño - Solo desktop */}
-                        <div className="hidden sm:block col-span-2 text-nuvia-mauve">
-                          {formatFileSize(favorite.fileSize)}
-                        </div>
+                          {/* Tamaño - Solo desktop */}
+                          <div className="hidden sm:block col-span-2 text-nuvia-mauve">
+                            {formatFileSize(favorite.fileSize)}
+                          </div>
 
-                        {/* Fecha - Solo desktop */}
-                        <div className="hidden md:block col-span-2 text-nuvia-mauve">
-                          {formatDate(favorite.createdAt)}
-                        </div>
+                          {/* Fecha - Solo desktop */}
+                          <div className="hidden md:block col-span-2 text-nuvia-mauve">
+                            {formatDate(favorite.createdAt)}
+                          </div>
 
-                        {/* Tipo - Solo desktop */}
-                        <div className="hidden lg:block col-span-2 text-nuvia-mauve capitalize">
-                          {favorite.type}
-                        </div>
+                          {/* Tipo - Solo desktop */}
+                          <div className="hidden lg:block col-span-2 text-nuvia-mauve capitalize">
+                            {favorite.type}
+                          </div>
 
-                        {/* Acciones */}
-                        <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-start">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl">
-                              <DropdownMenuItem onClick={() => handleFileClick(favorite)}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                Ver detalles
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDownload(favorite)}>
-                                <Download className="w-4 h-4 mr-2" />
-                                Descargar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                className="text-red-600"
-                                onClick={() => removeFromFavorites(favorite)}
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Quitar de favoritos
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {/* Acciones */}
+                          <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-start">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl">
+                                <DropdownMenuItem onClick={() => handleFileClick(favorite)}>
+                                  <Eye className="w-4 h-4 mr-2" />
+                                  Ver detalles
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDownload(favorite)}>
+                                  <Download className="w-4 h-4 mr-2" />
+                                  Descargar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-red-600"
+                                  onClick={() => removeFromFavorites(favorite)}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Quitar de favoritos
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </CardContent>

@@ -1,7 +1,6 @@
-// src/services/VideoService.ts
+// src/services/VideoService.ts - VERSIÓN LIMPIA
 import { Request, Response } from "express";
-import { pool } from "@src/config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
+import prisma from '../lib/prisma';
 import path from "path";
 import fs from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
@@ -16,19 +15,15 @@ ffmpeg.setFfprobePath(ffprobeInstaller.path);
 const ALLOWED_TYPES = [
   "video/mp4",
   "video/webm",
-  "video/quicktime", // .mov
-  "video/x-msvideo", // .avi
-  "video/x-matroska" // .mkv
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/x-matroska"
 ];
 const MAX_FILE_SIZE = 2000 * 1024 * 1024; // 2GB
 
 const resolveStoragePath = (storedPath: string | null | undefined): string | null => {
-  if (!storedPath) {
-    return null;
-  }
-  if (path.isAbsolute(storedPath)) {
-    return storedPath;
-  }
+  if (!storedPath) return null;
+  if (path.isAbsolute(storedPath)) return storedPath;
   const normalized = storedPath.replace(/^[/\\]+/, '').replace(/\\/g, '/');
   return path.join(process.cwd(), normalized);
 };
@@ -43,13 +38,9 @@ interface VideoMetadata {
 }
 
 const parseFps = (value?: string): number | null => {
-  if (!value || value === '0/0') {
-    return null;
-  }
+  if (!value || value === '0/0') return null;
   const [num, den] = value.split('/').map(part => Number(part));
-  if (!den) {
-    return Number.isFinite(num) ? num : null;
-  }
+  if (!den) return Number.isFinite(num) ? num : null;
   const fps = num / den;
   return Number.isFinite(fps) ? Number(fps.toFixed(2)) : null;
 };
@@ -58,7 +49,6 @@ const extractVideoMetadata = async (filePath: string): Promise<VideoMetadata> =>
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (error: Error | null, data: FfprobeData) => {
       if (error) {
-        console.error('Error obteniendo metadata de video:', error);
         return resolve({});
       }
 
@@ -75,16 +65,14 @@ const extractVideoMetadata = async (filePath: string): Promise<VideoMetadata> =>
       const bitrate = bitrateValue ? Number.parseInt(String(bitrateValue), 10) : null;
       const codec = videoStream?.codec_name ?? null;
 
-      const metadata: VideoMetadata = {
+      resolve({
         duration: Number.isFinite(duration ?? NaN) ? duration : null,
         width: videoStream?.width ?? null,
         height: videoStream?.height ?? null,
         fps: parseFps(videoStream?.avg_frame_rate ?? videoStream?.r_frame_rate),
         bitrate: Number.isFinite(bitrate ?? NaN) ? bitrate : null,
         codec,
-      };
-
-      resolve(metadata);
+      });
     });
   });
 };
@@ -97,8 +85,7 @@ const generateVideoThumbnail = async (userId: number, sourcePath: string, filena
 
   return new Promise((resolve) => {
     ffmpeg(sourcePath)
-      .on('error', (error: Error) => {
-        console.error('Error generando thumbnail de video:', error);
+      .on('error', () => {
         resolve(null);
       })
       .on('end', () => {
@@ -114,7 +101,6 @@ const generateVideoThumbnail = async (userId: number, sourcePath: string, filena
   });
 };
 
-// ✅ Helper function to validate file
 const validateFile = (file: Express.Multer.File) => {
   if (!ALLOWED_TYPES.includes(file.mimetype)) {
     throw new Error(`Video format not allowed: ${file.mimetype}`);
@@ -124,7 +110,6 @@ const validateFile = (file: Express.Multer.File) => {
   }
 };
 
-// ✅ Helper function to create relative path
 const getRelativePath = (userId: number, filename: string): string => {
   const relative = path.join('uploads', userId.toString(), 'videos', filename);
   return relative.replace(/\\/g, '/');
@@ -134,55 +119,52 @@ const getRelativePath = (userId: number, filename: string): string => {
 export const uploadVideo = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No video uploaded" });
+      res.status(400).json({ 
+        success: false,
+        error: "No video uploaded" 
+      });
       return;
     }
 
     const userId = req.user!.userId;
     const file = req.file;
-
-    // Validate file
     validateFile(file);
 
     const relativePath = getRelativePath(userId, file.filename);
     const absolutePath = file.path;
-
     const metadata = await extractVideoMetadata(absolutePath);
+    
     let thumbnailPath: string | null = null;
     try {
       thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
-    } catch (thumbnailError) {
-      console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+    } catch {
+      // Silently fail thumbnail generation
     }
 
-    // Insert into DB
-    const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO videos 
-      (userId, title, originalFilename, filename, videoPath, thumbnailPath, fileSize, mimeType, duration, width, height, fps, bitrate, codec) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        file.originalname,
-        file.originalname,
-        file.filename,
-        relativePath,
-        thumbnailPath,
-        file.size,
-        file.mimetype,
-        metadata.duration ?? null,
-        metadata.width ?? null,
-        metadata.height ?? null,
-        metadata.fps ?? null,
-        metadata.bitrate ?? null,
-        metadata.codec ?? null,
-      ]
-    );
+    const video = await prisma.videos.create({
+      data: {
+        userId: userId,
+        title: file.originalname,
+        originalFilename: file.originalname,
+        filename: file.filename,
+        videoPath: relativePath,
+        thumbnailPath: thumbnailPath,
+        fileSize: BigInt(file.size),
+        mimeType: file.mimetype,
+        duration: metadata.duration ?? null,
+        width: metadata.width ?? null,
+        height: metadata.height ?? null,
+        fps: metadata.fps ?? null,
+        bitrate: metadata.bitrate ?? null,
+        codec: metadata.codec ?? null,
+      },
+    });
 
     res.status(201).json({
       success: true,
       message: "Video uploaded successfully",
       data: {
-        videoId: result.insertId,
+        videoId: video.videoId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
@@ -209,10 +191,12 @@ export const uploadVideo = async (req: Request, res: Response): Promise<void> =>
 
 // ✅ Upload multiple videos
 export const uploadMultipleVideos = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      res.status(400).json({ error: "No videos uploaded" });
+      res.status(400).json({ 
+        success: false,
+        error: "No videos uploaded" 
+      });
       return;
     }
 
@@ -220,11 +204,8 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
     const files = req.files as Express.Multer.File[];
     const insertedVideos = [];
 
-    await connection.beginTransaction();
-
     for (const file of files) {
       validateFile(file);
-
       const relativePath = getRelativePath(userId, file.filename);
       const absolutePath = file.path;
       const metadata = await extractVideoMetadata(absolutePath);
@@ -232,34 +213,31 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
       let thumbnailPath: string | null = null;
       try {
         thumbnailPath = await generateVideoThumbnail(userId, absolutePath, file.filename);
-      } catch (thumbnailError) {
-        console.warn('No se pudo generar thumbnail para el video:', thumbnailError);
+      } catch {
+        // Silently fail thumbnail generation
       }
 
-      const [result] = await connection.query<ResultSetHeader>(
-        `INSERT INTO videos 
-         (userId, title, originalFilename, filename, videoPath, thumbnailPath, fileSize, mimeType, duration, width, height, fps, bitrate, codec)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          userId,
-          file.originalname,
-          file.originalname,
-          file.filename,
-          relativePath,
-          thumbnailPath,
-          file.size,
-          file.mimetype,
-          metadata.duration ?? null,
-          metadata.width ?? null,
-          metadata.height ?? null,
-          metadata.fps ?? null,
-          metadata.bitrate ?? null,
-          metadata.codec ?? null,
-        ]
-      );
+      const video = await prisma.videos.create({
+        data: {
+          userId: userId,
+          title: file.originalname,
+          originalFilename: file.originalname,
+          filename: file.filename,
+          videoPath: relativePath,
+          thumbnailPath: thumbnailPath,
+          fileSize: BigInt(file.size),
+          mimeType: file.mimetype,
+          duration: metadata.duration ?? null,
+          width: metadata.width ?? null,
+          height: metadata.height ?? null,
+          fps: metadata.fps ?? null,
+          bitrate: metadata.bitrate ?? null,
+          codec: metadata.codec ?? null,
+        },
+      });
 
       insertedVideos.push({
-        videoId: result.insertId,
+        videoId: video.videoId,
         originalname: file.originalname,
         filename: file.filename,
         mimetype: file.mimetype,
@@ -275,23 +253,18 @@ export const uploadMultipleVideos = async (req: Request, res: Response): Promise
       });
     }
 
-    await connection.commit();
-
     res.status(201).json({
       success: true,
       message: "Videos uploaded successfully",
       data: insertedVideos,
     });
   } catch (error) {
-    await connection.rollback();
     console.error("Error uploading multiple videos:", error);
     res.status(500).json({ 
       success: false,
       error: "Error uploading videos", 
       details: (error as Error).message 
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -301,43 +274,34 @@ export const getUserVideos = async (req: Request, res: Response): Promise<void> 
     const userId = req.user!.userId;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const favoritesOnly = req.query.favorites === 'true';
 
-    let query = `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, width, height, fps, bitrate, codec,
-              isFavorite, isPublic, 
-              uploadDate, recordedDate, 
-              location, createdAt
-       FROM videos 
-       WHERE userId = ? AND deletedAt IS NULL`;
-    
-    const queryParams: any[] = [userId];
+    const where: any = {
+      userId: userId,
+      deletedAt: { equals: null },
+    };
 
-    if (favoritesOnly) {
-      query += ` AND isFavorite = 1`;
-    }
+    if (favoritesOnly) where.isFavorite = true;
 
-    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
-    queryParams.push(limit, offset);
+    const [videos, total] = await Promise.all([
+      prisma.videos.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.videos.count({ where }),
+    ]);
 
-    const [videos] = await pool.query<RowDataPacket[]>(query, queryParams);
-
-    let countQuery = `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NULL`;
-    const countParams: any[] = [userId];
-
-    if (favoritesOnly) {
-      countQuery += ` AND isFavorite = 1`;
-    }
-
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
-
-    const total = countResult[0].total;
+    const formattedVideos = videos.map(video => ({
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    }));
 
     res.json({
       success: true,
-      data: videos,
+      data: formattedVideos,
       pagination: {
         page,
         limit,
@@ -378,43 +342,38 @@ export const getVideosByUser = async (req: Request, res: Response): Promise<void
 
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const favoritesOnly = req.query.favorites === 'true';
 
-    let query = `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, width, height, fps, bitrate, codec,
-              isFavorite, isPublic, 
-              uploadDate, recordedDate, 
-              location, createdAt
-       FROM videos 
-       WHERE userId = ? AND deletedAt IS NULL`;
-
-    const queryParams: any[] = [requestedUserId];
+    const where: any = {
+      userId: requestedUserId,
+      deletedAt: { equals: null },
+    };
 
     if (favoritesOnly) {
-      query += ` AND isFavorite = 1`;
+      where.isFavorite = true;
     }
 
-    query += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
-    queryParams.push(limit, offset);
+    const [videos, total] = await Promise.all([
+      prisma.videos.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      prisma.videos.count({ where }),
+    ]);
 
-    const [videos] = await pool.query<RowDataPacket[]>(query, queryParams);
-
-    let countQuery = `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NULL`;
-    const countParams: any[] = [requestedUserId];
-
-    if (favoritesOnly) {
-      countQuery += ` AND isFavorite = 1`;
-    }
-
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
-
-    const total = countResult[0].total;
+    const formattedVideos = videos.map(video => ({
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    }));
 
     res.json({
       success: true,
-      data: videos,
+      data: formattedVideos,
       pagination: {
         page,
         limit,
@@ -437,19 +396,15 @@ export const getVideoById = async (req: Request, res: Response): Promise<void> =
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, width, height, fps, bitrate, codec,
-              isFavorite, isPublic,
-              uploadDate, recordedDate,
-              location, createdAt 
-       FROM videos 
-       WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [videoId, userId]
-    );
+    const video = await prisma.videos.findFirst({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+    });
 
-    if (videos.length === 0) {
+    if (!video) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -457,9 +412,14 @@ export const getVideoById = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    const formattedVideo = {
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    };
+
     res.json({
       success: true,
-      data: videos[0],
+      data: formattedVideo,
     });
   } catch (error) {
     console.error("Error getting video:", error);
@@ -476,13 +436,14 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    // Get video info
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoPath, thumbnailPath FROM videos WHERE videoId = ? AND userId = ?`,
-      [videoId, userId]
-    );
+    const video = await prisma.videos.findFirst({
+      where: {
+        videoId: videoId,
+        userId: userId,
+      },
+    });
 
-    if (videos.length === 0) {
+    if (!video) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -490,22 +451,21 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const videoPath = videos[0].videoPath as string;
-    const thumbnailPath = videos[0].thumbnailPath as string | null;
+    const videoPath = video.videoPath;
+    const thumbnailPath = video.thumbnailPath;
 
-    // Delete from DB
-    await pool.query(
-      `DELETE FROM videos WHERE videoId = ? AND userId = ?`,
-      [videoId, userId]
-    );
+    await prisma.videos.delete({
+      where: {
+        videoId: videoId,
+      },
+    });
 
-    // Delete physical file
     const absoluteVideoPath = resolveStoragePath(videoPath);
     if (absoluteVideoPath) {
       try {
         await fs.unlink(absoluteVideoPath);
       } catch (fsError) {
-        console.error("Error deleting video file:", fsError);
+        // Silently fail file deletion
       }
     }
 
@@ -514,8 +474,8 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
       if (absoluteThumbnailPath) {
         try {
           await fs.unlink(absoluteThumbnailPath);
-        } catch (fsError) {
-          console.error("Error deleting thumbnail file:", fsError);
+        } catch {
+          // Silently fail thumbnail deletion
         }
       }
     }
@@ -535,21 +495,19 @@ export const deleteVideo = async (req: Request, res: Response): Promise<void> =>
 
 // ✅ Soft delete (move to trash)
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    await connection.beginTransaction();
+    const video = await prisma.videos.findFirst({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+    });
 
-    // 1️⃣ Obtener información del video ANTES de marcarlo como eliminado
-    const [videos] = await connection.query<RowDataPacket[]>(
-      `SELECT * FROM videos WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [videoId, userId]
-    );
-
-    if (videos.length === 0) {
-      await connection.rollback();
+    if (!video) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -557,21 +515,14 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const video = videos[0];
+    const permanentDeleteAt = new Date();
+    permanentDeleteAt.setDate(permanentDeleteAt.getDate() + 30);
 
-    // 2️⃣ Marcar como eliminado en la tabla videos
-    await connection.query<ResultSetHeader>(
-      `UPDATE videos SET deletedAt = CURRENT_TIMESTAMP WHERE videoId = ? AND userId = ?`,
-      [videoId, userId]
-    );
-
-    // 3️⃣ Construir la ruta completa correctamente
     let fullPath = video.videoPath;
     if (!fullPath.startsWith("uploads/")) {
       fullPath = `uploads/${fullPath}`;
     }
 
-    // Asegurar que incluye /videos/ si no está presente
     if (!fullPath.includes("/videos/")) {
       const parts = fullPath.split("/");
       if (parts.length >= 3) {
@@ -580,10 +531,7 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       }
     }
 
-    console.log(`📁 Ruta de video guardada en trash:`, fullPath);
-
-    // 4️⃣ Construir metadata
-    const metadata = JSON.stringify({
+    const metadata = {
       width: video.width,
       height: video.height,
       duration: video.duration,
@@ -591,26 +539,29 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       fps: video.fps,
       bitrate: video.bitrate,
       codec: video.codec
+    };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.videos.update({
+        where: { videoId: videoId },
+        data: { deletedAt: new Date() },
+      });
+
+      await tx.trash.create({
+        data: {
+          userId: userId,
+          itemType: 'video',
+          itemId: videoId,
+          originalName: video.originalFilename || video.filename,
+          originalPath: fullPath,
+          fileSize: video.fileSize || 0n,
+          mimeType: video.mimeType,
+          metadata: JSON.stringify(metadata),
+          deletedAt: new Date(),
+          permanentDeleteAt: permanentDeleteAt,
+        },
+      });
     });
-
-    // 5️⃣ Insertar en la tabla trash
-    await connection.query(
-      `INSERT INTO trash 
-       (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        'video',
-        videoId,
-        video.originalFilename || video.filename,
-        fullPath,
-        video.fileSize,
-        video.mimeType,
-        metadata,
-      ]
-    );
-
-    await connection.commit();
 
     res.json({
       success: true,
@@ -618,15 +569,12 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       data: { videoId }
     });
   } catch (error) {
-    await connection.rollback();
     console.error("Error moving video to trash:", error);
     res.status(500).json({ 
       success: false,
       error: "Error moving video to trash",
       details: (error as Error).message 
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -636,12 +584,18 @@ export const restoreVideo = async (req: Request, res: Response): Promise<void> =
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET deletedAt = NULL WHERE videoId = ? AND userId = ? AND deletedAt IS NOT NULL`,
-      [videoId, userId]
-    );
+    const video = await prisma.videos.updateMany({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { not: { equals: null } },
+      },
+      data: {
+        deletedAt: null,
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (video.count === 0) {
       res.status(404).json({ 
         success: false,
         error: "Video not found in trash" 
@@ -668,29 +622,36 @@ export const getDeletedVideos = async (req: Request, res: Response): Promise<voi
     const userId = req.user!.userId;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, deletedAt, createdAt
-       FROM videos 
-       WHERE userId = ? AND deletedAt IS NOT NULL
-       ORDER BY deletedAt DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
-    );
+    const [videos, total] = await Promise.all([
+      prisma.videos.findMany({
+        where: {
+          userId: userId,
+          deletedAt: { not: { equals: null } },
+        },
+        skip,
+        take: limit,
+        orderBy: {
+          deletedAt: 'desc',
+        },
+      }),
+      prisma.videos.count({
+        where: {
+          userId: userId,
+          deletedAt: { not: { equals: null } },
+        },
+      }),
+    ]);
 
-    const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM videos WHERE userId = ? AND deletedAt IS NOT NULL`,
-      [userId]
-    );
-
-    const total = countResult[0].total;
+    const formattedVideos = videos.map(video => ({
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    }));
 
     res.json({
       success: true,
-      data: videos,
+      data: formattedVideos,
       pagination: {
         page,
         limit,
@@ -722,12 +683,18 @@ export const updateVideoTitle = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET title = ? WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [title.trim(), videoId, userId]
-    );
+    const video = await prisma.videos.updateMany({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+      data: {
+        title: title.trim(),
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (video.count === 0) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -755,12 +722,18 @@ export const updateVideoDescription = async (req: Request, res: Response): Promi
     const videoId = parseInt(req.params.id);
     const { description } = req.body;
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET description = ? WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [description || null, videoId, userId]
-    );
+    const video = await prisma.videos.updateMany({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+      data: {
+        description: description || null,
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (video.count === 0) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -781,43 +754,22 @@ export const updateVideoDescription = async (req: Request, res: Response): Promi
   }
 };
 
-// ✅ Update video metadata (duration, resolution, fps, etc.)
+// ✅ Update video metadata
 export const updateVideoMetadata = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
     const { duration, width, height, fps, bitrate, codec } = req.body;
 
-    // Build query dynamically only with present fields
-    const updates: string[] = [];
-    const values: any[] = [];
+    const updateData: any = {};
+    if (duration !== undefined) updateData.duration = duration;
+    if (width !== undefined) updateData.width = width;
+    if (height !== undefined) updateData.height = height;
+    if (fps !== undefined) updateData.fps = fps;
+    if (bitrate !== undefined) updateData.bitrate = bitrate;
+    if (codec !== undefined) updateData.codec = codec;
 
-    if (duration !== undefined) {
-      updates.push('duration = ?');
-      values.push(duration);
-    }
-    if (width !== undefined) {
-      updates.push('width = ?');
-      values.push(width);
-    }
-    if (height !== undefined) {
-      updates.push('height = ?');
-      values.push(height);
-    }
-    if (fps !== undefined) {
-      updates.push('fps = ?');
-      values.push(fps);
-    }
-    if (bitrate !== undefined) {
-      updates.push('bitrate = ?');
-      values.push(bitrate);
-    }
-    if (codec !== undefined) {
-      updates.push('codec = ?');
-      values.push(codec);
-    }
-
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       res.status(400).json({ 
         success: false,
         error: "No metadata provided to update" 
@@ -825,14 +777,16 @@ export const updateVideoMetadata = async (req: Request, res: Response): Promise<
       return;
     }
 
-    values.push(videoId, userId);
+    const video = await prisma.videos.updateMany({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+      data: updateData,
+    });
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE videos SET ${updates.join(', ')} WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      values
-    );
-
-    if (result.affectedRows === 0) {
+    if (video.count === 0) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -859,13 +813,15 @@ export const toggleVideoFavorite = async (req: Request, res: Response): Promise<
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
 
-    // Verify video exists and get current state
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT isFavorite FROM videos WHERE videoId = ? AND userId = ? AND deletedAt IS NULL`,
-      [videoId, userId]
-    );
+    const video = await prisma.videos.findFirst({
+      where: {
+        videoId: videoId,
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+    });
 
-    if (videos.length === 0) {
+    if (!video) {
       res.status(404).json({ 
         success: false,
         error: "Video not found" 
@@ -873,14 +829,12 @@ export const toggleVideoFavorite = async (req: Request, res: Response): Promise<
       return;
     }
 
-    const currentFavorite = videos[0].isFavorite;
-    const newFavorite = !currentFavorite;
+    const newFavorite = !video.isFavorite;
 
-    // Update state
-    await pool.query<ResultSetHeader>(
-      `UPDATE videos SET isFavorite = ? WHERE videoId = ? AND userId = ?`,
-      [newFavorite, videoId, userId]
-    );
+    await prisma.videos.update({
+      where: { videoId: videoId },
+      data: { isFavorite: newFavorite },
+    });
 
     res.json({
       success: true,
@@ -905,7 +859,7 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
     const searchTerm = req.query.q as string;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     if (!searchTerm || searchTerm.trim() === "") {
       res.status(400).json({ 
@@ -915,32 +869,36 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const searchPattern = `%${searchTerm}%`;
+    const where = {
+      userId: userId,
+      deletedAt: { equals: null },
+      OR: [
+        { title: { contains: searchTerm, mode: 'insensitive' } },
+        { description: { contains: searchTerm, mode: 'insensitive' } },
+        { originalFilename: { contains: searchTerm, mode: 'insensitive' } },
+      ],
+    };
 
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoId, userId, title, description, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, isFavorite, createdAt
-       FROM videos 
-       WHERE userId = ? AND deletedAt IS NULL 
-       AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)
-       ORDER BY createdAt DESC
-       LIMIT ? OFFSET ?`,
-      [userId, searchPattern, searchPattern, searchPattern, limit, offset]
-    );
+    const [videos, total] = await Promise.all([
+      prisma.videos.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      prisma.videos.count({ where }),
+    ]);
 
-    const [countResult] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM videos 
-       WHERE userId = ? AND deletedAt IS NULL 
-       AND (title LIKE ? OR description LIKE ? OR originalFilename LIKE ?)`,
-      [userId, searchPattern, searchPattern, searchPattern]
-    );
-
-    const total = countResult[0].total;
+    const formattedVideos = videos.map(video => ({
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    }));
 
     res.json({
       success: true,
-      data: videos,
+      data: formattedVideos,
       pagination: {
         page,
         limit,
@@ -962,34 +920,47 @@ export const getVideoStats = async (req: Request, res: Response): Promise<void> 
   try {
     const userId = req.user!.userId;
 
-    const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        COUNT(*) as totalVideos,
-        COUNT(CASE WHEN isFavorite = 1 THEN 1 END) as favoriteVideos,
-        COUNT(CASE WHEN deletedAt IS NOT NULL THEN 1 END) as deletedVideos,
-        SUM(fileSize) as totalSize,
-        SUM(CASE WHEN deletedAt IS NULL THEN fileSize ELSE 0 END) as activeSize,
-        SUM(duration) as totalDuration,
-        AVG(duration) as avgDuration,
-        MAX(createdAt) as lastUpload
-       FROM videos 
-       WHERE userId = ?`,
-      [userId]
-    );
+    const videos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+      },
+    });
+
+    let totalVideos = 0;
+    let favoriteVideos = 0;
+    let deletedVideos = 0;
+    let totalSize = 0;
+    let activeSize = 0;
+    let totalDuration = 0;
+    let lastUpload: Date | null = null;
+
+    for (const video of videos) {
+      totalVideos++;
+      if (video.isFavorite) favoriteVideos++;
+      if (video.deletedAt) deletedVideos++;
+      totalSize += Number(video.fileSize);
+      if (!video.deletedAt) activeSize += Number(video.fileSize);
+      if (video.duration) totalDuration += video.duration;
+      if (video.createdAt && (!lastUpload || video.createdAt > lastUpload)) {
+        lastUpload = video.createdAt;
+      }
+    }
+
+    const avgDuration = totalVideos > 0 ? totalDuration / totalVideos : 0;
 
     res.json({
       success: true,
       data: {
-        totalVideos: stats[0].totalVideos || 0,
-        favoriteVideos: stats[0].favoriteVideos || 0,
-        deletedVideos: stats[0].deletedVideos || 0,
-        totalSize: stats[0].totalSize || 0,
-        activeSize: stats[0].activeSize || 0,
-        totalSizeMB: ((stats[0].totalSize || 0) / 1024 / 1024).toFixed(2),
-        activeSizeMB: ((stats[0].activeSize || 0) / 1024 / 1024).toFixed(2),
-        totalDuration: stats[0].totalDuration || 0,
-        avgDuration: stats[0].avgDuration || 0,
-        lastUpload: stats[0].lastUpload,
+        totalVideos,
+        favoriteVideos,
+        deletedVideos,
+        totalSize,
+        activeSize,
+        totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+        activeSizeMB: (activeSize / 1024 / 1024).toFixed(2),
+        totalDuration,
+        avgDuration,
+        lastUpload,
       },
     });
   } catch (error) {
@@ -1007,20 +978,25 @@ export const getRecentVideos = async (req: Request, res: Response): Promise<void
     const userId = req.user!.userId;
     const limit = parseInt(req.query.limit as string) || 10;
 
-    const [videos] = await pool.query<RowDataPacket[]>(
-      `SELECT videoId, userId, title, originalFilename, 
-              filename, videoPath, thumbnailPath, fileSize, 
-              mimeType, duration, isFavorite, createdAt
-       FROM videos 
-       WHERE userId = ? AND deletedAt IS NULL
-       ORDER BY createdAt DESC
-       LIMIT ?`,
-      [userId, limit]
-    );
+    const videos = await prisma.videos.findMany({
+      where: {
+        userId: userId,
+        deletedAt: { equals: null },
+      },
+      take: limit,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const formattedVideos = videos.map(video => ({
+      ...video,
+      fileSize: video.fileSize ? video.fileSize.toString() : "0",
+    }));
 
     res.json({
       success: true,
-      data: videos,
+      data: formattedVideos,
     });
   } catch (error) {
     console.error("Error getting recent videos:", error);

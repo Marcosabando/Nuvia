@@ -1,4 +1,4 @@
-// src/middleware/multer.ts - VERSIÓN ACTUALIZADA CON DOCUMENTOS
+// src/middleware/multer.ts - VERSIÓN CORREGIDA CON 3GB
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,10 +48,10 @@ export const ALLOWED_MIME_TYPES = [
   'text/markdown'
 ];
 
-// Tamaños máximos - ACTUALIZADO CON DOCUMENTOS
-export const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50MB para imágenes
-export const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB para videos
-export const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100MB para documentos
+// ✅ TAMAÑOS MÁXIMOS ACTUALIZADOS A 3GB
+export const MAX_IMAGE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para imágenes
+export const MAX_VIDEO_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para videos
+export const MAX_DOCUMENT_SIZE = 3 * 1024 * 1024 * 1024; // 3GB para documentos
 
 // Interface extendida para Request con user
 interface AuthRequest extends Request {
@@ -62,7 +62,7 @@ interface AuthRequest extends Request {
   };
 }
 
-// ✅ CONFIGURACIÓN CORREGIDA: Estructura por usuario con subcarpetas - ACTUALIZADO CON DOCUMENTOS
+// ✅ CONFIGURACIÓN CORREGIDA: Estructura por usuario con subcarpetas
 const getStorage = (fileType: 'image' | 'video' | 'profile' | 'document') => {
   return multer.diskStorage({
     destination: (req: Request, file, cb) => {
@@ -80,10 +80,6 @@ const getStorage = (fileType: 'image' | 'video' | 'profile' | 'document') => {
       }
 
       // ✅ ESTRUCTURA CORREGIDA: 
-      // - uploads/userId/images/
-      // - uploads/userId/videos/  
-      // - uploads/userId/profile/
-      // - uploads/userId/documents/  ← NUEVA CARPETA PARA DOCUMENTOS
       const userDir = path.join(uploadsDir, userId.toString());
       
       let typeDir: string;
@@ -121,59 +117,27 @@ const getStorage = (fileType: 'image' | 'video' | 'profile' | 'document') => {
   });
 };
 
-// Filtro de archivos general
-const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  console.log('🔍 Verificando archivo:', {
-    originalname: file.originalname,
-    mimetype: file.mimetype,
-    size: file.size
-  });
-
-  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    console.log('✅ Tipo de archivo permitido');
-    cb(null, true);
-  } else {
-    console.log('❌ Tipo de archivo NO permitido:', file.mimetype);
-    cb(new Error(
-      `Tipo de archivo no permitido: ${file.mimetype}. Solo se permiten: ${ALLOWED_MIME_TYPES.join(', ')}`
-    ));
-  }
-};
-
-// ✅ CONFIGURACIÓN PARA DOCUMENTOS - NUEVA CONFIGURACIÓN
+// ✅ CONFIGURACIÓN PARA DOCUMENTOS (3GB)
 export const uploadDocument = multer({
   storage: getStorage('document'),
   fileFilter: (req, file, cb) => {
     const documentMimeTypes = [
-      // PDF
       'application/pdf',
-      
-      // Word
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      
-      // Excel
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      
-      // PowerPoint
       'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      
-      // Texto
       'text/plain',
       'text/csv',
       'text/markdown',
-      
-      // Otros documentos
       'application/rtf',
       'application/json',
       'application/xml',
       'text/html',
       'text/css',
       'application/javascript',
-      
-      // Archivos comprimidos
       'application/zip',
       'application/x-rar-compressed',
       'application/x-7z-compressed',
@@ -190,12 +154,12 @@ export const uploadDocument = multer({
     }
   },
   limits: {
-    fileSize: MAX_DOCUMENT_SIZE,
-    files: 10 // Máximo 10 documentos a la vez
+    fileSize: MAX_DOCUMENT_SIZE, // 3GB
+    files: 10
   }
 });
 
-// ✅ CONFIGURACIÓN PARA IMÁGENES DE PERFIL
+// ✅ CONFIGURACIÓN PARA IMÁGENES DE PERFIL (mantener más pequeño)
 export const uploadProfileImage = multer({
   storage: getStorage('profile'),
   fileFilter: (req, file, cb) => {
@@ -216,12 +180,12 @@ export const uploadProfileImage = multer({
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB máximo para imágenes de perfil
-    files: 1 // Solo una imagen de perfil a la vez
+    fileSize: 50 * 1024 * 1024, // 50MB máximo para imágenes de perfil
+    files: 1
   }
 });
 
-// ✅ CONFIGURACIÓN PARA IMÁGENES NORMALES
+// ✅ CONFIGURACIÓN PARA IMÁGENES NORMALES (3GB)
 export const uploadImage = multer({
   storage: getStorage('image'),
   fileFilter: (req, file, cb) => {
@@ -242,12 +206,12 @@ export const uploadImage = multer({
     }
   },
   limits: {
-    fileSize: MAX_IMAGE_SIZE,
+    fileSize: MAX_IMAGE_SIZE, // 3GB
     files: 10
   }
 });
 
-// ✅ CONFIGURACIÓN PARA VIDEOS
+// ✅ CONFIGURACIÓN PARA VIDEOS (3GB)
 export const uploadVideo = multer({
   storage: getStorage('video'),
   fileFilter: (req, file, cb) => {
@@ -270,21 +234,33 @@ export const uploadVideo = multer({
     }
   },
   limits: {
-    fileSize: MAX_VIDEO_SIZE,
+    fileSize: MAX_VIDEO_SIZE, // 3GB
     files: 5
   }
 });
 
-// ✅ MIDDLEWARE PARA SUBIDA ÚNICA DE DOCUMENTOS - NUEVO MIDDLEWARE
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA ÚNICA DE DOCUMENTOS
 export const uploadSingleDocument = (req: Request, res: Response, next: NextFunction) => {
   console.log('📄 Iniciando upload de documento...');
   
-  const uploadMiddleware = uploadDocument.single('document');
+  // ✅ ACEPTA 'document' O 'file' como campos válidos
+  const uploadMiddleware = uploadDocument.fields([
+    { name: 'document', maxCount: 1 },
+    { name: 'file', maxCount: 1 }
+  ]);
   
   uploadMiddleware(req, res, async (err: any) => {
     if (err) {
       console.error('❌ Error en upload de documento:', err.message);
       return next(err);
+    }
+
+    // Normalizar el archivo a req.file
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.document?.[0]) {
+      req.file = files.document[0];
+    } else if (files.file?.[0]) {
+      req.file = files.file[0];
     }
 
     if (req.file) {
@@ -302,7 +278,6 @@ export const uploadSingleDocument = (req: Request, res: Response, next: NextFunc
         await extractDocumentInfo(req.file);
       } catch (error) {
         console.error('❌ Error extrayendo información del documento:', error);
-        // No bloqueamos el upload por error en extracción de metadatos
       }
     } else {
       console.log('📁 No se recibió documento');
@@ -312,16 +287,28 @@ export const uploadSingleDocument = (req: Request, res: Response, next: NextFunc
   });
 };
 
-// ✅ MIDDLEWARE PARA SUBIDA MÚLTIPLE DE DOCUMENTOS - NUEVO MIDDLEWARE
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA MÚLTIPLE DE DOCUMENTOS
 export const uploadMultipleDocuments = (req: Request, res: Response, next: NextFunction) => {
   console.log('📄 Iniciando upload múltiple de documentos...');
   
-  const uploadMiddleware = uploadDocument.array('documents', 10);
+  // ✅ ACEPTA 'documents' O 'files' como campos válidos
+  const uploadMiddleware = uploadDocument.fields([
+    { name: 'documents', maxCount: 10 },
+    { name: 'files', maxCount: 10 }
+  ]);
   
   uploadMiddleware(req, res, async (err: any) => {
     if (err) {
       console.error('❌ Error en upload múltiple de documentos:', err.message);
       return next(err);
+    }
+
+    // Normalizar los archivos a req.files
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.documents) {
+      req.files = files.documents;
+    } else if (files.files) {
+      req.files = files.files;
     }
 
     console.log('📁 Documentos procesados:', req.files ? 
@@ -347,16 +334,28 @@ export const uploadMultipleDocuments = (req: Request, res: Response, next: NextF
   });
 };
 
-// ✅ MIDDLEWARE ESPECÍFICO PARA IMÁGENES DE PERFIL
+// ✅ MIDDLEWARE CORREGIDO PARA IMÁGENES DE PERFIL
 export const uploadSingleProfileImage = (req: Request, res: Response, next: NextFunction) => {
   console.log('🖼️ Iniciando upload de imagen de perfil...');
   
-  const uploadMiddleware = uploadProfileImage.single('profileImage');
+  // ✅ ACEPTA 'profileImage' O 'file' como campos válidos
+  const uploadMiddleware = uploadProfileImage.fields([
+    { name: 'profileImage', maxCount: 1 },
+    { name: 'file', maxCount: 1 }
+  ]);
   
   uploadMiddleware(req, res, async (err: any) => {
     if (err) {
       console.error('❌ Error en upload de imagen de perfil:', err.message);
       return next(err);
+    }
+
+    // Normalizar el archivo a req.file
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.profileImage?.[0]) {
+      req.file = files.profileImage[0];
+    } else if (files.file?.[0]) {
+      req.file = files.file[0];
     }
 
     if (req.file) {
@@ -395,7 +394,6 @@ export const uploadSingleProfileImage = (req: Request, res: Response, next: Next
         await createProfileImageVersions(req.file);
       } catch (error) {
         console.error('❌ Error creando versiones de imagen de perfil:', error);
-        // No bloqueamos el upload por error en optimización
       }
     } else {
       console.log('📁 No se recibió imagen de perfil');
@@ -405,16 +403,28 @@ export const uploadSingleProfileImage = (req: Request, res: Response, next: Next
   });
 };
 
-// Middleware para subida única de imágenes normales
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA ÚNICA DE IMÁGENES
 export const uploadSingleImage = (req: Request, res: Response, next: NextFunction) => {
   console.log('🖼️ Iniciando upload de imagen...');
   
-  const uploadMiddleware = uploadImage.single('file');
+  // ✅ ACEPTA 'image' O 'file' como campos válidos
+  const uploadMiddleware = uploadImage.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 }
+  ]);
   
   uploadMiddleware(req, res, async (err: any) => {
     if (err) {
       console.error('❌ Error en upload de imagen:', err.message);
       return next(err);
+    }
+
+    // Normalizar el archivo a req.file
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.image?.[0]) {
+      req.file = files.image[0];
+    } else if (files.file?.[0]) {
+      req.file = files.file[0];
     }
 
     if (req.file) {
@@ -453,7 +463,6 @@ export const uploadSingleImage = (req: Request, res: Response, next: NextFunctio
         await createImageThumbnails(req.file);
       } catch (error) {
         console.error('❌ Error creando thumbnails:', error);
-        // No bloqueamos el upload por error en thumbnails
       }
     } else {
       console.log('📁 No se recibió imagen');
@@ -463,16 +472,28 @@ export const uploadSingleImage = (req: Request, res: Response, next: NextFunctio
   });
 };
 
-// Middleware para subida múltiple de imágenes
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA MÚLTIPLE DE IMÁGENES
 export const uploadMultipleImages = (req: Request, res: Response, next: NextFunction) => {
   console.log('🖼️ Iniciando upload múltiple de imágenes...');
   
-  const uploadMiddleware = uploadImage.array('files', 10);
+  // ✅ ACEPTA 'images' O 'files' como campos válidos
+  const uploadMiddleware = uploadImage.fields([
+    { name: 'images', maxCount: 10 },
+    { name: 'files', maxCount: 10 }
+  ]);
   
   uploadMiddleware(req, res, async (err: any) => {
     if (err) {
       console.error('❌ Error en upload múltiple de imágenes:', err.message);
       return next(err);
+    }
+
+    // Normalizar los archivos a req.files
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.images) {
+      req.files = files.images;
+    } else if (files.files) {
+      req.files = files.files;
     }
 
     console.log('📁 Imágenes procesadas:', req.files ? 
@@ -502,7 +523,6 @@ export const uploadMultipleImages = (req: Request, res: Response, next: NextFunc
             console.log('✅ HEIC convertido a JPEG:', newPath);
           } catch (error) {
             console.error('❌ Error convirtiendo HEIC a JPEG:', error);
-            // Continuar con el siguiente archivo
           }
         }
 
@@ -519,41 +539,56 @@ export const uploadMultipleImages = (req: Request, res: Response, next: NextFunc
   });
 };
 
-// Middleware para subida única de videos
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA ÚNICA DE VIDEOS
 export const uploadSingleVideo = (req: Request, res: Response, next: NextFunction) => {
   console.log('🎬 Iniciando upload de video...');
+  console.log('🔍 DEBUG: Content-Type:', req.headers['content-type']);
   
-  const uploadMiddleware = uploadVideo.single('file');
+  // ✅ CONFIGURACIÓN SIMPLIFICADA - Solo acepta 'video'
+  const uploadMiddleware = uploadVideo.single('video');
   
   uploadMiddleware(req, res, (err: any) => {
     if (err) {
       console.error('❌ Error en upload de video:', err.message);
+      console.error('❌ Error code:', err.code);
+      console.error('❌ Error field:', err.field);
       return next(err);
     }
 
-    console.log('📹 Video procesado:', req.file ? {
+    console.log('✅ Video procesado exitosamente:', req.file ? {
       filename: req.file.filename,
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
       size: req.file.size,
-      path: req.file.path,
-      destination: req.file.destination
+      fieldname: req.file.fieldname // ← Esto es importante
     } : 'No file');
 
     next();
   });
 };
 
-// Middleware para subida múltiple de videos
+// ✅ MIDDLEWARE CORREGIDO PARA SUBIDA MÚLTIPLE DE VIDEOS
 export const uploadMultipleVideos = (req: Request, res: Response, next: NextFunction) => {
   console.log('🎬 Iniciando upload múltiple de videos...');
   
-  const uploadMiddleware = uploadVideo.array('files', 5);
+  // ✅ ACEPTA 'videos' O 'files' como campos válidos
+  const uploadMiddleware = uploadVideo.fields([
+    { name: 'videos', maxCount: 5 },
+    { name: 'files', maxCount: 5 }
+  ]);
   
   uploadMiddleware(req, res, (err: any) => {
     if (err) {
       console.error('❌ Error en upload múltiple de videos:', err.message);
       return next(err);
+    }
+
+    // Normalizar los archivos a req.files
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (files.videos) {
+      req.files = files.videos;
+    } else if (files.files) {
+      req.files = files.files;
     }
 
     console.log('📹 Videos procesados:', req.files ? 
@@ -570,11 +605,8 @@ export const uploadMultipleVideos = (req: Request, res: Response, next: NextFunc
   });
 };
 
-// ✅ FUNCIÓN PARA EXTRAER INFORMACIÓN DE DOCUMENTOS - NUEVA FUNCIÓN
+// ✅ FUNCIÓN PARA EXTRAER INFORMACIÓN DE DOCUMENTOS
 const extractDocumentInfo = async (file: Express.Multer.File): Promise<void> => {
-  // Aquí puedes agregar lógica para extraer metadatos de documentos
-  // Por ejemplo, usando bibliotecas como pdf-parse, mammoth, etc.
-  
   const documentInfo: any = {
     originalName: file.originalname,
     mimeType: file.mimetype,
@@ -660,7 +692,7 @@ const createProfileImageVersions = async (file: Express.Multer.File): Promise<vo
   });
 };
 
-// Función para crear thumbnails de imágenes normales
+// ✅ FUNCIÓN PARA CREAR THUMBNAILS DE IMÁGENES
 const createImageThumbnails = async (file: Express.Multer.File): Promise<void> => {
   if (!file.mimetype.startsWith('image/')) return;
 
@@ -705,7 +737,7 @@ const createImageThumbnails = async (file: Express.Multer.File): Promise<void> =
   console.log('✅ Thumbnails creados:', { thumbnailPath, mediumPath });
 };
 
-// ✅ FUNCIÓN HELPER PARA CREAR DIRECTORIOS DE USUARIO (ACTUALIZADO CON DOCUMENTOS)
+// ✅ FUNCIÓN HELPER PARA CREAR DIRECTORIOS DE USUARIO
 export const createUserDirectories = (userId: number): void => {
   const basePath = path.join(process.cwd(), 'uploads', userId.toString());
   const directories = [
@@ -714,7 +746,7 @@ export const createUserDirectories = (userId: number): void => {
     path.join(basePath, 'images', 'medium'),
     path.join(basePath, 'videos'),
     path.join(basePath, 'profile'),
-    path.join(basePath, 'documents') // ← NUEVO DIRECTORIO PARA DOCUMENTOS
+    path.join(basePath, 'documents')
   ];
 
   directories.forEach(dir => {
@@ -725,7 +757,7 @@ export const createUserDirectories = (userId: number): void => {
   });
 };
 
-// ✅ FUNCIÓN PARA OBTENER LA RUTA PÚBLICA DE DOCUMENTOS - NUEVA FUNCIÓN
+// ✅ FUNCIÓN PARA OBTENER LA RUTA PÚBLICA DE DOCUMENTOS
 export const getDocumentPublicPath = (userId: number, filename: string): string => {
   return `/uploads/${userId}/documents/${filename}`;
 };
@@ -735,7 +767,7 @@ export const getProfileImagePublicPath = (userId: number, filename: string): str
   return `/uploads/${userId}/profile/${filename}`;
 };
 
-// ✅ FUNCIÓN PARA ELIMINAR DOCUMENTOS ANTERIORES - NUEVA FUNCIÓN
+// ✅ FUNCIÓN PARA ELIMINAR DOCUMENTOS ANTERIORES
 export const cleanupOldDocuments = async (userId: number, keepFilenames?: string[]): Promise<void> => {
   try {
     const documentsDir = path.join(process.cwd(), 'uploads', userId.toString(), 'documents');
@@ -748,10 +780,7 @@ export const cleanupOldDocuments = async (userId: number, keepFilenames?: string
     const keepSet = new Set(keepFilenames || []);
     
     for (const file of files) {
-      // No eliminar los archivos que queremos mantener
-      if (keepSet.has(file)) {
-        continue;
-      }
+      if (keepSet.has(file)) continue;
       
       const filePath = path.join(documentsDir, file);
       try {
@@ -778,10 +807,7 @@ export const cleanupOldProfileImages = async (userId: number, keepFilename?: str
     const files = fs.readdirSync(profileDir);
     
     for (const file of files) {
-      // No eliminar el archivo que queremos mantener
-      if (keepFilename && file === keepFilename) {
-        continue;
-      }
+      if (keepFilename && file === keepFilename) continue;
       
       const filePath = path.join(profileDir, file);
       try {
@@ -796,7 +822,7 @@ export const cleanupOldProfileImages = async (userId: number, keepFilename?: str
   }
 };
 
-// Función para limpiar archivos temporales
+// ✅ FUNCIÓN PARA LIMPIAR ARCHIVOS TEMPORALES
 export const cleanTempFiles = (files: Express.Multer.File[]): void => {
   files.forEach(file => {
     if (fs.existsSync(file.path)) {
@@ -810,50 +836,79 @@ export const cleanTempFiles = (files: Express.Multer.File[]): void => {
   });
 };
 
-// Middleware de manejo de errores para upload - ACTUALIZADO CON DOCUMENTOS
+// ✅ MIDDLEWARE DE MANEJO DE ERRORES MEJORADO (ACTUALIZADO PARA 3GB)
 export const handleUploadError = (error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('💥 Error en middleware de upload:', error);
 
+  // Log detallado del error
   if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      const isVideo = error.message.includes('video');
-      const isProfile = error.message.includes('profile');
-      const isDocument = error.message.includes('document');
+    console.error('🔍 Detalles del error Multer:', {
+      code: error.code,
+      field: error.field,
+      message: error.message
+    });
+
+    switch (error.code) {
+      case 'LIMIT_FILE_SIZE':
+        const isVideo = req.file?.mimetype?.startsWith('video/') || 
+                       error.message.includes('video');
+        const isProfile = req.file?.mimetype?.startsWith('image/') || 
+                         error.message.includes('profile');
+        const isDocument = error.message.includes('document') || 
+                          req.file?.mimetype?.includes('document') ||
+                          req.file?.mimetype?.includes('pdf');
+        
+        let maxSize: number;
+        if (isProfile) {
+          maxSize = 50 * 1024 * 1024; // 50MB para perfil
+        } else {
+          maxSize = 3 * 1024 * 1024 * 1024; // 3GB para todo lo demás
+        }
+        
+        return res.status(413).json({
+          success: false,
+          error: `El archivo es demasiado grande. Tamaño máximo: ${(maxSize / (1024 * 1024 * 1024)).toFixed(1)}GB`,
+          maxSizeGB: (maxSize / (1024 * 1024 * 1024)).toFixed(1),
+          fileType: isVideo ? 'video' : isDocument ? 'document' : isProfile ? 'profile' : 'image'
+        });
       
-      let maxSize: number;
-      if (isProfile) {
-        maxSize = 10 * 1024 * 1024; // 10MB para perfil
-      } else if (isDocument) {
-        maxSize = MAX_DOCUMENT_SIZE;
-      } else {
-        maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
-      }
+      case 'LIMIT_FILE_COUNT':
+        return res.status(400).json({
+          success: false,
+          error: 'Demasiados archivos enviados',
+          maxFiles: error.message.includes('image') ? 10 : 
+                   error.message.includes('video') ? 5 : 10
+        });
       
-      return res.status(413).json({
-        success: false,
-        error: `El archivo es demasiado grande. Tamaño máximo: ${maxSize / 1024 / 1024}MB`
-      });
-    }
-    
-    if (error.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
-        success: false,
-        error: 'Demasiados archivos enviados'
-      });
-    }
-    
-    if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-      return res.status(400).json({
-        success: false,
-        error: 'Campo de archivo inesperado'
-      });
+      case 'LIMIT_UNEXPECTED_FILE':
+        return res.status(400).json({
+          success: false,
+          error: `Campo de archivo inesperado: "${error.field}". Campos permitidos: 'image', 'file', 'video', 'document', 'profileImage'`,
+          receivedField: error.field,
+          allowedFields: ['image', 'file', 'video', 'document', 'profileImage', 'images', 'videos', 'documents', 'files']
+        });
+      
+      case 'LIMIT_PART_COUNT':
+        return res.status(400).json({
+          success: false,
+          error: 'Demasiadas partes en la solicitud'
+        });
+      
+      default:
+        return res.status(400).json({
+          success: false,
+          error: `Error Multer: ${error.message}`,
+          code: error.code
+        });
     }
   }
 
+  // Errores de validación personalizados
   if (error.message.includes('Tipo de archivo no permitido')) {
     return res.status(400).json({
       success: false,
-      error: error.message
+      error: error.message,
+      allowedTypes: ALLOWED_MIME_TYPES
     });
   }
 
@@ -864,11 +919,55 @@ export const handleUploadError = (error: any, req: Request, res: Response, next:
     });
   }
 
+  // Error de conversión HEIC
+  if (error.message.includes('Error convirtiendo HEIC a JPEG')) {
+    return res.status(500).json({
+      success: false,
+      error: 'Error procesando imagen HEIC. Intenta convertirla a JPEG primero.'
+    });
+  }
+
   // Error genérico
+  console.error('🔥 Error no manejado en upload:', {
+    message: error.message,
+    stack: error.stack,
+    body: req.body,
+    files: req.file || req.files
+  });
+
   res.status(500).json({
     success: false,
-    error: 'Error interno del servidor al procesar el archivo'
+    error: 'Error interno del servidor al procesar el archivo',
+    ...(process.env.NODE_ENV === 'development' && { details: error.message })
   });
+};
+
+// ✅ MIDDLEWARE DE DEBUG PARA VER CAMPOS RECIBIDOS
+export const debugUpload = (req: Request, res: Response, next: NextFunction) => {
+  console.log('🔍 DEBUG Upload - Headers:', {
+    'content-type': req.headers['content-type'],
+    authorization: req.headers.authorization ? 'PRESENT' : 'MISSING'
+  });
+
+  console.log('🔍 DEBUG Upload - Body keys:', Object.keys(req.body));
+  
+  if (req.file) {
+    console.log('🔍 DEBUG Upload - File:', {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    });
+  }
+
+  if (req.files) {
+    console.log('🔍 DEBUG Upload - Files:', Array.isArray(req.files) 
+      ? `Array with ${req.files.length} files`
+      : Object.keys(req.files as object)
+    );
+  }
+
+  next();
 };
 
 // Exportaciones por defecto (para compatibilidad)

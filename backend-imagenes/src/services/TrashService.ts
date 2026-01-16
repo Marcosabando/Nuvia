@@ -1,16 +1,12 @@
+// src/services/trash.service.ts
 import { Request, Response } from "express";
-import { RowDataPacket, ResultSetHeader, PoolConnection } from "mysql2/promise";
+import { PrismaClient } from '@prisma/client';
 import fs from "fs/promises";
-import pool from "@src/config/database";
 
 // ============================================================================
 // 📋 GET TRASH ITEMS
 // ============================================================================
 
-/**
- * Get all trash items for user
- * GET /api/trash
- */
 export const getTrashItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
@@ -19,46 +15,30 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
     const offset = (page - 1) * limit;
     const itemType = req.query.type as string;
 
-    let query = `
-      SELECT 
-        trashId as id,
-        userId,
-        itemType,
-        itemId,
-        originalName,
-        originalPath,
-        fileSize,
-        mimeType,
-        metadata,
-        deletedAt,
-        permanentDeleteAt
-      FROM trash 
-      WHERE userId = ?
-    `;
+    const prisma = new PrismaClient();
 
-    const params: any[] = [userId];
+    const whereClause: any = {
+      userId: userId
+    };
 
     if (itemType && ["image", "video", "document", "folder"].includes(itemType)) {
-      query += ` AND itemType = ?`;
-      params.push(itemType);
+      whereClause.itemType = itemType;
     }
 
-    query += ` ORDER BY deletedAt DESC LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    const items = await prisma.trash.findMany({
+      where: whereClause,
+      orderBy: {
+        deletedAt: 'desc'
+      },
+      skip: offset,
+      take: limit
+    });
 
-    const [items] = await pool.query<RowDataPacket[]>(query, params);
+    const total = await prisma.trash.count({
+      where: whereClause
+    });
 
-    // Count total
-    let countQuery = `SELECT COUNT(*) as total FROM trash WHERE userId = ?`;
-    const countParams: any[] = [userId];
-
-    if (itemType && ["image", "video", "document", "folder"].includes(itemType)) {
-      countQuery += ` AND itemType = ?`;
-      countParams.push(itemType);
-    }
-
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, countParams);
-    const total = countResult[0].total;
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -71,7 +51,6 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
       },
     });
   } catch (error) {
-    console.error("Error getting trash items:", error);
     res.status(500).json({
       success: false,
       error: "Error getting trash items",
@@ -79,41 +58,44 @@ export const getTrashItems = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-/**
- * Get trash statistics
- * GET /api/trash/stats
- */
 export const getTrashStats = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.userId;
 
-    const [stats] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        COUNT(*) as totalItems,
-        SUM(fileSize) as totalSize,
-        COUNT(CASE WHEN itemType = 'image' THEN 1 END) as totalImages,
-        COUNT(CASE WHEN itemType = 'video' THEN 1 END) as totalVideos,
-        COUNT(CASE WHEN permanentDeleteAt <= DATE_ADD(NOW(), INTERVAL 7 DAY) THEN 1 END) as expiringSoon
-       FROM trash 
-       WHERE userId = ?`,
-      [userId]
-    );
+    const prisma = new PrismaClient();
 
-    const result = stats[0];
+    const trashItems = await prisma.trash.findMany({
+      where: { userId: userId }
+    });
+
+    const totalItems = trashItems.length;
+    const totalSize = trashItems.reduce((sum: number, item: any) => sum + Number(item.fileSize), 0);
+    const totalImages = trashItems.filter((item: any) => item.itemType === 'image').length;
+    const totalVideos = trashItems.filter((item: any) => item.itemType === 'video').length;
+    
+    const now = new Date();
+    const weekFromNow = new Date();
+    weekFromNow.setDate(weekFromNow.getDate() + 7);
+    
+    const expiringSoon = trashItems.filter((item: any) => {
+      if (!item.permanentDeleteAt) return false;
+      return item.permanentDeleteAt <= weekFromNow;
+    }).length;
+
+    await prisma.$disconnect();
 
     res.json({
       success: true,
       data: {
-        totalItems: result.totalItems || 0,
-        totalSize: result.totalSize || 0,
-        totalSizeFormatted: ((result.totalSize || 0) / (1024 * 1024)).toFixed(2) + " MB",
-        totalImages: result.totalImages || 0,
-        totalVideos: result.totalVideos || 0,
-        expiringSoon: result.expiringSoon || 0,
+        totalItems,
+        totalSize,
+        totalSizeFormatted: (totalSize / (1024 * 1024)).toFixed(2) + " MB",
+        totalImages,
+        totalVideos,
+        expiringSoon,
       },
     });
   } catch (error) {
-    console.error("Error getting trash stats:", error);
     res.status(500).json({
       success: false,
       error: "Error getting trash statistics",
@@ -124,52 +106,56 @@ export const getTrashStats = async (req: Request, res: Response): Promise<void> 
 // ============================================================================
 // 🛠️ HELPER FUNCTIONS
 // ============================================================================
-/**
- * Helper: Move item to trash
- */
+
 const moveToTrash = async (
-  connection: PoolConnection,
+  prisma: PrismaClient,
   userId: number,
   table: "images" | "videos",
   id: number,
-  pathColumn: "imagePath" | "videoPath",
   type: "image" | "video"
 ): Promise<void> => {
-  // Get item info
-  const idColumn = table === "images" ? "imageId" : "videoId";
-  const [rows] = await connection.query<RowDataPacket[]>(
-    `SELECT * FROM ${table} WHERE ${idColumn} = ? AND userId = ? AND deletedAt IS NULL`,
-    [id, userId]
-  );
+  try {
+    let item: any;
+    let originalPath: string;
+    let originalFilename: string;
 
-  if (rows.length === 0) {
-    throw new Error(`${type} not found`);
-  }
+    if (type === "image") {
+      item = await prisma.images.findFirst({
+        where: {
+          imageId: id,
+          userId: userId,
+          deletedAt: null
+        }
+      });
 
-  const item = rows[0];
+      if (!item) {
+        throw new Error("Image not found");
+      }
 
-  // Mark as deleted
-  await connection.query(
-    `UPDATE ${table} SET deletedAt = CURRENT_TIMESTAMP WHERE ${idColumn} = ? AND userId = ?`,
-    [id, userId]
-  );
+      originalPath = item.imagePath;
+      originalFilename = item.originalFilename || item.filename;
+    } else {
+      item = await prisma.videos.findFirst({
+        where: {
+          videoId: id,
+          userId: userId,
+          deletedAt: null
+        }
+      });
 
-  // 🔥 CORRECCIÓN: Usar directamente el path de la base de datos
-  let fullPath = item[pathColumn];
-  
-  console.log(`📁 Path original de BD para ${type}:`, fullPath);
-  
-  // Si ya tiene el formato correcto (uploads/userId/type/filename), usarlo directamente
-  // Si no, construirlo
-  if (!fullPath.startsWith('uploads/')) {
-    fullPath = `uploads/${userId}/${type}s/${item.filename}`;
-  }
+      if (!item) {
+        throw new Error("Video not found");
+      }
 
-  console.log(`✅ Path final guardado en trash para ${type}:`, fullPath);
+      originalPath = item.videoPath;
+      originalFilename = item.originalFilename || item.filename;
+    }
+    
+    if (!originalPath.startsWith('uploads/')) {
+      originalPath = `uploads/${userId}/${type}s/${item.filename}`;
+    }
 
-  // Build metadata based on type
-  const metadata = JSON.stringify(
-    type === "image"
+    const metadata = type === "image"
       ? { 
           width: item.width, 
           height: item.height, 
@@ -183,84 +169,96 @@ const moveToTrash = async (
           fps: item.fps,
           bitrate: item.bitrate,
           codec: item.codec
+        };
+
+    const permanentDeleteAt = new Date();
+    permanentDeleteAt.setDate(permanentDeleteAt.getDate() + 30);
+
+    await prisma.$transaction(async (tx: any) => {
+      if (type === "image") {
+        await tx.images.update({
+          where: { imageId: id },
+          data: { deletedAt: new Date() }
+        });
+      } else {
+        await tx.videos.update({
+          where: { videoId: id },
+          data: { deletedAt: new Date() }
+        });
+      }
+
+      await tx.trash.create({
+        data: {
+          userId: userId,
+          itemType: type,
+          itemId: id,
+          originalName: originalFilename,
+          originalPath: originalPath,
+          fileSize: item.fileSize.toString(),
+          mimeType: item.mimeType,
+          metadata: JSON.stringify(metadata),
+          deletedAt: new Date(),
+          permanentDeleteAt: permanentDeleteAt
         }
-  );
-
-  // Insert into trash
-  await connection.query(
-    `INSERT INTO trash 
-     (userId, itemType, itemId, originalName, originalPath, fileSize, mimeType, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      userId,
-      type,
-      id,
-      item.originalFilename || item.filename,
-      fullPath, // 🔥 Path corregido
-      item.fileSize,
-      item.mimeType,
-      metadata,
-    ]
-  );
-
-  console.log(`✅ ${type} movido a trash correctamente:`, {
-    itemId: id,
-    originalName: item.originalFilename || item.filename,
-    savedPath: fullPath
-  });
+      });
+    });
+  } catch (error) {
+    throw error;
+  }
 };
 
-/**
- * Helper: Restore item from trash
- */
 const restoreFromTrash = async (
-  connection: PoolConnection,
+  prisma: PrismaClient,
   userId: number,
   itemType: "image" | "video",
   itemId: number
 ): Promise<void> => {
-  const table = itemType === "image" ? "images" : "videos";
-  const idColumn = table === "images" ? "imageId" : "videoId";
+  await prisma.$transaction(async (tx: any) => {
+    if (itemType === "image") {
+      await tx.images.update({
+        where: { imageId: itemId },
+        data: { deletedAt: null, updatedAt: new Date() }
+      });
+    } else {
+      await tx.videos.update({
+        where: { videoId: itemId },
+        data: { deletedAt: null, updatedAt: new Date() }
+      });
+    }
 
-  // Restore in original table
-  await connection.query(
-    `UPDATE ${table} SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP 
-     WHERE ${idColumn} = ? AND userId = ?`,
-    [itemId, userId]
-  );
-
-  // Remove from trash
-  await connection.query(
-    `DELETE FROM trash WHERE itemType = ? AND itemId = ? AND userId = ?`,
-    [itemType, itemId, userId]
-  );
+    await tx.trash.deleteMany({
+      where: {
+        itemType: itemType,
+        itemId: itemId,
+        userId: userId
+      }
+    });
+  });
 };
 
-/**
- * Helper: Delete trash item permanently
- */
-const deleteTrashItem = async (connection: PoolConnection, item: RowDataPacket): Promise<void> => {
-  const table = item.itemType === "image" ? "images" : "videos";
-  const idColumn = table === "images" ? "imageId" : "videoId";
-
-  // Delete from original table
-  await connection.query(
-    `DELETE FROM ${table} WHERE ${idColumn} = ? AND userId = ?`,
-    [item.itemId, item.userId]
-  );
-
-  // Delete from trash
-  await connection.query(
-    `DELETE FROM trash WHERE trashId = ?`,
-    [item.trashId]
-  );
-
-  // Delete physical file
+const deleteTrashItem = async (prisma: PrismaClient, item: any): Promise<void> => {
   try {
-    await fs.unlink(item.originalPath);
-    console.log(`✅ Archivo eliminado: ${item.originalPath}`);
-  } catch (err) {
-    console.warn(`⚠️ No se pudo eliminar archivo: ${item.originalPath}`, err);
+    await prisma.$transaction(async (tx: any) => {
+      if (item.itemType === "image") {
+        await tx.images.delete({
+          where: { imageId: item.itemId }
+        });
+      } else {
+        await tx.videos.delete({
+          where: { videoId: item.itemId }
+        });
+      }
+
+      await tx.trash.delete({
+        where: { trashId: item.trashId }
+      });
+    });
+
+    try {
+      await fs.unlink(item.originalPath);
+    } catch (err) {}
+  } catch (error) {
+    throw error;
   }
 };
 
@@ -268,19 +266,14 @@ const deleteTrashItem = async (connection: PoolConnection, item: RowDataPacket):
 // 🗑️ SOFT DELETE (TRASH) - IMAGES & VIDEOS
 // ============================================================================
 
-/**
- * Move image to trash (soft delete)
- * DELETE /api/images/:id
- */
 export const softDeleteImage = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const imageId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-    await moveToTrash(connection, userId, "images", imageId, "imagePath", "image");
-    await connection.commit();
+    
+    const prisma = new PrismaClient();
+    await moveToTrash(prisma, userId, "images", imageId, "image");
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -288,31 +281,22 @@ export const softDeleteImage = async (req: Request, res: Response): Promise<void
       data: { imageId },
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error moving image to trash:", error);
     res.status(500).json({
       success: false,
       error: "Error moving image to trash",
       details: (error as Error).message,
     });
-  } finally {
-    connection.release();
   }
 };
 
-/**
- * Move video to trash (soft delete)
- * DELETE /api/videos/:id
- */
 export const softDeleteVideo = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const videoId = parseInt(req.params.id);
-
-    await connection.beginTransaction();
-    await moveToTrash(connection, userId, "videos", videoId, "videoPath", "video");
-    await connection.commit();
+    
+    const prisma = new PrismaClient();
+    await moveToTrash(prisma, userId, "videos", videoId, "video");
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -320,15 +304,11 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
       data: { videoId },
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error moving video to trash:", error);
     res.status(500).json({
       success: false,
       error: "Error moving video to trash",
       details: (error as Error).message,
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -336,26 +316,22 @@ export const softDeleteVideo = async (req: Request, res: Response): Promise<void
 // ♻️ RESTORE ITEMS
 // ============================================================================
 
-/**
- * Restore item from trash (general)
- * POST /api/trash/:id/restore
- */
 export const restoreItem = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const trashId = parseInt(req.params.id);
 
-    await connection.beginTransaction();
+    const prisma = new PrismaClient();
 
-    // Get trash item
-    const [trashItems] = await connection.query<RowDataPacket[]>(
-      `SELECT * FROM trash WHERE trashId = ? AND userId = ?`,
-      [trashId, userId]
-    );
+    const trashItem = await prisma.trash.findFirst({
+      where: {
+        trashId: trashId,
+        userId: userId
+      }
+    });
 
-    if (trashItems.length === 0) {
-      await connection.rollback();
+    if (!trashItem) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "Item not found in trash",
@@ -363,42 +339,28 @@ export const restoreItem = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const item = trashItems[0];
-
-    // Restore based on type
-    await restoreFromTrash(connection, userId, item.itemType, item.itemId);
-
-    await connection.commit();
+    await restoreFromTrash(prisma, userId, trashItem.itemType as "image" | "video", trashItem.itemId);
+    await prisma.$disconnect();
 
     res.json({
       success: true,
-      message: `${item.itemType} restored successfully`,
+      message: `${trashItem.itemType} restored successfully`,
       data: {
-        itemType: item.itemType,
-        itemId: item.itemId,
-        originalName: item.originalName,
+        itemType: trashItem.itemType,
+        itemId: trashItem.itemId,
+        originalName: trashItem.originalName,
       },
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error restoring item:", error);
     res.status(500).json({
       success: false,
       error: "Error restoring item",
       details: (error as Error).message,
     });
-  } finally {
-    connection.release();
   }
 };
 
-/**
- * Restore multiple items
- * POST /api/trash/restore-multiple
- * Body: { ids: number[] }
- */
 export const restoreMultipleItems = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const { ids } = req.body;
@@ -411,26 +373,25 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
       return;
     }
 
-    await connection.beginTransaction();
+    const prisma = new PrismaClient();
+
+    const trashItems = await prisma.trash.findMany({
+      where: {
+        trashId: { in: ids },
+        userId: userId
+      }
+    });
 
     let restoredCount = 0;
 
-    for (const trashId of ids) {
-      const [trashItems] = await connection.query<RowDataPacket[]>(
-        `SELECT * FROM trash WHERE trashId = ? AND userId = ?`,
-        [trashId, userId]
-      );
-
-      if (trashItems.length === 0) continue;
-
-      const item = trashItems[0];
-
-      await restoreFromTrash(connection, userId, item.itemType, item.itemId);
-
-      restoredCount++;
+    for (const item of trashItems) {
+      try {
+        await restoreFromTrash(prisma, userId, item.itemType as "image" | "video", item.itemId);
+        restoredCount++;
+      } catch (error) {}
     }
 
-    await connection.commit();
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -438,14 +399,10 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
       data: { restoredCount },
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error restoring multiple items:", error);
     res.status(500).json({
       success: false,
       error: "Error restoring items",
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -453,26 +410,22 @@ export const restoreMultipleItems = async (req: Request, res: Response): Promise
 // 🔥 PERMANENT DELETE
 // ============================================================================
 
-/**
- * Delete item permanently (general)
- * DELETE /api/trash/:id
- */
 export const deleteItemPermanently = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
     const trashId = parseInt(req.params.id);
 
-    await connection.beginTransaction();
+    const prisma = new PrismaClient();
 
-    // Get trash item
-    const [trashItems] = await connection.query<RowDataPacket[]>(
-      `SELECT * FROM trash WHERE trashId = ? AND userId = ?`,
-      [trashId, userId]
-    );
+    const trashItem = await prisma.trash.findFirst({
+      where: {
+        trashId: trashId,
+        userId: userId
+      }
+    });
 
-    if (trashItems.length === 0) {
-      await connection.rollback();
+    if (!trashItem) {
+      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "Item not found in trash",
@@ -480,48 +433,33 @@ export const deleteItemPermanently = async (req: Request, res: Response): Promis
       return;
     }
 
-    const item = trashItems[0];
-
-    // Delete permanently
-    await deleteTrashItem(connection, item);
-
-    await connection.commit();
+    await deleteTrashItem(prisma, trashItem);
+    await prisma.$disconnect();
 
     res.json({
       success: true,
-      message: `${item.itemType} permanently deleted`,
+      message: `${trashItem.itemType} permanently deleted`,
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error permanently deleting item:", error);
     res.status(500).json({
       success: false,
       error: "Error permanently deleting item",
     });
-  } finally {
-    connection.release();
   }
 };
 
-/**
- * Empty trash (delete all items)
- * DELETE /api/trash/empty
- */
 export const emptyTrash = async (req: Request, res: Response): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
     const userId = req.user!.userId;
 
-    await connection.beginTransaction();
+    const prisma = new PrismaClient();
 
-    // Get all trash items
-    const [trashItems] = await connection.query<RowDataPacket[]>(
-      `SELECT * FROM trash WHERE userId = ?`,
-      [userId]
-    );
+    const trashItems = await prisma.trash.findMany({
+      where: { userId: userId }
+    });
 
     if (trashItems.length === 0) {
-      await connection.rollback();
+      await prisma.$disconnect();
       res.json({
         success: true,
         message: "Trash is already empty",
@@ -530,18 +468,17 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Delete all items
     for (const item of trashItems) {
-      await deleteTrashItem(connection, item);
+      try {
+        await deleteTrashItem(prisma, item);
+      } catch (error) {}
     }
 
-    // Clear trash table
-    await connection.query(
-      `DELETE FROM trash WHERE userId = ?`,
-      [userId]
-    );
+    await prisma.trash.deleteMany({
+      where: { userId: userId }
+    });
 
-    await connection.commit();
+    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -549,14 +486,10 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
       data: { deletedCount: trashItems.length },
     });
   } catch (error) {
-    await connection.rollback();
-    console.error("Error emptying trash:", error);
     res.status(500).json({
       success: false,
       error: "Error emptying trash",
     });
-  } finally {
-    connection.release();
   }
 };
 
@@ -564,46 +497,39 @@ export const emptyTrash = async (req: Request, res: Response): Promise<void> => 
 // 🧹 CLEANUP EXPIRED ITEMS (Automatic)
 // ============================================================================
 
-/**
- * Clean expired trash items (for cron job)
- */
 export const cleanExpiredTrash = async (): Promise<void> => {
-  const connection = await pool.getConnection();
   try {
-    console.log("🧹 Iniciando limpieza de papelera...");
+    const prisma = new PrismaClient();
 
-    await connection.beginTransaction();
-
-    // Get expired items (permanentDeleteAt <= NOW)
-    const [expiredItems] = await connection.query<RowDataPacket[]>(
-      `SELECT * FROM trash WHERE permanentDeleteAt <= NOW()`
-    );
+    const expiredItems = await prisma.trash.findMany({
+      where: {
+        permanentDeleteAt: {
+          lte: new Date()
+        }
+      }
+    });
 
     if (expiredItems.length === 0) {
-      console.log("✅ No hay elementos expirados en la papelera.");
-      await connection.rollback();
+      await prisma.$disconnect();
       return;
     }
 
-    console.log(`🗑️ Eliminando ${expiredItems.length} elementos expirados...`);
-
-    // Delete all expired items
     for (const item of expiredItems) {
-      await deleteTrashItem(connection, item);
+      try {
+        await deleteTrashItem(prisma, item);
+      } catch (error) {}
     }
 
-    // Remove expired items from trash
-    await connection.query(
-      `DELETE FROM trash WHERE permanentDeleteAt <= NOW()`
-    );
+    await prisma.trash.deleteMany({
+      where: {
+        permanentDeleteAt: {
+          lte: new Date()
+        }
+      }
+    });
 
-    await connection.commit();
-    console.log(`✅ Limpieza completada. ${expiredItems.length} elementos eliminados.`);
+    await prisma.$disconnect();
   } catch (error) {
-    await connection.rollback();
-    console.error("❌ Error durante la limpieza de papelera:", error);
     throw error;
-  } finally {
-    connection.release();
   }
 };
