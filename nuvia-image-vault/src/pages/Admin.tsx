@@ -25,6 +25,9 @@ import {
   Filter,
   Calendar,
   ArrowUpDown,
+  Clock,
+  Copy,
+  Upload,
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -43,13 +46,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -106,27 +103,30 @@ const Admin = () => {
   const [sortBy, setSortBy] = useState<string>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
+  const [usersPerPage, setUsersPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+
   useEffect(() => {
     // Verificar autenticación antes de cargar datos
     const token = localStorage.getItem("authToken");
     const userRole = localStorage.getItem("userRole");
-    
+
     console.log("🔐 Verificando autenticación...");
     console.log("Token presente:", !!token);
     console.log("Rol de usuario:", userRole);
-    
+
     if (!token) {
       console.error("❌ No hay token, redirigiendo al login");
       navigate("/");
       return;
     }
-    
+
     if (userRole !== "admin") {
       console.error("❌ Usuario no es admin, redirigiendo a home");
       navigate("/home");
       return;
     }
-    
+
     console.log("✅ Autenticación verificada, cargando datos...");
     fetchAdminData();
   }, []);
@@ -151,7 +151,7 @@ const Admin = () => {
       }
 
       console.log("🔍 Fetching admin stats...");
-      
+
       // Fetch stats
       const statsResponse = await fetch("/api/admin/stats", {
         headers: {
@@ -177,7 +177,9 @@ const Admin = () => {
       if (!contentType || !contentType.includes("application/json")) {
         const text = await statsResponse.text();
         console.error("❌ Respuesta stats no es JSON:", text.substring(0, 200));
-        throw new Error(`La API devolvió HTML en lugar de JSON. Verifica que la ruta /api/admin/stats esté correctamente configurada en tu servidor. Estado: ${statsResponse.status}`);
+        throw new Error(
+          `La API devolvió HTML en lugar de JSON. Verifica que la ruta /api/admin/stats esté correctamente configurada en tu servidor. Estado: ${statsResponse.status}`
+        );
       }
 
       if (!statsResponse.ok) {
@@ -217,7 +219,9 @@ const Admin = () => {
       if (!usersContentType || !usersContentType.includes("application/json")) {
         const text = await usersResponse.text();
         console.error("❌ Respuesta users no es JSON:", text.substring(0, 200));
-        throw new Error(`La API devolvió HTML en lugar de JSON. Verifica que la ruta /api/admin/users esté correctamente configurada. Estado: ${usersResponse.status}`);
+        throw new Error(
+          `La API devolvió HTML en lugar de JSON. Verifica que la ruta /api/admin/users esté correctamente configurada. Estado: ${usersResponse.status}`
+        );
       }
 
       if (!usersResponse.ok) {
@@ -228,14 +232,14 @@ const Admin = () => {
 
       const usersData = await usersResponse.json();
       console.log("✅ Users data recibida:", usersData);
-      
+
       // Asegurarnos de que cada usuario tenga el campo 'id' además de 'userId'
       const rawUsers = usersData.data || usersData;
       const formattedUsers = rawUsers.map((user: any) => ({
         ...user,
-        id: user.id || user.userId?.toString() || String(user.userId)
+        id: user.id || user.userId?.toString() || String(user.userId),
       }));
-      
+
       console.log("✅ Usuarios formateados:", formattedUsers.length);
       setUsers(formattedUsers);
     } catch (err) {
@@ -258,7 +262,7 @@ const Admin = () => {
 
       // Usar userId en lugar de id para la petición
       const userIdToDelete = selectedUser.userId || selectedUser.id;
-      
+
       const response = await fetch(`/api/admin/users/${userIdToDelete}`, {
         method: "DELETE",
         headers: {
@@ -301,85 +305,79 @@ const Admin = () => {
   };
 
   const handleUpdateStorage = async () => {
-  if (!selectedUser) return;
+    if (!selectedUser) return;
 
-  try {
-    const token = localStorage.getItem("authToken");
-    if (!token) {
-      navigate("/");
-      return;
-    }
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        navigate("/");
+        return;
+      }
 
-    // Validación básica
-    const parsedLimit = Number(newStorageLimit);
-    if (isNaN(parsedLimit) || parsedLimit <= 0) {
+      // Validación básica
+      const parsedLimit = Number(newStorageLimit);
+      if (isNaN(parsedLimit) || parsedLimit <= 0) {
+        toast({
+          title: "⚠️ Límite inválido",
+          description: "Debes ingresar un número válido mayor a 0.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const userId = selectedUser.userId || selectedUser.id;
+
+      const response = await fetch(`/api/admin/users/${userId}/storage`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ storageLimit: parsedLimit }),
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("userRole");
+        localStorage.removeItem("user");
+        navigate("/");
+        return;
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Respuesta no es JSON:", text);
+        throw new Error("La API devolvió HTML en lugar de JSON");
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Error al actualizar almacenamiento");
+      }
+
+      // Actualizar usuarios en local
+      setUsers((prev) => prev.map((u) => (u.userId === selectedUser.userId ? { ...u, storageLimit: parsedLimit } : u)));
+
+      setShowStorageDialog(false);
+      setSelectedUser(null);
+
       toast({
-        title: "⚠️ Límite inválido",
-        description: "Debes ingresar un número válido mayor a 0.",
+        title: "✅ Almacenamiento actualizado",
+        description: `Nuevo límite: ${parsedLimit} GB`,
+      });
+    } catch (err) {
+      console.error("Error al actualizar almacenamiento:", err);
+      const errorMsg = err instanceof Error ? err.message : "Error al actualizar almacenamiento";
+      setError(errorMsg);
+      toast({
+        title: "❌ Error",
+        description: errorMsg,
         variant: "destructive",
       });
-      return;
     }
-
-    const userId = selectedUser.userId || selectedUser.id;
-
-    const response = await fetch(`/api/admin/users/${userId}/storage`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ storageLimit: parsedLimit }),
-    });
-
-    if (response.status === 401 || response.status === 403) {
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("userRole");
-      localStorage.removeItem("user");
-      navigate("/");
-      return;
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      const text = await response.text();
-      console.error("Respuesta no es JSON:", text);
-      throw new Error("La API devolvió HTML en lugar de JSON");
-    }
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Error al actualizar almacenamiento");
-    }
-
-    // Actualizar usuarios en local
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.userId === selectedUser.userId
-          ? { ...u, storageLimit: parsedLimit }
-          : u
-      )
-    );
-
-    setShowStorageDialog(false);
-    setSelectedUser(null);
-
-    toast({
-      title: "✅ Almacenamiento actualizado",
-      description: `Nuevo límite: ${parsedLimit} GB`,
-    });
-  } catch (err) {
-    console.error("Error al actualizar almacenamiento:", err);
-    const errorMsg = err instanceof Error ? err.message : "Error al actualizar almacenamiento";
-    setError(errorMsg);
-    toast({
-      title: "❌ Error",
-      description: errorMsg,
-      variant: "destructive",
-    });
-  }
-};
+  };
 
   const handleSuspendUser = async (userId: string) => {
     try {
@@ -417,7 +415,7 @@ const Admin = () => {
       }
 
       await fetchAdminData();
-      
+
       toast({
         title: "✅ Estado actualizado",
         description: "El estado del usuario ha sido cambiado correctamente.",
@@ -475,15 +473,15 @@ const Admin = () => {
     const matchesSearch =
       user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesStatus = filterStatus === "all" || user.status === filterStatus;
-    
+
     return matchesSearch && matchesStatus;
   });
 
   const sortedUsers = [...filteredUsers].sort((a, b) => {
     let comparison = 0;
-    
+
     switch (sortBy) {
       case "username":
         comparison = a.username.localeCompare(b.username);
@@ -503,9 +501,14 @@ const Admin = () => {
       default:
         comparison = 0;
     }
-    
+
     return sortOrder === "asc" ? comparison : -comparison;
   });
+
+  const indexOfLastUser = currentPage * usersPerPage;
+  const indexOfFirstUser = indexOfLastUser - usersPerPage;
+  const currentUsers = sortedUsers.slice(indexOfFirstUser, indexOfLastUser);
+  const totalPages = Math.ceil(sortedUsers.length / usersPerPage);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("es-ES", {
@@ -552,9 +555,7 @@ const Admin = () => {
                 <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-nuvia-peach flex-shrink-0" />
                 <span className="break-words">Panel de Administración</span>
               </h1>
-              <p className="text-xs sm:text-sm md:text-base text-white/80 mt-1">
-                Control total del sistema Nuvia
-              </p>
+              <p className="text-xs sm:text-sm md:text-base text-white/80 mt-1">Control total del sistema Nuvia</p>
             </div>
             <div className="flex gap-2 w-full sm:w-auto">
               <Button
@@ -588,9 +589,7 @@ const Admin = () => {
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">
-                    Total Usuarios
-                  </p>
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Usuarios</p>
                   <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
                     {loading ? "..." : stats.totalUsers}
                   </p>
@@ -611,9 +610,7 @@ const Admin = () => {
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">
-                    Almacenamiento
-                  </p>
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Almacenamiento</p>
                   <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
                     {loading ? "..." : `${stats.usedStorage}GB`}
                   </p>
@@ -639,9 +636,7 @@ const Admin = () => {
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">
-                    Total Multimedia
-                  </p>
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Multimedia</p>
                   <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
                     {loading ? "..." : stats.totalImages + stats.totalVideos}
                   </p>
@@ -662,20 +657,18 @@ const Admin = () => {
             <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">
-                    Salud del Sistema
-                  </p>
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Subidas Hoy</p>
                   <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
-                    {loading ? "..." : `${stats.systemHealth}%`}
+                    {loading ? "..." : stats.uploadsToday}
                   </p>
                 </div>
                 <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-dawn shadow-nuvia-soft flex-shrink-0">
-                  <TrendingUp className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                  <Upload className="w-4 h-4 md:w-6 md:h-6 text-white" />
                 </div>
               </div>
               <div className="mt-2">
-                <Badge variant="secondary" className="text-xs bg-green-500/20 text-green-700">
-                  Óptimo
+                <Badge variant="secondary" className="text-xs">
+                  {stats.totalImages + stats.totalVideos} en total
                 </Badge>
               </div>
             </CardContent>
@@ -704,7 +697,7 @@ const Admin = () => {
                   />
                 </div>
               </div>
-              
+
               {/* Filtros y ordenamiento */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1">
@@ -721,7 +714,7 @@ const Admin = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="flex-1">
                   <Select value={sortBy} onValueChange={setSortBy}>
                     <SelectTrigger className="w-full bg-white/50 border-nuvia-silver/30">
@@ -737,7 +730,7 @@ const Admin = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <Button
                   variant="outline"
                   size="icon"
@@ -753,15 +746,11 @@ const Admin = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="border-nuvia-silver/20">
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">
-                      Usuario
-                    </TableHead>
+                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Usuario</TableHead>
                     <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden md:table-cell">
                       Email
                     </TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">
-                      Estado
-                    </TableHead>
+                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Estado</TableHead>
                     <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden lg:table-cell">
                       Multimedia
                     </TableHead>
@@ -780,101 +769,255 @@ const Admin = () => {
                   {loading ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-nuvia-deep/60 text-sm">
-                        Cargando datos...
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="flex items-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-nuvia-mauve" />
+                            <span>Cargando datos...</span>
+                          </div>
+                          <p className="text-xs text-nuvia-deep/40">Obteniendo información de usuarios</p>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : sortedUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-nuvia-deep/60 text-sm">
-                        {searchTerm || filterStatus !== "all" 
-                          ? "No se encontraron usuarios con los filtros aplicados" 
-                          : "No hay usuarios registrados"}
+                      <TableCell colSpan={7} className="text-center py-12 text-nuvia-deep/60">
+                        <div className="flex flex-col items-center justify-center gap-3">
+                          <Users className="w-12 h-12 text-nuvia-silver/40" />
+                          <div className="space-y-1">
+                            <p className="font-medium">
+                              {searchTerm || filterStatus !== "all"
+                                ? "No se encontraron usuarios con los filtros aplicados"
+                                : "No hay usuarios registrados"}
+                            </p>
+                            {(searchTerm || filterStatus !== "all") && (
+                              <p className="text-sm text-nuvia-deep/40">
+                                Intenta con otros términos o ajusta los filtros
+                              </p>
+                            )}
+                          </div>
+                          {(searchTerm || filterStatus !== "all") && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSearchTerm("");
+                                setFilterStatus("all");
+                              }}
+                              className="mt-2">
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Limpiar filtros
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : (
+                    // 🔥 CORRECCIÓN PRINCIPAL: Usar sortedUsers en lugar de currentUsers
                     sortedUsers.map((user) => (
-                      <TableRow key={user.id} className="border-nuvia-silver/10 hover:bg-nuvia-peach/5">
-                        <TableCell className="font-medium text-nuvia-deep text-sm">
-                          <div className="max-w-[120px] md:max-w-none truncate">{user.username}</div>
-                        </TableCell>
-                        <TableCell className="text-nuvia-deep/70 text-sm hidden md:table-cell">
-                          <div className="max-w-[200px] truncate">{user.email}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={`${getStatusColor(user.status)} text-xs whitespace-nowrap`}>
-                            {getStatusText(user.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-nuvia-deep/70 hidden lg:table-cell">
-                          <div className="flex items-center gap-2 md:gap-3">
-                            <div className="flex items-center gap-1">
-                              <Image className="w-3 h-3 md:w-3.5 md:h-3.5 text-nuvia-mauve flex-shrink-0" />
-                              <span className="text-xs md:text-sm">{user.totalImages}</span>
+                      <TableRow
+                        key={user.id}
+                        className="border-nuvia-silver/10 hover:bg-nuvia-peach/5 transition-colors duration-150">
+                        <TableCell className="font-medium text-nuvia-deep">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center border border-nuvia-silver/30">
+                              <span className="text-sm font-semibold text-nuvia-deep">
+                                {user.username.charAt(0).toUpperCase()}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Video className="w-3 h-3 md:w-3.5 md:h-3.5 text-nuvia-rose flex-shrink-0" />
-                              <span className="text-xs md:text-sm">{user.totalVideos}</span>
+                            <div className="min-w-0">
+                              <div className="max-w-[120px] md:max-w-[150px] truncate text-sm font-medium">
+                                {user.username}
+                              </div>
+                              <div className="text-xs text-nuvia-deep/60 md:hidden truncate">{user.email}</div>
                             </div>
                           </div>
                         </TableCell>
+
+                        <TableCell className="text-nuvia-deep/70 text-sm hidden md:table-cell">
+                          <div className="max-w-[180px] lg:max-w-[220px] truncate flex items-center gap-2">
+                            <span>{user.email}</span>
+                            {user.role === "admin" && (
+                              <Badge className="bg-gradient-nuvia-royal text-[10px] px-1.5 py-0 border-0">Admin</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                user.status === "active"
+                                  ? "bg-green-500"
+                                  : user.status === "suspended"
+                                  ? "bg-red-500"
+                                  : "bg-gray-500"
+                              }`}
+                            />
+                            <Badge
+                              className={`${getStatusColor(user.status)} text-xs whitespace-nowrap px-2 py-1 border`}>
+                              {getStatusText(user.status)}
+                            </Badge>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="text-nuvia-deep/70 hidden lg:table-cell">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-1.5">
+                              <div className="p-1.5 rounded-md bg-nuvia-mauve/10">
+                                <Image className="w-3.5 h-3.5 text-nuvia-mauve" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium">{user.totalImages}</div>
+                                <div className="text-[10px] text-nuvia-deep/50">Imágenes</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="p-1.5 rounded-md bg-nuvia-rose/10">
+                                <Video className="w-3.5 h-3.5 text-nuvia-rose" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium">{user.totalVideos}</div>
+                                <div className="text-[10px] text-nuvia-deep/50">Videos</div>
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+
                         <TableCell className="text-nuvia-deep/70 hidden xl:table-cell">
-                          <div className="flex flex-col gap-1 min-w-[100px]">
-                            <span className="text-xs md:text-sm font-medium whitespace-nowrap">
-                              {user.storageUsed.toFixed(2)} GB / {user.storageLimit} GB
-                            </span>
-                            <div className="w-20 md:w-24 bg-nuvia-silver/30 rounded-full h-1">
+                          <div className="space-y-2 min-w-[120px]">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-medium">
+                                {user.storageUsed.toFixed(1)} / {user.storageLimit} GB
+                              </span>
+                              <span className="text-xs text-nuvia-deep/60">
+                                {Math.round((user.storageUsed / user.storageLimit) * 100)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-nuvia-silver/20 rounded-full h-2">
                               <div
-                                className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-1 rounded-full transition-all duration-500"
+                                className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
                                 style={{
                                   width: `${Math.min((user.storageUsed / user.storageLimit) * 100, 100)}%`,
                                 }}
                               />
                             </div>
+                            <div className="flex justify-between text-[10px] text-nuvia-deep/50">
+                              <span>Disponible: {(user.storageLimit - user.storageUsed).toFixed(1)} GB</span>
+                              <span
+                                className={`${
+                                  user.storageUsed / user.storageLimit > 0.8 ? "text-red-500 font-medium" : ""
+                                }`}>
+                                {user.storageUsed / user.storageLimit > 0.8 && "⚠️ Límite cercano"}
+                              </span>
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden xl:table-cell">
-                          {formatDate(user.lastLogin)}
+
+                        <TableCell className="text-nuvia-deep/70 text-sm hidden xl:table-cell">
+                          <div className="space-y-1">
+                            <div className="font-medium">{formatDate(user.lastLogin)}</div>
+                            <div className="text-xs text-nuvia-deep/50 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(user.lastLogin).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                            <div className="text-[10px] text-nuvia-deep/30">
+                              Desde registro: {formatDate(user.createdAt)}
+                            </div>
+                          </div>
                         </TableCell>
+
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 md:h-8 md:w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuLabel className="text-sm">Acciones</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleViewUser(user)} className="text-sm">
-                                <Eye className="mr-2 h-4 w-4" />
-                                Ver detalles
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  setSelectedUser(user);
-                                  setNewStorageLimit(user.storageLimit.toString());
-                                  setShowStorageDialog(true);
-                                }} 
-                                className="text-sm">
-                                <HardDrive className="mr-2 h-4 w-4" />
-                                Cambiar almacenamiento
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleSuspendUser(user.userId?.toString() || user.id)} className="text-sm">
-                                <UserX className="mr-2 h-4 w-4" />
-                                {user.status === "active" ? "Suspender" : "Activar"}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-red-600 text-sm"
-                                onClick={() => {
-                                  setSelectedUser(user);
-                                  setShowDeleteDialog(true);
-                                }}>
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Eliminar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleViewUser(user)}
+                              className="h-8 w-8 hover:bg-nuvia-peach/20"
+                              title="Ver detalles">
+                              <Eye className="h-4 w-4 text-nuvia-deep/70" />
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-green-500" />
+                                  <span>{user.username}</span>
+                                  {user.role === "admin" && (
+                                    <Badge variant="outline" className="ml-auto text-[10px]">
+                                      Admin
+                                    </Badge>
+                                  )}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+
+                                <DropdownMenuItem onClick={() => handleViewUser(user)} className="cursor-pointer">
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  <span>Ver detalles completos</span>
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedUser(user);
+                                    setNewStorageLimit(user.storageLimit.toString());
+                                    setShowStorageDialog(true);
+                                  }}
+                                  className="cursor-pointer">
+                                  <HardDrive className="mr-2 h-4 w-4" />
+                                  <div className="flex-1">
+                                    <div>Cambiar almacenamiento</div>
+                                    <div className="text-xs text-nuvia-deep/60">Actual: {user.storageLimit} GB</div>
+                                  </div>
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem
+                                  onClick={() => handleSuspendUser(user.userId?.toString() || user.id)}
+                                  className={`cursor-pointer ${
+                                    user.status === "active"
+                                      ? "text-amber-600 hover:text-amber-700"
+                                      : "text-green-600 hover:text-green-700"
+                                  }`}>
+                                  <UserX className="mr-2 h-4 w-4" />
+                                  {user.status === "active" ? "Suspender usuario" : "Reactivar usuario"}
+                                </DropdownMenuItem>
+
+                                <DropdownMenuSeparator />
+
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    // Función para copiar email al portapapeles
+                                    navigator.clipboard.writeText(user.email);
+                                    toast({
+                                      title: "✅ Email copiado",
+                                      description: `Email de ${user.username} copiado al portapapeles`,
+                                    });
+                                  }}
+                                  className="cursor-pointer">
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  Copiar email
+                                </DropdownMenuItem>
+
+                                <DropdownMenuSeparator />
+
+                                <DropdownMenuItem
+                                  className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => {
+                                    setSelectedUser(user);
+                                    setShowDeleteDialog(true);
+                                  }}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Eliminar usuario permanentemente
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -950,18 +1093,13 @@ const Admin = () => {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowDeleteDialog(false)}
-                className="w-full sm:w-auto"
-              >
+              <Button variant="outline" onClick={() => setShowDeleteDialog(false)} className="w-full sm:w-auto">
                 Cancelar
               </Button>
-              <Button 
-                variant="destructive" 
-                onClick={handleDeleteUser} 
-                className="w-full sm:w-auto bg-red-500 hover:bg-red-600"
-              >
+              <Button
+                variant="destructive"
+                onClick={handleDeleteUser}
+                className="w-full sm:w-auto bg-red-500 hover:bg-red-600">
                 Eliminar
               </Button>
             </DialogFooter>
@@ -974,7 +1112,8 @@ const Admin = () => {
             <DialogHeader>
               <DialogTitle className="text-lg md:text-xl">Cambiar límite de almacenamiento</DialogTitle>
               <DialogDescription className="text-sm">
-                Actualizar el límite de almacenamiento para <strong className="text-nuvia-deep">{selectedUser?.username}</strong>
+                Actualizar el límite de almacenamiento para{" "}
+                <strong className="text-nuvia-deep">{selectedUser?.username}</strong>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -996,21 +1135,19 @@ const Admin = () => {
               </div>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   setShowStorageDialog(false);
                   setNewStorageLimit("");
                 }}
-                className="w-full sm:w-auto"
-              >
+                className="w-full sm:w-auto">
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 onClick={handleUpdateStorage}
                 disabled={!newStorageLimit || parseFloat(newStorageLimit) < 1}
-                className="w-full sm:w-auto bg-gradient-to-r from-nuvia-mauve to-nuvia-rose hover:shadow-nuvia-glow"
-              >
+                className="w-full sm:w-auto bg-gradient-to-r from-nuvia-mauve to-nuvia-rose hover:shadow-nuvia-glow">
                 Actualizar
               </Button>
             </DialogFooter>
