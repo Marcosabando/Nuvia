@@ -8,6 +8,8 @@ import {
   Search,
   AlertCircle,
   Archive,
+  FileText,
+  Folder,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -43,11 +45,20 @@ const Trash = () => {
     item.originalName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const toggleItemSelection = (id: number) => {
+  // Debug: ver qué items hay en la papelera
+  console.log('🗑️ Trash items detalle:', trashItems.map(item => ({
+    id: item.id,
+    itemType: item.itemType,
+    originalName: item.originalName,
+    originalPath: item.originalPath,
+    mimeType: item.mimeType
+  })));
+
+  const toggleItemSelection = (trashId: number) => {
     setSelectedItems((prev) =>
-      prev.includes(id)
-        ? prev.filter((itemId) => itemId !== id)
-        : [...prev, id]
+      prev.includes(trashId)
+        ? prev.filter((itemId) => itemId !== trashId)
+        : [...prev, trashId]
     );
   };
 
@@ -55,16 +66,27 @@ const Trash = () => {
     if (selectedItems.length === filteredItems.length) {
       setSelectedItems([]);
     } else {
-      setSelectedItems(filteredItems.map((item) => item.id));
+      setSelectedItems(filteredItems.map((item) => item.trashId));
     }
   };
 
   const getTrashItemUrl = (item: any): string => {
     if (!item?.originalPath) return "";
+    
     let path = item.originalPath.trim();
-    if (!path.startsWith('uploads/')) {
-      path = `uploads/${path}`;
+    
+    // Para documentos, usar la ruta específica de documentos
+    if (item.itemType === 'document') {
+      if (!path.startsWith('uploads/documents/')) {
+        path = `uploads/documents/${path}`;
+      }
+    } else {
+      // Para imágenes y videos
+      if (!path.startsWith('uploads/')) {
+        path = `uploads/${path}`;
+      }
     }
+    
     return `http://localhost:3000/${path}`;
   };
 
@@ -98,19 +120,58 @@ const Trash = () => {
     }
   };
 
-  const totalSize = trashItems.reduce(
-    (acc, item) => acc + (item.fileSize || 0),
-    0
-  );
-  const formattedSize = (totalSize / (1024 * 1024)).toFixed(2) + " MB";
+  // Función para formatear tamaños de archivo
+  const formatSize = (sizeValue: any): string => {
+    // Convertir a número y manejar casos inválidos
+    const numValue = Number(sizeValue);
+    
+    if (isNaN(numValue) || numValue === 0) {
+      return "0 B";
+    }
+
+    // Detectar si el valor ya viene en MB del backend
+    // Si es menor a 1024, probablemente ya está en MB
+    let bytes: number;
+    
+    if (numValue < 1024) {
+      // Probablemente ya está en MB, convertir a bytes
+      bytes = numValue * 1024 * 1024;
+    } else {
+      // Probablemente está en bytes
+      bytes = numValue;
+    }
+
+    // Formatear según el tamaño
+    if (bytes >= 1024 * 1024 * 1024) {
+      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    } else if (bytes >= 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    } else if (bytes >= 1024) {
+      return (bytes / 1024).toFixed(2) + " KB";
+    } else {
+      return bytes.toFixed(2) + " B";
+    }
+  };
+
+  // Calcular tamaño total
+  const totalSize = trashItems.reduce((acc, item) => {
+    const size = Number(item.fileSize) || 0;
+    // Si el tamaño es menor a 1024, asumimos que está en MB
+    if (size < 1024) {
+      return acc + (size * 1024 * 1024); // Convertir MB a bytes
+    }
+    return acc + size; // Ya está en bytes
+  }, 0);
+  
+  const formattedSize = formatSize(totalSize);
 
   const handleEmptyTrash = async () => {
     await emptyTrash();
     setSelectedItems([]);
   };
 
-  const handlePermanentDelete = async (id: number) => {
-    await permanentDelete(id);
+  const handlePermanentDelete = async (trashId: number) => {
+    await permanentDelete(trashId);
     setDeleteItemId(null);
   };
 
@@ -260,21 +321,20 @@ const Trash = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredItems.map((item) => (
+                  {filteredItems.map((item, index) => (
                     <tr
-                      key={item.id}
+                      key={`trash-${item.trashId}-${index}`}
                       className="border-b border-nuvia-peach/20 hover:bg-nuvia-peach/10 transition-all"
                     >
                       <td className="p-4">
                         <Checkbox
-                          checked={selectedItems.includes(item.id)}
-                          onCheckedChange={() => toggleItemSelection(item.id)}
+                          checked={selectedItems.includes(item.trashId)}
+                          onCheckedChange={() => toggleItemSelection(item.trashId)}
                         />
                       </td>
                       <td className="p-4 flex items-center gap-3 text-nuvia-deep">
                         {item.itemType === "image" ? (
                           <img
-                            key={`img-${item.id}`}
                             src={getTrashItemUrl(item)}
                             alt={item.originalName}
                             className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
@@ -285,12 +345,19 @@ const Trash = () => {
                           />
                         ) : item.itemType === "video" ? (
                           <video
-                            key={`video-${item.id}`}
                             src={getTrashItemUrl(item)}
                             className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
                             muted
                             preload="metadata"
                           />
+                        ) : item.itemType === "document" ? (
+                          <div className="w-12 h-12 flex items-center justify-center rounded-lg border border-nuvia-silver/30 bg-nuvia-peach/10">
+                            <FileText className="w-6 h-6 text-nuvia-mauve" />
+                          </div>
+                        ) : item.itemType === "folder" ? (
+                          <div className="w-12 h-12 flex items-center justify-center rounded-lg border border-nuvia-silver/30 bg-nuvia-mauve/10">
+                            <Folder className="w-6 h-6 text-nuvia-deep" />
+                          </div>
                         ) : (
                           <Archive className="w-10 h-10 text-nuvia-silver/50" />
                         )}
@@ -301,7 +368,7 @@ const Trash = () => {
                       </td>
 
                       <td className="p-4 text-nuvia-deep/70 hidden sm:table-cell">
-                        {(item.fileSize / (1024 * 1024)).toFixed(2)} MB
+                        {formatSize(item.fileSize)}
                       </td>
                       <td className="p-4 hidden lg:table-cell">
                         {getDaysLeftBadge(item.permanentDeleteAt)}
@@ -312,7 +379,7 @@ const Trash = () => {
                             variant="ghost"
                             size="icon"
                             className="text-nuvia-mauve hover:text-nuvia-deep"
-                            onClick={() => restoreItem(item.id)}
+                            onClick={() => restoreItem(item.trashId)}
                           >
                             <RotateCcw className="w-4 h-4" />
                           </Button>
@@ -340,7 +407,7 @@ const Trash = () => {
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-nuvia-rose text-white hover:bg-nuvia-rose/90"
-                                  onClick={() => handlePermanentDelete(item.id)}
+                                  onClick={() => handlePermanentDelete(item.trashId)}
                                 >
                                   Eliminar
                                 </AlertDialogAction>

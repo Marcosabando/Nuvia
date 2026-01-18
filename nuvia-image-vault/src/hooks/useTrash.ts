@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface TrashItem {
   id: number;
+  trashId: number;
   userId: number;
   itemType: 'image' | 'video' | 'document' | 'folder';
   itemId: number;
