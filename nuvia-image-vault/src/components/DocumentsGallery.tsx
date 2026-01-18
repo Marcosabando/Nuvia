@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// src/components/DocumentsGallery.tsx
+import { useState, useEffect, useMemo } from "react";
 import {
   MoreHorizontal,
   Download,
@@ -31,29 +32,55 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useToast } from "@/hooks/use-toast";
 import DocumentViewer from "./DocumentViewer";
-import { apiService } from "@/services/api.services";
 import { API_CONFIG } from "@/config/api.config";
 
-const getDocumentThumbnailUrl = (document: any): string | null => {
-  const thumbnailPath = document?.thumbnailPath;
-  if (!thumbnailPath) return null;
+interface DocumentData {
+  id: number;
+  documentId: number;
+  userId: number;
+  title: string;
+  description?: string;
+  category: string;
+  tags?: string;
+  originalFilename: string;
+  filename: string;
+  documentPath: string;
+  thumbnailPath?: string;
+  previewPath?: string;
+  fileSize: number;
+  mimeType: string;
+  pageCount?: number;
+  wordCount?: number;
+  language?: string;
+  isFavorite: boolean;
+  isPublic: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
-  let cleanPath = thumbnailPath;
-  if (cleanPath.startsWith("uploads/")) {
-    cleanPath = cleanPath.replace("uploads/", "");
+const getDocumentThumbnailUrl = (document: DocumentData | null): string | null => {
+  if (!document) return null;
+
+  if (document.thumbnailPath) {
+    let cleanPath = document.thumbnailPath;
+    if (cleanPath.startsWith("uploads/")) {
+      cleanPath = cleanPath.replace("uploads/", "");
+    }
+    return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   }
 
-  return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
+  // Si no hay thumbnail, intentamos generar una vista previa con autenticación
+  const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+  if (token && (document.mimeType?.includes("pdf") || document.mimeType?.includes("image"))) {
+    return `${API_CONFIG.BASE_URL}/documents/${document.id}/preview?thumb=true&token=${encodeURIComponent(token)}`;
+  }
+
+  return null;
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -101,16 +128,21 @@ const getCategoryColor = (category: string) => {
   return colors[category as keyof typeof colors] || colors.other;
 };
 
-const handleDownload = async (document: any) => {
+const handleDownload = async (document: DocumentData) => {
   try {
-    const response = await apiService.get(
-      `/documents/${document.id}/download`,
-      { responseType: 'blob' }
-    );
+    const response = await fetch(`${API_CONFIG.BASE_URL}/documents/${document.id}/download`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+      },
+    });
 
-    const blob = response as unknown as Blob;
+    if (!response.ok) {
+      throw new Error("Error en la descarga");
+    }
+
+    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
-    const link = window.document.createElement('a');
+    const link = window.document.createElement("a");
     link.href = url;
     link.download = document.originalFilename;
     link.click();
@@ -128,8 +160,8 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
 
-  const [selectedDocument, setSelectedDocument] = useState<any>(null);
-  const [renameModal, setRenameModal] = useState<{ open: boolean; document: any; name: string }>({
+  const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
+  const [renameModal, setRenameModal] = useState<{ open: boolean; document: DocumentData | null; name: string }>({
     open: false,
     document: null,
     name: "",
@@ -157,50 +189,50 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
       showToast(true, "Documento renombrado");
       setRenameModal({ open: false, document: null, name: "" });
     } catch (error: any) {
-      showToast(false, error.response?.data?.error || "Error al renombrar");
+      showToast(false, error.message || "Error al renombrar");
     }
   };
 
-  const handleToggleFavorite = async (document: any) => {
+  const handleToggleFavorite = async (document: DocumentData) => {
     try {
       await toggleFavorite(document.id, !document.isFavorite);
       showToast(true, document.isFavorite ? "Quitado de favoritos" : "Añadido a favoritos");
-    } catch (error) {
-      showToast(false, "Error al actualizar favoritos");
+    } catch (error: any) {
+      showToast(false, error.message || "Error al actualizar favoritos");
     }
   };
 
-  const handleDelete = async (document: any) => {
+  const handleDelete = async (document: DocumentData) => {
     if (!confirm("¿Mover este documento a la papelera?")) return;
 
     try {
       await deleteDocument(document.id);
       setSelectedDocument(null);
       showToast(true, "Documento movido a la papelera");
-    } catch (error) {
-      showToast(false, "Error al eliminar documento");
+    } catch (error: any) {
+      showToast(false, error.message || "Error al eliminar documento");
     }
   };
 
-  // Filtrar documentos
-  const filteredDocuments = documents.filter((document) => {
-    const matchesSearch =
-      document.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      document.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      document.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      document.tags?.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredDocuments = useMemo(() => {
+    return documents.filter((document) => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch =
+        document.title?.toLowerCase().includes(searchLower) ||
+        document.originalFilename?.toLowerCase().includes(searchLower) ||
+        document.description?.toLowerCase().includes(searchLower) ||
+        document.tags?.toLowerCase().includes(searchLower);
 
-    const matchesFavorites = !favoritesOnly || document.isFavorite;
+      const matchesFavorites = !favoritesOnly || document.isFavorite;
 
-    return matchesSearch && matchesFavorites;
-  });
+      return matchesSearch && matchesFavorites;
+    });
+  }, [documents, searchTerm, favoritesOnly]);
 
-  // Paginación
   const totalPages = Math.ceil(filteredDocuments.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedDocuments = filteredDocuments.slice(startIndex, startIndex + itemsPerPage);
 
-  // Resetear página cuando cambian los filtros
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, favoritesOnly]);
@@ -236,7 +268,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
   return (
     <>
       <div className="space-y-6">
-        {/* Header con controles */}
         <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
           <div className="flex items-center gap-4 flex-1 min-w-0">
             <div className="relative flex-1 max-w-md">
@@ -290,7 +321,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
           </div>
         </div>
 
-        {/* Grid/List de Documentos */}
         {loading && filteredDocuments.length === 0 ? (
           <div
             className={
@@ -314,7 +344,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                   <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
                   <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
                 </div>
-              )
+              ),
             )}
           </div>
         ) : (
@@ -536,7 +566,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
               })}
             </div>
 
-            {/* Paginación */}
             {totalPages > 1 && (
               <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-nuvia-silver/30 gap-4">
                 <div className="text-sm text-nuvia-deep/60">
@@ -596,12 +625,16 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
         )}
       </div>
 
-      {/* Modal Vista Previa */}
       <Dialog open={!!selectedDocument} onOpenChange={(open) => !open && setSelectedDocument(null)}>
         <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Vista previa del documento</DialogTitle>
+            <DialogDescription>
+              Visualización del documento {selectedDocument?.title || selectedDocument?.originalFilename}
+            </DialogDescription>
+          </DialogHeader>
           {selectedDocument && (
             <div className="flex flex-col md:flex-row h-full">
-              {/* ================= VISOR ================= */}
               <div className="flex-1 min-h-[40vh] md:min-h-full bg-white/40">
                 {selectedDocument.mimeType?.includes("pdf") ? (
                   <DocumentViewer documentId={selectedDocument.id} />
@@ -631,7 +664,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                 )}
               </div>
 
-              {/* ================= INFO ================= */}
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm overflow-y-auto">
                 <div className="p-4 border-b border-nuvia-silver/30 flex items-start justify-between sticky top-0 bg-white/95 z-10">
                   <div className="flex-1 min-w-0 pr-2">
@@ -719,7 +751,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
         </DialogContent>
       </Dialog>
 
-      {/* Modal Renombrar */}
       <Dialog
         open={renameModal.open}
         onOpenChange={(open) => !open && setRenameModal({ open: false, document: null, name: "" })}>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+// src/hooks/useDocuments.ts
+import { useEffect, useState, useCallback } from "react";
 import { apiService } from "@/services/api.services";
 
 interface DocumentData {
@@ -12,6 +13,8 @@ interface DocumentData {
   originalFilename: string;
   filename: string;
   documentPath: string;
+  thumbnailPath?: string;
+  previewPath?: string;
   fileSize: number;
   mimeType: string;
   pageCount?: number;
@@ -39,7 +42,7 @@ export const useDocuments = (): UseDocumentsReturn => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -47,28 +50,32 @@ export const useDocuments = (): UseDocumentsReturn => {
       const response = await apiService.get('/documents');
 
       if (response.success && response.data) {
-        const transformedDocuments = response.data.map((doc: any) => ({
-          id: doc.documentId || doc.id,
-          documentId: doc.documentId || doc.id,
-          userId: doc.userId,
-          title: doc.title,
-          description: doc.description,
-          category: doc.category || 'other',
-          tags: doc.tags,
-          originalFilename: doc.originalFilename,
-          filename: doc.filename,
-          documentPath: doc.documentPath,
-          fileSize: doc.fileSize,
-          mimeType: doc.mimeType,
-          pageCount: doc.pageCount,
-          wordCount: doc.wordCount,
-          language: doc.language,
-          isFavorite: Boolean(doc.isFavorite),
-          isPublic: Boolean(doc.isPublic),
-          version: doc.version || 1,
-          createdAt: doc.createdAt,
-          updatedAt: doc.updatedAt || doc.createdAt
-        }));
+        const transformedDocuments = Array.isArray(response.data) 
+          ? response.data.map((doc: any) => ({
+              id: doc.documentId || doc.id,
+              documentId: doc.documentId || doc.id,
+              userId: doc.userId,
+              title: doc.title || doc.originalFilename?.replace(/\.[^/.]+$/, "") || "Sin título",
+              description: doc.description,
+              category: doc.category || 'other',
+              tags: doc.tags,
+              originalFilename: doc.originalFilename,
+              filename: doc.filename,
+              documentPath: doc.documentPath,
+              thumbnailPath: doc.thumbnailPath,
+              previewPath: doc.previewPath,
+              fileSize: doc.fileSize,
+              mimeType: doc.mimeType,
+              pageCount: doc.pageCount,
+              wordCount: doc.wordCount,
+              language: doc.language,
+              isFavorite: Boolean(doc.isFavorite),
+              isPublic: Boolean(doc.isPublic),
+              version: doc.version || 1,
+              createdAt: doc.createdAt,
+              updatedAt: doc.updatedAt || doc.createdAt
+            }))
+          : [];
 
         setDocuments(transformedDocuments);
 
@@ -86,15 +93,17 @@ export const useDocuments = (): UseDocumentsReturn => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const toggleFavorite = async (id: number, isFavorite: boolean) => {
+  const toggleFavorite = async (id: number, isFavorite: boolean): Promise<void> => {
     try {
       const response = await apiService.patch(`/documents/${id}/favorite`, { isFavorite });
       if (response.success) {
         setDocuments(prev => prev.map(doc => 
           doc.id === id ? { ...doc, isFavorite } : doc
         ));
+      } else {
+        throw new Error(response.error || 'Error al actualizar favorito');
       }
     } catch (error) {
       console.error('Error toggling favorite:', error);
@@ -102,11 +111,13 @@ export const useDocuments = (): UseDocumentsReturn => {
     }
   };
 
-  const deleteDocument = async (id: number) => {
+  const deleteDocument = async (id: number): Promise<void> => {
     try {
       const response = await apiService.delete(`/documents/${id}`);
       if (response.success) {
         setDocuments(prev => prev.filter(doc => doc.id !== id));
+      } else {
+        throw new Error(response.error || 'Error al eliminar documento');
       }
     } catch (error) {
       console.error('Error deleting document:', error);
@@ -114,13 +125,15 @@ export const useDocuments = (): UseDocumentsReturn => {
     }
   };
 
-  const renameDocument = async (id: number, title: string) => {
+  const renameDocument = async (id: number, title: string): Promise<void> => {
     try {
       const response = await apiService.patch(`/documents/${id}`, { title });
       if (response.success) {
         setDocuments(prev => prev.map(doc => 
           doc.id === id ? { ...doc, title } : doc
         ));
+      } else {
+        throw new Error(response.error || 'Error al renombrar documento');
       }
     } catch (error) {
       console.error('Error renaming document:', error);
@@ -130,7 +143,7 @@ export const useDocuments = (): UseDocumentsReturn => {
 
   useEffect(() => {
     fetchDocuments();
-  }, []);
+  }, [fetchDocuments]);
 
   return {
     documents,
