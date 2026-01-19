@@ -25,7 +25,9 @@ import {
   Trash2,
   FolderPlus,
   X,
-  FileVideo
+  FileVideo,
+  AlertTriangle,
+  Edit3
 } from 'lucide-react';
 import { videoApi } from '@/services/videoApi';
 import { Video } from '@/services/videoApi';
@@ -44,8 +46,13 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { apiService } from '@/services/api.services';
+import { useToast } from '@/hooks/use-toast';
 
 interface VideoGalleryProps {
   viewMode?: 'grid' | 'list';
@@ -71,8 +78,19 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; video: Video | null }>({
+    open: false,
+    video: null
+  });
+  const [renameModal, setRenameModal] = useState<{ open: boolean; video: Video | null; name: string }>({
+    open: false,
+    video: null,
+    name: ""
+  });
+  const [isRenaming, setIsRenaming] = useState(false);
   
   const { videos, loading, error, refetch } = useVideos();
+  const { toast } = useToast();
 
   // Cargar carpetas del usuario
   useEffect(() => {
@@ -87,6 +105,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         }
       } catch (error) {
         console.error("Error cargando carpetas:", error);
+        showToast(false, "Error cargando carpetas");
       } finally {
         setFoldersLoading(false);
       }
@@ -95,10 +114,18 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     fetchFolders();
   }, []);
 
+  const showToast = (success: boolean, message: string) => {
+    toast({
+      title: success ? "✅ Éxito" : "❌ Error",
+      description: message,
+      ...(success ? { className: "bg-green-50 border-green-200 text-green-800" } : { variant: "destructive" })
+    });
+  };
+
   // Función para añadir video a carpeta
   const addToFolder = async (videoId: number, folderId: number) => {
     if (folderId === undefined || folderId === null || isNaN(folderId)) {
-      alert("Error: ID de carpeta inválido.");
+      showToast(false, "ID de carpeta inválido");
       return;
     }
 
@@ -108,13 +135,13 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
       });
       
       if (response.success) {
-        alert("Video añadido a la carpeta correctamente");
+        showToast(true, "Video añadido a la carpeta correctamente");
       } else {
         throw new Error(response.error || 'Error al añadir video a la carpeta');
       }
     } catch (error: any) {
       console.error("Error añadiendo video a carpeta:", error);
-      alert(error.response?.data?.error || "Error al añadir video a la carpeta");
+      showToast(false, error.response?.data?.error || "Error al añadir video a la carpeta");
     }
   };
 
@@ -122,21 +149,32 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     try {
       await videoApi.toggleFavorite(videoId);
       refetch();
+      showToast(true, "Favoritos actualizado");
     } catch (err) {
       console.error('Error toggling favorite:', err);
+      showToast(false, "Error al actualizar favoritos");
     }
   };
 
-  // 🔥 FUNCIÓN CORREGIDA CON AUTENTICACIÓN
-  const handleSoftDelete = async (videoId: number) => {
-    if (!confirm('¿Seguro que quieres mover este video a la papelera?')) return;
+  // 🔥 FUNCIÓN CORREGIDA CON AUTENTICACIÓN - USANDO MODAL
+  const handleSoftDelete = async (video: Video) => {
+    setDeleteModal({
+      open: true,
+      video
+    });
+  };
 
+  const confirmDelete = async () => {
+    if (!deleteModal.video) return;
+
+    const videoId = deleteModal.video.videoId;
+    
     try {
       // ✅ OBTENER TOKEN DEL LOCALSTORAGE
       const token = localStorage.getItem('authToken');
 
       if (!token) {
-        alert('No estás autenticado. Por favor inicia sesión.');
+        showToast(false, 'No estás autenticado. Por favor inicia sesión.');
         return;
       }
 
@@ -144,7 +182,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, // ✅ ENVIAR TOKEN JWT
+          'Authorization': `Bearer ${token}`,
         },
       });
 
@@ -154,11 +192,45 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         throw new Error(data.error || 'Error al mover el video a la papelera');
       }
 
-      alert(data.message || 'Video movido a la papelera correctamente');
+      showToast(true, data.message || 'Video movido a la papelera correctamente');
       refetch(); // actualiza la lista de videos
+      
+      // Cerrar modal y limpiar video seleccionado si es el mismo
+      if (selectedVideo?.videoId === videoId) {
+        setSelectedVideo(null);
+      }
     } catch (err: any) {
       console.error('Error en soft delete:', err);
-      alert(err.message || 'No se pudo mover el video a la papelera');
+      showToast(false, err.message || 'No se pudo mover el video a la papelera');
+    } finally {
+      setDeleteModal({ open: false, video: null });
+    }
+  };
+
+  // Función para renombrar video
+  const renameVideo = async () => {
+    if (!renameModal.name.trim() || !renameModal.video) {
+      showToast(false, "El nombre no puede estar vacío");
+      return;
+    }
+
+    setIsRenaming(true);
+    try {
+      const res = await apiService.patch(`/videos/${renameModal.video.videoId}/title`, { 
+        title: renameModal.name.trim() 
+      });
+      
+      if (res.success) {
+        showToast(true, "Video renombrado");
+        setRenameModal({ open: false, video: null, name: "" });
+        refetch();
+      } else {
+        throw new Error(res.error || 'Error al renombrar');
+      }
+    } catch (e: any) {
+      showToast(false, e.response?.data?.error || "Error al renombrar el video");
+    } finally {
+      setIsRenaming(false);
     }
   };
 
@@ -200,6 +272,22 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
     }
 
     return '';
+  };
+
+  // Función para manejar descarga con toast
+  const handleDownload = (video: Video) => {
+    try {
+      const videoUrl = getVideoUrl(video);
+      if (!videoUrl) {
+        showToast(false, "URL del video no disponible");
+        return;
+      }
+      window.open(videoUrl, "_blank");
+      showToast(true, "Descarga iniciada");
+    } catch (error) {
+      console.error("Error descargando:", error);
+      showToast(false, "Error al descargar el video");
+    }
   };
 
   // Función auxiliar para formatear
@@ -419,14 +507,23 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                     </DropdownMenuPortal>
                   </DropdownMenuSub>
                   
-                  <DropdownMenuItem onClick={() => window.open(videoUrl, "_blank")}>
+                  <DropdownMenuItem onClick={() => handleDownload(video)}>
                     <Download className="w-4 h-4 mr-2" />
                     Descargar
                   </DropdownMenuItem>
                   
+                  <DropdownMenuItem onClick={() => setRenameModal({ 
+                    open: true, 
+                    video, 
+                    name: video.title || video.originalFilename || "" 
+                  })}>
+                    <Edit3 className="w-4 h-4 mr-2" />
+                    Renombrar
+                  </DropdownMenuItem>
+                  
                   <DropdownMenuSeparator />
                   
-                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
+                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video)}>
                     <Trash2 className="w-4 h-4 mr-2" />
                     Mover a papelera
                   </DropdownMenuItem>
@@ -567,7 +664,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
         </div>
       )}
 
-      {/* Modal Vista Previa - UNIFICADO */}
+      {/* Modal Vista Previa */}
       <Dialog open={!!selectedVideo} onOpenChange={(open) => !open && setSelectedVideo(null)}>
         <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-y-auto">
           {selectedVideo && (
@@ -682,7 +779,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                       variant="outline" 
                       size="sm" 
                       className="w-full justify-start border-nuvia-silver/30" 
-                      onClick={() => window.open(getVideoUrl(selectedVideo), "_blank")}
+                      onClick={() => handleDownload(selectedVideo)}
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Descargar
@@ -702,7 +799,7 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
                       className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30" 
                       onClick={() => {
                         setSelectedVideo(null);
-                        handleSoftDelete(selectedVideo.videoId);
+                        handleSoftDelete(selectedVideo);
                       }}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
@@ -713,6 +810,120 @@ export const VideoGallery = ({ viewMode = 'grid' }: VideoGalleryProps) => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Eliminación */}
+      <Dialog
+        open={deleteModal.open}
+        onOpenChange={(open) => !open && setDeleteModal({ open: false, video: null })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Mover a papelera
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres mover este video a la papelera?
+            </DialogDescription>
+          </DialogHeader>
+          {deleteModal.video && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
+                  <img 
+                    src={getThumbnailUrl(deleteModal.video)} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {deleteModal.video.title || deleteModal.video.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(deleteModal.video.fileSize)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModal({ open: false, video: null })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmDelete} 
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Mover a papelera
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Renombrar */}
+      <Dialog
+        open={renameModal.open}
+        onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-nuvia-mauve" />
+              Renombrar video
+            </DialogTitle>
+            <DialogDescription>Cambia el nombre de tu video.</DialogDescription>
+          </DialogHeader>
+          {renameModal.video && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-nuvia-silver/10 rounded-lg border border-nuvia-silver/30">
+                <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
+                  <img 
+                    src={getThumbnailUrl(renameModal.video)} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {renameModal.video.title || renameModal.video.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(renameModal.video.fileSize)}</p>
+                </div>
+              </div>
+              <Input
+                value={renameModal.name}
+                onChange={(e) => setRenameModal(p => ({ ...p, name: e.target.value }))}
+                placeholder="Nuevo nombre..."
+                autoFocus
+                className="border-nuvia-silver/30"
+                onKeyDown={(e) => e.key === "Enter" && renameVideo()}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameModal({ open: false, video: null, name: "" })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button 
+              onClick={renameVideo} 
+              disabled={!renameModal.name.trim() || isRenaming}
+              className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white">
+              {isRenaming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Renombrando...
+                </>
+              ) : (
+                "Renombrar"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
