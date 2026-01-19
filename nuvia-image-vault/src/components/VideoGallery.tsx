@@ -71,6 +71,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
 
   const { toast } = useToast();
   const { videos, loading, error, refetch } = useVideos();
+  const { toast } = useToast();
 
   const showToast = (success: boolean, message: string) => {
     toast({
@@ -195,6 +196,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     try {
       await videoApi.toggleFavorite(videoId);
       refetch();
+      showToast(true, "Favoritos actualizado");
     } catch (err) {
       console.error("Error toggling favorite:", err);
     }
@@ -204,6 +206,8 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
   const handleSoftDelete = async (videoId: number) => {
     if (!confirm("¿Seguro que quieres mover este video a la papelera?")) return;
 
+    const videoId = deleteModal.video.videoId;
+    
     try {
       const token = localStorage.getItem("authToken");
       if (!token) {
@@ -748,7 +752,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                       className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30"
                       onClick={() => {
                         setSelectedVideo(null);
-                        handleSoftDelete(selectedVideo.videoId);
+                        handleSoftDelete(selectedVideo);
                       }}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
@@ -759,6 +763,120 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Eliminación */}
+      <Dialog
+        open={deleteModal.open}
+        onOpenChange={(open) => !open && setDeleteModal({ open: false, video: null })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Mover a papelera
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres mover este video a la papelera?
+            </DialogDescription>
+          </DialogHeader>
+          {deleteModal.video && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
+                  <img 
+                    src={getThumbnailUrl(deleteModal.video)} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {deleteModal.video.title || deleteModal.video.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(deleteModal.video.fileSize)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModal({ open: false, video: null })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmDelete} 
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Mover a papelera
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Renombrar */}
+      <Dialog
+        open={renameModal.open}
+        onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-nuvia-mauve" />
+              Renombrar video
+            </DialogTitle>
+            <DialogDescription>Cambia el nombre de tu video.</DialogDescription>
+          </DialogHeader>
+          {renameModal.video && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-nuvia-silver/10 rounded-lg border border-nuvia-silver/30">
+                <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
+                  <img 
+                    src={getThumbnailUrl(renameModal.video)} 
+                    alt="" 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {renameModal.video.title || renameModal.video.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(renameModal.video.fileSize)}</p>
+                </div>
+              </div>
+              <Input
+                value={renameModal.name}
+                onChange={(e) => setRenameModal(p => ({ ...p, name: e.target.value }))}
+                placeholder="Nuevo nombre..."
+                autoFocus
+                className="border-nuvia-silver/30"
+                onKeyDown={(e) => e.key === "Enter" && renameVideo()}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameModal({ open: false, video: null, name: "" })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button 
+              onClick={renameVideo} 
+              disabled={!renameModal.name.trim() || isRenaming}
+              className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white">
+              {isRenaming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Renombrando...
+                </>
+              ) : (
+                "Renombrar"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

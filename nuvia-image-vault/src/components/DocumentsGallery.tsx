@@ -7,7 +7,6 @@ import {
   Trash2,
   Edit3,
   RefreshCw,
-  X,
   Calendar,
   Grid3X3,
   List,
@@ -148,7 +147,7 @@ const getCategoryColor = (category: string) => {
   return colors[category as keyof typeof colors] || colors.other;
 };
 
-const handleDownload = async (document: DocumentData) => {
+const handleDownload = async (document: any, showToast: (success: boolean, message: string) => void) => {
   try {
     const response = await fetch(`${API_CONFIG.BASE_URL}/documents/${document.id}/download`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
@@ -162,9 +161,11 @@ const handleDownload = async (document: DocumentData) => {
     link.download = document.originalFilename;
     link.click();
     window.URL.revokeObjectURL(url);
+
+    showToast(true, "Descarga iniciada");
   } catch (error) {
     console.error("Error descargando:", error);
-    alert("Error al descargar el documento");
+    showToast(false, "Error al descargar el documento");
   }
 };
 
@@ -180,6 +181,10 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
     open: false,
     document: null,
     name: "",
+  });
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; document: any }>({
+    open: false,
+    document: null,
   });
 
   // ✅ Carpetas para "Añadir a carpeta"
@@ -244,15 +249,25 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
     }
   };
 
-  const handleDelete = async (document: DocumentData) => {
-    if (!confirm("¿Mover este documento a la papelera?")) return;
+  const handleDelete = async (document: any) => {
+    setDeleteModal({
+      open: true,
+      document,
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModal.document) return;
 
     try {
-      await deleteDocument(document.id);
-      setSelectedDocument(null);
+      await deleteDocument(deleteModal.document.id);
+      if (selectedDocument?.id === deleteModal.document.id) {
+        setSelectedDocument(null);
+      }
       showToast(true, "Documento movido a la papelera");
-    } catch (error: any) {
-      showToast(false, error.message || "Error al eliminar documento");
+      setDeleteModal({ open: false, document: null });
+    } catch (error) {
+      showToast(false, "Error al eliminar documento");
     }
   };
 
@@ -456,17 +471,16 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-2 gap-2">
-                              <div className="flex-1 min-w-0">
-                                <h3 className="text-sm font-semibold text-nuvia-deep truncate mb-1">{displayName}</h3>
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-nuvia-deep/60">
-                                  <span>{formatFileSize(document.fileSize)}</span>
-                                  {document.pageCount && <span>{document.pageCount} páginas</span>}
-                                </div>
-                                {document.description && (
-                                  <p className="text-xs text-nuvia-deep/60 mt-1 line-clamp-2">{document.description}</p>
-                                )}
+                            <div className="cursor-pointer" onClick={() => setSelectedDocument(document)}>
+                              <h3 className="text-sm font-semibold text-nuvia-deep truncate mb-1">{displayName}</h3>
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-nuvia-deep/60">
+                                <span>{formatFileSize(document.fileSize)}</span>
+                                {document.pageCount && <span>{document.pageCount} páginas</span>}
                               </div>
+                              {document.description && (
+                                <p className="text-xs text-nuvia-deep/60 mt-1 line-clamp-2">{document.description}</p>
+                              )}
+                            </div>
 
                               <div className="flex items-center gap-1">
                                 <Button
@@ -644,7 +658,8 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                               </DropdownMenuItem>
 
                               <DropdownMenuItem
-                                onClick={() =>
+                                onSelect={(e) => {
+                                  e.preventDefault();
                                   setRenameModal({
                                     open: true,
                                     document,
@@ -658,7 +673,13 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
 
                               <DropdownMenuSeparator />
 
-                              <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(document)}>
+                              <DropdownMenuItem 
+                                className="text-red-600" 
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDelete(document);
+                                }}>
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Mover a papelera
                               </DropdownMenuItem>
@@ -936,6 +957,56 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
             </Button>
             <Button onClick={handleRename} disabled={!renameModal.name.trim()}>
               Renombrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Eliminación */}
+      <Dialog open={deleteModal.open} onOpenChange={(open) => !open && setDeleteModal({ open: false, document: null })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Mover a papelera
+            </DialogTitle>
+            <DialogDescription>¿Estás seguro de que quieres mover este documento a la papelera?</DialogDescription>
+          </DialogHeader>
+          {deleteModal.document && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div
+                  className="w-12 h-12 rounded flex items-center justify-center"
+                  style={{ backgroundColor: `${getCategoryColor(deleteModal.document.category)}15` }}>
+                  {(() => {
+                    const IconComponent = getDocumentIcon(deleteModal.document.category, deleteModal.document.mimeType);
+                    return (
+                      <IconComponent
+                        className="w-6 h-6"
+                        style={{ color: getCategoryColor(deleteModal.document.category) }}
+                      />
+                    );
+                  })()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {deleteModal.document.title || deleteModal.document.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(deleteModal.document.fileSize)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModal({ open: false, document: null })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button onClick={confirmDelete} variant="destructive" className="bg-red-600 hover:bg-red-700 text-white">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Mover a papelera
             </Button>
           </DialogFooter>
         </DialogContent>

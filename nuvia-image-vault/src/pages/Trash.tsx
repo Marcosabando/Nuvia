@@ -2,15 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Trash2,
-  RotateCcw,
-  Search,
-  AlertCircle,
-  Archive,
-  FileText,
-  Folder,
-} from "lucide-react";
+import { Trash2, RotateCcw, Search, AlertCircle, Archive, FileText, ImageIcon, Video, Folder } from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -31,35 +23,14 @@ const Trash = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
-  const {
-    trashItems,
-    loading,
-    error,
-    refetch,
-    restoreItem,
-    permanentDelete,
-    emptyTrash,
-  } = useTrash();
+  const { trashItems, loading, error, refetch, restoreItem, permanentDelete, emptyTrash } = useTrash();
 
   const filteredItems = trashItems.filter((item) =>
-    item.originalName.toLowerCase().includes(searchQuery.toLowerCase())
+    item.originalName.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  // Debug: ver qué items hay en la papelera
-  console.log('🗑️ Trash items detalle:', trashItems.map(item => ({
-    id: item.id,
-    itemType: item.itemType,
-    originalName: item.originalName,
-    originalPath: item.originalPath,
-    mimeType: item.mimeType
-  })));
-
-  const toggleItemSelection = (trashId: number) => {
-    setSelectedItems((prev) =>
-      prev.includes(trashId)
-        ? prev.filter((itemId) => itemId !== trashId)
-        : [...prev, trashId]
-    );
+  const toggleItemSelection = (id: number) => {
+    setSelectedItems((prev) => (prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]));
   };
 
   const toggleAllSelection = () => {
@@ -69,35 +40,45 @@ const Trash = () => {
       setSelectedItems(filteredItems.map((item) => item.trashId));
     }
   };
+  const formatSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  if (isNaN(bytes)) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+};
 
   const getTrashItemUrl = (item: any): string => {
     if (!item?.originalPath) return "";
     
     let path = item.originalPath.trim();
-    
-    // Para documentos, usar la ruta específica de documentos
-    if (item.itemType === 'document') {
-      if (!path.startsWith('uploads/documents/')) {
-        path = `uploads/documents/${path}`;
-      }
-    } else {
-      // Para imágenes y videos
-      if (!path.startsWith('uploads/')) {
-        path = `uploads/${path}`;
-      }
+    if (!path.startsWith("uploads/")) {
+      path = `uploads/${path}`;
     }
     
     return `http://localhost:3000/${path}`;
   };
 
+  const getIconForItemType = (itemType: string) => {
+    switch (itemType) {
+      case "image":
+        return <ImageIcon className="w-10 h-10 text-nuvia-silver/50" />;
+      case "video":
+        return <Video className="w-10 h-10 text-nuvia-silver/50" />;
+      case "document":
+        return <FileText className="w-10 h-10 text-nuvia-silver/50" />;
+      case "folder":
+        return <Folder className="w-10 h-10 text-nuvia-silver/50" />;
+      default:
+        return <Archive className="w-10 h-10 text-nuvia-silver/50" />;
+    }
+  };
+
   const getDaysLeftBadge = (permanentDeleteAt: string) => {
-    const days = Math.max(
-      0,
-      Math.ceil(
-        (new Date(permanentDeleteAt).getTime() - Date.now()) /
-          (1000 * 60 * 60 * 24)
-      )
-    );
+    const days = Math.max(0, Math.ceil((new Date(permanentDeleteAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
     if (days <= 7) {
       return (
@@ -120,50 +101,8 @@ const Trash = () => {
     }
   };
 
-  // Función para formatear tamaños de archivo
-  const formatSize = (sizeValue: any): string => {
-    // Convertir a número y manejar casos inválidos
-    const numValue = Number(sizeValue);
-    
-    if (isNaN(numValue) || numValue === 0) {
-      return "0 B";
-    }
-
-    // Detectar si el valor ya viene en MB del backend
-    // Si es menor a 1024, probablemente ya está en MB
-    let bytes: number;
-    
-    if (numValue < 1024) {
-      // Probablemente ya está en MB, convertir a bytes
-      bytes = numValue * 1024 * 1024;
-    } else {
-      // Probablemente está en bytes
-      bytes = numValue;
-    }
-
-    // Formatear según el tamaño
-    if (bytes >= 1024 * 1024 * 1024) {
-      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-    } else if (bytes >= 1024 * 1024) {
-      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-    } else if (bytes >= 1024) {
-      return (bytes / 1024).toFixed(2) + " KB";
-    } else {
-      return bytes.toFixed(2) + " B";
-    }
-  };
-
-  // Calcular tamaño total
-  const totalSize = trashItems.reduce((acc, item) => {
-    const size = Number(item.fileSize) || 0;
-    // Si el tamaño es menor a 1024, asumimos que está en MB
-    if (size < 1024) {
-      return acc + (size * 1024 * 1024); // Convertir MB a bytes
-    }
-    return acc + size; // Ya está en bytes
-  }, 0);
-  
-  const formattedSize = formatSize(totalSize);
+  const totalSize = trashItems.reduce((acc, item) => acc + (item.fileSize || 0), 0);
+  const formattedSize = (totalSize / (1024 * 1024)).toFixed(2) + " MB";
 
   const handleEmptyTrash = async () => {
     await emptyTrash();
@@ -179,9 +118,7 @@ const Trash = () => {
     return (
       <AppLayout>
         <div className="flex justify-center items-center h-[60vh]">
-          <p className="text-nuvia-mauve animate-pulse">
-            Cargando papelera...
-          </p>
+          <p className="text-nuvia-mauve animate-pulse">Cargando papelera...</p>
         </div>
       </AppLayout>
     );
@@ -203,9 +140,7 @@ const Trash = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
-              Papelera
-            </h1>
+            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">Papelera</h1>
           </div>
 
           <AlertDialog>
@@ -217,20 +152,16 @@ const Trash = () => {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>
-                  ¿Vaciar la papelera permanentemente?
-                </AlertDialogTitle>
+                <AlertDialogTitle>¿Vaciar la papelera permanentemente?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Esta acción no se puede deshacer. Todos los elementos se
-                  eliminarán permanentemente.
+                  Esta acción no se puede deshacer. Todos los elementos se eliminarán permanentemente.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-nuvia-rose text-white hover:bg-nuvia-rose/90"
-                  onClick={handleEmptyTrash}
-                >
+                  onClick={handleEmptyTrash}>
                   Vaciar Papelera
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -243,8 +174,7 @@ const Trash = () => {
           <CardContent className="flex items-center gap-3 p-4">
             <AlertCircle className="w-5 h-5 text-nuvia-peach-dark" />
             <p className="text-sm text-nuvia-deep">
-              Los archivos en la papelera se eliminarán automáticamente después
-              de 30 días.
+              Los archivos en la papelera se eliminarán automáticamente después de 30 días.
             </p>
           </CardContent>
         </Card>
@@ -254,27 +184,21 @@ const Trash = () => {
           <Card>
             <CardContent className="p-3 md:p-4">
               <p className="text-xs text-nuvia-deep/70">Elementos</p>
-              <p className="text-xl font-bold mt-2 text-nuvia-deep">
-                {trashItems.length}
-              </p>
+              <p className="text-xl font-bold mt-2 text-nuvia-deep">{trashItems.length}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-3 md:p-4">
               <p className="text-xs text-nuvia-deep/70">Tamaño Total</p>
-              <p className="text-xl font-bold mt-2 text-nuvia-deep">
-                {formattedSize}
-              </p>
+              <p className="text-xl font-bold mt-2 text-nuvia-deep">{formattedSize}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="p-3 md:p-4">
               <p className="text-xs text-nuvia-deep/70">Seleccionados</p>
-              <p className="text-xl font-bold mt-2 text-nuvia-deep">
-                {selectedItems.length}
-              </p>
+              <p className="text-xl font-bold mt-2 text-nuvia-deep">{selectedItems.length}</p>
             </CardContent>
           </Card>
         </div>
@@ -301,114 +225,109 @@ const Trash = () => {
                   <tr>
                     <th className="w-10 p-4">
                       <Checkbox
-                        checked={
-                          selectedItems.length === filteredItems.length &&
-                          filteredItems.length > 0
-                        }
+                        checked={selectedItems.length === filteredItems.length && filteredItems.length > 0}
                         onCheckedChange={toggleAllSelection}
                       />
                     </th>
-                    <th className="text-left p-4 font-semibold text-nuvia-mauve">
-                      Nombre
-                    </th>
-                    <th className="text-left p-4 font-semibold text-nuvia-mauve hidden sm:table-cell">
-                      Tamaño
-                    </th>
+                    <th className="text-left p-4 font-semibold text-nuvia-mauve">Nombre</th>
+                    <th className="text-left p-4 font-semibold text-nuvia-mauve hidden sm:table-cell">Tamaño</th>
                     <th className="text-left p-4 font-semibold text-nuvia-mauve hidden lg:table-cell">
                       Tiempo Restante
                     </th>
-                    <th></th>
+                    <th className="text-left p-4 font-semibold text-nuvia-mauve">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredItems.map((item, index) => (
                     <tr
-                      key={`trash-${item.trashId}-${index}`}
-                      className="border-b border-nuvia-peach/20 hover:bg-nuvia-peach/10 transition-all"
-                    >
+                      key={`${item.trashId}`}
+                      className="border-b border-nuvia-peach/20 hover:bg-nuvia-peach/10 transition-all">
                       <td className="p-4">
                         <Checkbox
                           checked={selectedItems.includes(item.trashId)}
                           onCheckedChange={() => toggleItemSelection(item.trashId)}
                         />
                       </td>
-                      <td className="p-4 flex items-center gap-3 text-nuvia-deep">
-                        {item.itemType === "image" ? (
-                          <img
-                            src={getTrashItemUrl(item)}
-                            alt={item.originalName}
-                            className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
-                            loading="eager"
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
-                          />
-                        ) : item.itemType === "video" ? (
-                          <video
-                            src={getTrashItemUrl(item)}
-                            className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
-                            muted
-                            preload="metadata"
-                          />
-                        ) : item.itemType === "document" ? (
-                          <div className="w-12 h-12 flex items-center justify-center rounded-lg border border-nuvia-silver/30 bg-nuvia-peach/10">
-                            <FileText className="w-6 h-6 text-nuvia-mauve" />
-                          </div>
-                        ) : item.itemType === "folder" ? (
-                          <div className="w-12 h-12 flex items-center justify-center rounded-lg border border-nuvia-silver/30 bg-nuvia-mauve/10">
-                            <Folder className="w-6 h-6 text-nuvia-deep" />
-                          </div>
-                        ) : (
-                          <Archive className="w-10 h-10 text-nuvia-silver/50" />
-                        )}
-
-                        <span className="truncate max-w-[200px]">
-                          {item.originalName}
-                        </span>
+                      <td className="p-4">
+                        <div className="flex items-center gap-3 text-nuvia-deep">
+                          {item.itemType === "image" ? (
+                            <img
+                              src={getTrashItemUrl(item)}
+                              alt={item.originalName}
+                              className="w-12 h-12 object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                e.currentTarget.parentElement
+                                  ?.querySelector(".fallback-icon")
+                                  ?.classList.remove("hidden");
+                              }}
+                            />
+                          ) : item.itemType === "video" ? (
+                            <div className="relative w-12 h-12">
+                              <video
+                                src={getTrashItemUrl(item)}
+                                className="w-full h-full object-cover rounded-lg border border-nuvia-silver/30 shadow-sm"
+                                muted
+                                preload="metadata"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none";
+                                  e.currentTarget.parentElement
+                                    ?.querySelector(".fallback-icon")
+                                    ?.classList.remove("hidden");
+                                }}
+                              />
+                              <div className="fallback-icon hidden absolute inset-0 flex items-center justify-center">
+                                {getIconForItemType(item.itemType)}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 flex items-center justify-center">
+                              {getIconForItemType(item.itemType)}
+                            </div>
+                          )}
+                          <span className="truncate max-w-[200px]">{item.originalName}</span>
+                        </div>
                       </td>
-
                       <td className="p-4 text-nuvia-deep/70 hidden sm:table-cell">
                         {formatSize(item.fileSize)}
                       </td>
-                      <td className="p-4 hidden lg:table-cell">
-                        {getDaysLeftBadge(item.permanentDeleteAt)}
-                      </td>
+                      <td className="p-4 hidden lg:table-cell">{getDaysLeftBadge(item.permanentDeleteAt)}</td>
                       <td className="p-4">
                         <div className="flex gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="text-nuvia-mauve hover:text-nuvia-deep"
-                            onClick={() => restoreItem(item.trashId)}
-                          >
+                            onClick={() => {
+                              if (item.trashId == null) {
+                                console.error("Item sin id de trash:", item);
+                                return;
+                              }
+                              restoreItem(item.trashId);
+                            }}>
                             <RotateCcw className="w-4 h-4" />
                           </Button>
 
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-nuvia-rose hover:text-nuvia-rose"
-                              >
+                              <Button variant="ghost" size="icon" className="text-nuvia-rose hover:text-nuvia-rose">
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  ¿Eliminar permanentemente?
-                                </AlertDialogTitle>
+                                <AlertDialogTitle>¿Eliminar permanentemente?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Esta acción no se puede deshacer. El elemento "{item.originalName}" será eliminado permanentemente.
+                                  Esta acción no se puede deshacer. El elemento "{item.originalName}" será eliminado
+                                  permanentemente.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-nuvia-rose text-white hover:bg-nuvia-rose/90"
-                                  onClick={() => handlePermanentDelete(item.trashId)}
-                                >
+                                  onClick={() => handlePermanentDelete(item.trashId)}>
                                   Eliminar
                                 </AlertDialogAction>
                               </AlertDialogFooter>

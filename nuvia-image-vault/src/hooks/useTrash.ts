@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
 import { useToast } from "@/hooks/use-toast";
 
-interface TrashItem {
-  id: number;
-  trashId: number;
+export interface TrashItem {
+  trashId: number; // ✅ ID REAL DE LA PAPELERA
   userId: number;
-  itemType: 'image' | 'video' | 'document' | 'folder';
+  itemType: "image" | "video" | "document" | "folder";
   itemId: number;
   originalName: string;
   originalPath: string;
