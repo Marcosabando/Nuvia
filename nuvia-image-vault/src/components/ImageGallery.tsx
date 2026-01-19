@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw,
   FolderPlus, X, Calendar, Eye, EyeOff, Grid3X3, List, Search, Filter, Upload,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, AlertTriangle
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
   const [searchTerm, setSearchTerm] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(20); // 5 columnas × 4 filas = 20 imágenes por página
+  const [itemsPerPage] = useState(20);
   
   const { images, loading, error, refetch } = useImages();
   const [selectedImage, setSelectedImage] = useState<any>(null);
@@ -72,6 +72,9 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
   const [foldersLoading, setFoldersLoading] = useState(true);
   const [renameModal, setRenameModal] = useState<{ open: boolean; image: any; name: string }>({
     open: false, image: null, name: ""
+  });
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; image: any }>({
+    open: false, image: null
   });
   const [isRenaming, setIsRenaming] = useState(false);
   const { toast } = useToast();
@@ -128,15 +131,39 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
     }
   };
 
-  const deleteImage = async (id: number) => {
-    if (!confirm("¿Eliminar esta imagen?")) return;
+  const handleDelete = async (image: any) => {
+    setDeleteModal({
+      open: true,
+      image
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModal.image) return;
+
+    const id = deleteModal.image.id;
     setOptimisticUpdates(p => ({ ...p, [id]: { deleted: true } }));
     setSelectedImage(null);
+    
     try {
       await apiService.delete(`/images/${id}`);
+      showToast(true, "Imagen movida a la papelera");
       refetch();
     } catch {
+      showToast(false, "Error al eliminar la imagen");
       setOptimisticUpdates(p => { const n = { ...p }; delete n[id]; return n; });
+    } finally {
+      setDeleteModal({ open: false, image: null });
+    }
+  };
+
+  const handleDownload = async (image: any) => {
+    try {
+      window.open(getImageUrl(image, false), "_blank");
+      showToast(true, "Descarga iniciada");
+    } catch (error) {
+      console.error("Error descargando:", error);
+      showToast(false, "Error al descargar la imagen");
     }
   };
 
@@ -286,12 +313,10 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                 const displayName = image.title || image.originalFilename;
                 
                 if (currentViewMode === 'list') {
-                  // Vista de lista
                   return (
                     <Card key={image.id} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
                       <CardContent className="p-3 sm:p-4">
                         <div className="flex items-center gap-3 sm:gap-4">
-                          {/* Imagen pequeña a la izquierda */}
                           <div 
                             className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 rounded-lg relative overflow-hidden cursor-pointer"
                             onClick={() => setSelectedImage(image)}
@@ -319,7 +344,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                             )}
                           </div>
 
-                          {/* Información de la imagen */}
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-2 gap-2">
                               <div className="flex-1 min-w-0">
@@ -335,7 +359,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                 </div>
                               </div>
                               
-                              {/* Botones de acción en vista lista */}
                               <div className="flex items-center gap-1">
                                 <Button 
                                   variant="secondary" 
@@ -398,7 +421,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                       </DropdownMenuPortal>
                                     </DropdownMenuSub>
                                     
-                                    <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
+                                    <DropdownMenuItem onClick={() => handleDownload(image)}>
                                       <Download className="w-4 h-4 mr-2" />
                                       Descargar
                                     </DropdownMenuItem>
@@ -410,7 +433,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                     
                                     <DropdownMenuSeparator />
                                     
-                                    <DropdownMenuItem className="text-red-600" onClick={() => deleteImage(image.id)}>
+                                    <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(image)}>
                                       <Trash2 className="w-4 h-4 mr-2" />
                                       Mover a papelera
                                     </DropdownMenuItem>
@@ -419,7 +442,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                               </div>
                             </div>
                             
-                            {/* Información adicional - Solo en desktop */}
                             <div className="hidden sm:flex items-center gap-4 text-xs text-nuvia-deep/60">
                               <span>Subido: {new Date(image.createdAt).toLocaleDateString("es-ES")}</span>
                               {image.isPublic ? (
@@ -441,11 +463,9 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                   );
                 }
 
-                // Vista de grid (5 columnas)
                 return (
                   <Card key={image.id} className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
                     <CardContent className="p-0 relative">
-                      {/* Imagen clickeable */}
                       <div 
                         className="aspect-square bg-gray-50 relative overflow-hidden cursor-pointer" 
                         onClick={() => setSelectedImage(image)}
@@ -466,7 +486,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                         
-                        {/* Badge favorito */}
                         {image.isFavorite && (
                           <div className="absolute top-2 left-2 z-10 pointer-events-none">
                             <div className="bg-red-500 rounded-md px-1.5 py-1 shadow-sm">
@@ -475,7 +494,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                           </div>
                         )}
                         
-                        {/* Botones de acción */}
                         <div 
                           className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={(e) => e.stopPropagation()}
@@ -542,7 +560,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                 </DropdownMenuPortal>
                               </DropdownMenuSub>
                               
-                              <DropdownMenuItem onClick={() => window.open(getImageUrl(image, false), "_blank")}>
+                              <DropdownMenuItem onClick={() => handleDownload(image)}>
                                 <Download className="w-4 h-4 mr-2" />
                                 Descargar
                               </DropdownMenuItem>
@@ -554,7 +572,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                               
                               <DropdownMenuSeparator />
                               
-                              <DropdownMenuItem className="text-red-600" onClick={() => deleteImage(image.id)}>
+                              <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(image)}>
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Mover a papelera
                               </DropdownMenuItem>
@@ -563,7 +581,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                         </div>
                       </div>
                       
-                      {/* Info de la imagen */}
                       <div className="p-3 bg-white border-t border-nuvia-silver/30">
                         <p className="text-sm font-medium truncate text-nuvia-deep mb-1">{displayName}</p>
                         <div className="flex justify-between items-center text-xs text-nuvia-deep/60">
@@ -579,7 +596,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
               })}
             </div>
 
-            {/* Paginación - Solo mostrar si hay más de una página */}
             {totalPages > 1 && (
               <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-nuvia-silver/30 gap-4">
                 <div className="text-sm text-nuvia-deep/60 text-center sm:text-left">
@@ -648,7 +664,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
         <DialogContent className="max-w-7xl w-[95vw] max-h-[90vh] p-0 border-0 bg-gradient-to-br from-nuvia-mauve/20 via-nuvia-rose/15 to-nuvia-peach/20 overflow-y-auto">
           {selectedImage && (
             <div className="flex flex-col md:flex-row min-h-full">
-              {/* Imagen */}
               <div className="flex-1 flex items-center justify-center p-4 min-h-[40vh] md:min-h-[60vh]">
                 <img
                   src={getImageUrl(selectedImage, false)}
@@ -658,9 +673,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                 />
               </div>
               
-              {/* Panel info */}
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
-                {/* Header con botón cerrar */}
                 <div className="p-4 border-b border-nuvia-silver/30 flex items-start justify-between sticky top-0 bg-white/95 z-10">
                   <div className="flex-1 min-w-0 pr-2">
                     <h3 className="text-lg font-semibold text-nuvia-deep break-words">
@@ -680,9 +693,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                   </Button>
                 </div>
                 
-                {/* Contenido scrolleable */}
                 <div className="p-4 space-y-4">
-                  {/* Archivo */}
                   <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
                     <h4 className="font-semibold text-nuvia-deep">Archivo</h4>
                     <div className="flex justify-between">
@@ -701,7 +712,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                     )}
                   </div>
                   
-                  {/* Metadatos */}
                   <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
                     <h4 className="font-semibold text-nuvia-deep flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
@@ -742,14 +752,13 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                     </div>
                   </div>
                   
-                  {/* Acciones */}
                   <div className="space-y-2">
                     <h4 className="text-sm font-semibold text-nuvia-deep">Acciones</h4>
                     <Button 
                       variant="outline" 
                       size="sm" 
                       className="w-full justify-start border-nuvia-silver/30" 
-                      onClick={() => window.open(getImageUrl(selectedImage, false), "_blank")}
+                      onClick={() => handleDownload(selectedImage)}
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Descargar
@@ -770,7 +779,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                       variant="outline" 
                       size="sm" 
                       className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30" 
-                      onClick={() => deleteImage(selectedImage.id)}
+                      onClick={() => handleDelete(selectedImage)}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       Mover a papelera
@@ -825,6 +834,51 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
               ) : (
                 "Renombrar"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Eliminación */}
+      <Dialog
+        open={deleteModal.open}
+        onOpenChange={(open) => !open && setDeleteModal({ open: false, image: null })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              Mover a papelera
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres mover esta imagen a la papelera?
+            </DialogDescription>
+          </DialogHeader>
+          {deleteModal.image && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <img src={getImageUrl(deleteModal.image, true)} alt="" className="w-12 h-12 object-cover rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-nuvia-deep">
+                    {deleteModal.image.title || deleteModal.image.originalFilename}
+                  </p>
+                  <p className="text-xs text-nuvia-deep/60">{formatFileSize(deleteModal.image.fileSize)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModal({ open: false, image: null })}
+              className="border-nuvia-silver/30">
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmDelete} 
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Mover a papelera
             </Button>
           </DialogFooter>
         </DialogContent>

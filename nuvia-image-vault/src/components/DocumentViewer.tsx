@@ -52,9 +52,6 @@ export default function DocumentViewer({ documentId }: Props) {
       };
 
       setDebugInfo(debug);
-      console.log("[DOC_VIEWER] Debug info:", debug);
-
-      // Si la respuesta es exitosa y es un PDF
       if (response.ok && debug.contentType?.includes("pdf")) {
         setViewMode("object");
         setError(null);
