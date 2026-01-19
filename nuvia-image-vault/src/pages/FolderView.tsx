@@ -17,7 +17,7 @@ import {
   Loader2,
   AlertCircle,
   Settings,
-  Edit3
+  Edit3,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -38,10 +38,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface FolderItem {
   id: number;
-  type: 'image' | 'video';
+  type: "image" | "video";
   itemId: number;
   userId: number;
   title: string;
@@ -58,19 +59,30 @@ interface FolderItem {
 const FolderView = () => {
   const { folderId } = useParams<{ folderId: string }>();
   const navigate = useNavigate();
-  
+  const { toast } = useToast();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [folderItems, setFolderItems] = useState<FolderItem[]>([]);
   const [folderInfo, setFolderInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Estados para los modales
+
+  // Modales
   const [deleteFolderModalOpen, setDeleteFolderModalOpen] = useState(false);
   const [deleteItemModalOpen, setDeleteItemModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<FolderItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const showToast = (success: boolean, message: string) => {
+    toast({
+      title: success ? "✅ Éxito" : "❌ Error",
+      description: message,
+      ...(success
+        ? { className: "bg-green-50 border-green-200 text-green-800" }
+        : { variant: "destructive" }),
+    });
+  };
 
   // Obtener contenido de la carpeta
   useEffect(() => {
@@ -84,21 +96,20 @@ const FolderView = () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         const response = await apiService.get(`/folders/${folderId}/content`);
 
         if (response.success && response.data) {
           const { folder, images, videos } = response.data;
-          
+
           setFolderInfo(folder);
-          
+
           const allItems: FolderItem[] = [];
 
-          // Agregar imágenes
           if (images && Array.isArray(images)) {
             const imageItems = images.map((img: any): FolderItem => ({
               id: img.imageId,
-              type: 'image',
+              type: "image",
               itemId: img.imageId,
               userId: img.userId,
               title: img.title || img.originalFilename,
@@ -114,11 +125,10 @@ const FolderView = () => {
             allItems.push(...imageItems);
           }
 
-          // Agregar videos
           if (videos && Array.isArray(videos)) {
             const videoItems = videos.map((vid: any): FolderItem => ({
               id: vid.videoId,
-              type: 'video',
+              type: "video",
               itemId: vid.videoId,
               userId: vid.userId,
               title: vid.title || vid.originalFilename,
@@ -134,14 +144,10 @@ const FolderView = () => {
             allItems.push(...videoItems);
           }
 
-          // Ordenar por fecha (más recientes primero)
-          allItems.sort((a, b) => 
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-
+          allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           setFolderItems(allItems);
         } else {
-          throw new Error(response.error || 'Error al cargar el contenido de la carpeta');
+          throw new Error(response.error || "Error al cargar el contenido de la carpeta");
         }
       } catch (err: any) {
         console.error("Error cargando carpeta:", err);
@@ -154,77 +160,102 @@ const FolderView = () => {
     fetchFolderContent();
   }, [folderId]);
 
-  // Función para abrir modal de eliminar archivo
   const openDeleteItemModal = (item: FolderItem) => {
     setItemToDelete(item);
     setDeleteItemModalOpen(true);
   };
 
-  // Función para quitar archivo de la carpeta
+  // ✅ Quitar archivo de carpeta (optimista + sidebar + toast)
   const removeFromFolder = async () => {
     if (!itemToDelete || !folderId) return;
 
+    const numericFolderId = Number(folderId);
+
+    // ✅ Optimista: quitar de la lista al instante
+    setFolderItems((prev) =>
+      prev.filter((x) => !(x.type === itemToDelete.type && x.itemId === itemToDelete.itemId))
+    );
+
+    // ✅ Optimista: bajar contador sidebar al instante (SIN GET)
+    window.dispatchEvent(
+      new CustomEvent("folders:itemDelta", {
+        detail: { folderId: numericFolderId, delta: -1 },
+      })
+    );
+
     try {
       setIsDeleting(true);
-      
-      const endpoint = itemToDelete.type === 'image' 
-        ? `/folders/${folderId}/images/${itemToDelete.itemId}`
-        : `/folders/${folderId}/videos/${itemToDelete.itemId}`;
-      
+
+      const endpoint =
+        itemToDelete.type === "image"
+          ? `/folders/${folderId}/images/${itemToDelete.itemId}`
+          : `/folders/${folderId}/videos/${itemToDelete.itemId}`;
+
       const response = await apiService.delete(endpoint);
-      
+
       if (response.success) {
-        // Actualizar lista local inmediatamente
-        setFolderItems(prev => prev.filter(fav => 
-          !(fav.type === itemToDelete.type && fav.id === itemToDelete.id)
-        ));
-        
-        // Cerrar modal
         setDeleteItemModalOpen(false);
         setItemToDelete(null);
-        
-        // Mostrar notificación de éxito
-        // (asumiendo que tienes un sistema de toast)
-        console.log("✅ Archivo eliminado de la carpeta correctamente");
-      } else {
-        throw new Error(response.error || 'Error al eliminar el archivo');
+
+        showToast(true, "Archivo quitado de la carpeta");
+
+        // ✅ (Opcional) verificación sin spamear:
+        // window.dispatchEvent(new Event("folders:refresh"));
+        return;
       }
-    } catch (error) {
+
+      throw new Error(response.error || "Error al quitar el archivo");
+    } catch (error: any) {
       console.error("Error removiendo archivo:", error);
-      alert("Error al quitar el archivo de la carpeta");
+
+      // ❌ Rollback: si falló, lo volvemos a poner
+      setFolderItems((prev) => (itemToDelete ? [itemToDelete, ...prev] : prev));
+
+      // ❌ Rollback contador
+      window.dispatchEvent(
+        new CustomEvent("folders:itemDelta", {
+          detail: { folderId: numericFolderId, delta: 1 },
+        })
+      );
+
+      showToast(false, error?.response?.data?.error || "Error al quitar el archivo de la carpeta");
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // Función para eliminar carpeta completa
+  // ✅ Eliminar carpeta completa
   const deleteFolder = async () => {
     if (!folderId) return;
 
     try {
       setIsDeleting(true);
-      
+
       const response = await apiService.delete(`/folders/${folderId}`);
-      
+
       if (response.success) {
-        // Redirigir al home después de eliminar
+        // ✅ Opcional: si quieres reflejar que la carpeta baja a 0 rápido:
+        // window.dispatchEvent(
+        //   new CustomEvent("folders:itemDelta", {
+        //     detail: { folderId: Number(folderId), delta: -folderItems.length },
+        //   })
+        // );
+
+        showToast(true, "Carpeta eliminada correctamente");
         navigate("/home");
-        
-        // Mostrar notificación de éxito
-        console.log("✅ Carpeta eliminada correctamente");
-      } else {
-        throw new Error(response.error || 'Error al eliminar la carpeta');
+        return;
       }
-    } catch (error) {
+
+      throw new Error(response.error || "Error al eliminar la carpeta");
+    } catch (error: any) {
       console.error("Error eliminando carpeta:", error);
-      alert("Error al eliminar la carpeta");
+      showToast(false, error?.response?.data?.error || "Error al eliminar la carpeta");
     } finally {
       setIsDeleting(false);
       setDeleteFolderModalOpen(false);
     }
   };
 
-  // Helper para obtener URL de archivo
   const getFileUrl = (item: FolderItem): string => {
     let cleanPath = item.filePath;
     if (item.filePath.startsWith("uploads/")) {
@@ -233,7 +264,6 @@ const FolderView = () => {
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
 
-  // Helper para formatear tamaño
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 Bytes";
     const k = 1024;
@@ -242,35 +272,32 @@ const FolderView = () => {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
-  // Helper para formatear fecha
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 1) return "Hace 1 día";
     if (diffDays < 7) return `Hace ${diffDays} días`;
     if (diffDays < 30) return `Hace ${Math.ceil(diffDays / 7)} semanas`;
     return `Hace ${Math.ceil(diffDays / 30)} meses`;
   };
 
-  // Filtrar archivos
   const filteredItems = folderItems.filter((item) => {
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
-      item.title.toLowerCase().includes(searchLower) || 
+    const matchesSearch =
+      item.title.toLowerCase().includes(searchLower) ||
       item.originalFilename.toLowerCase().includes(searchLower);
-    
+
     const matchesFilter = filterType === "all" || item.type === filterType;
     return matchesSearch && matchesFilter;
   });
 
-  // Estadísticas
   const stats = {
     total: folderItems.length,
-    images: folderItems.filter(item => item.type === 'image').length,
-    videos: folderItems.filter(item => item.type === 'video').length,
+    images: folderItems.filter((item) => item.type === "image").length,
+    videos: folderItems.filter((item) => item.type === "video").length,
     totalSize: folderItems.reduce((acc, item) => acc + item.fileSize, 0),
   };
 
@@ -337,45 +364,32 @@ const FolderView = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-4 flex-1">
-            <div 
+            <div
               className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0"
               style={{ backgroundColor: folderInfo.color }}
             >
               <Folder className="w-6 h-6 text-white" />
             </div>
             <div className="flex-1">
-              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
-                {folderInfo.name}
-              </h1>
-              {folderInfo.description && (
-                <p className="text-sm text-white mt-1">
-                  {folderInfo.description}
-                </p>
-              )}
+              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">{folderInfo.name}</h1>
+              {folderInfo.description && <p className="text-sm text-white mt-1">{folderInfo.description}</p>}
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-sm text-white/80">
-                  {stats.total} {stats.total === 1 ? 'elemento' : 'elementos'}
+                  {stats.total} {stats.total === 1 ? "elemento" : "elementos"}
                 </span>
                 {folderInfo.isSystem && (
-                  <span className="text-xs bg-nuvia-peach/20 text-nuvia-peach px-2 py-1 rounded-full">
-                    Sistema
-                  </span>
+                  <span className="text-xs bg-nuvia-peach/20 text-nuvia-peach px-2 py-1 rounded-full">Sistema</span>
                 )}
               </div>
             </div>
           </div>
-          
-          {/* Botones de acción de la carpeta */}
+
           <div className="flex items-center gap-2 shrink-0">
-            <Button 
-              onClick={() => navigate("/home")}
-              variant="outline" 
-              className="gap-2"
-            >
+            <Button onClick={() => navigate("/home")} variant="outline" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
               Volver
             </Button>
-            
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="h-10 w-10">
@@ -388,7 +402,7 @@ const FolderView = () => {
                   Editar carpeta
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onClick={() => setDeleteFolderModalOpen(true)}
                 >
@@ -400,7 +414,7 @@ const FolderView = () => {
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
@@ -438,14 +452,12 @@ const FolderView = () => {
                 <p className="text-sm text-nuvia-mauve">Espacio usado</p>
                 <FileText className="w-5 h-5 text-nuvia-silver" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">
-                {formatFileSize(stats.totalSize)}
-              </p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{formatFileSize(stats.totalSize)}</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search and Filter */}
+        {/* Search & Filter */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-nuvia-mauve" />
@@ -456,6 +468,7 @@ const FolderView = () => {
               className="pl-10 bg-white/50 border-nuvia-silver/30 focus:border-nuvia-mauve focus:ring-nuvia-mauve/20 transition-all duration-smooth"
             />
           </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-nuvia-rose via-nuvia-peach to-nuvia-mauve text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all">
@@ -471,7 +484,7 @@ const FolderView = () => {
           </DropdownMenu>
         </div>
 
-        {/* Files List */}
+        {/* List */}
         <Card className="bg-white/95 backdrop-blur-sm rounded-2xl border border-nuvia-peach/20 shadow-nuvia-medium">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -485,10 +498,11 @@ const FolderView = () => {
                     <th className="w-10"></th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {filteredItems.map((item) => {
                     const Icon = getTypeIcon(item.type);
-                    
+
                     return (
                       <tr
                         key={`${item.type}-${item.id}`}
@@ -498,14 +512,15 @@ const FolderView = () => {
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0">
                               {item.type === "image" ? (
-                                <img 
-                                  src={getFileUrl(item)} 
+                                <img
+                                  src={getFileUrl(item)}
                                   alt={item.title}
                                   className="w-full h-full object-cover"
                                   loading="lazy"
                                   onError={(e) => {
                                     e.currentTarget.style.display = "none";
-                                    e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-peach/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🖼️</span></div>';
+                                    e.currentTarget.parentElement!.innerHTML =
+                                      '<div class="w-full h-full bg-gradient-to-br from-nuvia-peach/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🖼️</span></div>';
                                   }}
                                 />
                               ) : item.type === "video" ? (
@@ -516,7 +531,8 @@ const FolderView = () => {
                                   preload="metadata"
                                   onError={(e) => {
                                     e.currentTarget.style.display = "none";
-                                    e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🎬</span></div>';
+                                    e.currentTarget.parentElement!.innerHTML =
+                                      '<div class="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center"><span class="text-2xl">🎬</span></div>';
                                   }}
                                 />
                               ) : (
@@ -525,36 +541,38 @@ const FolderView = () => {
                                 </div>
                               )}
                             </div>
+
                             <div>
                               <p className="font-medium text-nuvia-deep">{item.title}</p>
                               <p className="text-xs text-nuvia-mauve sm:hidden">
                                 {formatFileSize(item.fileSize)} • {item.type}
                               </p>
                               {item.title !== item.originalFilename && (
-                                <p className="text-xs text-nuvia-silver mt-1">
-                                  Original: {item.originalFilename}
-                                </p>
+                                <p className="text-xs text-nuvia-silver mt-1">Original: {item.originalFilename}</p>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="p-4 text-nuvia-mauve hidden sm:table-cell">
-                          {formatFileSize(item.fileSize)}
-                        </td>
-                        <td className="p-4 text-nuvia-mauve hidden md:table-cell">
-                          {formatDate(item.createdAt)}
-                        </td>
-                        <td className="p-4 text-nuvia-mauve hidden lg:table-cell capitalize">
-                          {item.type}
-                        </td>
+
+                        <td className="p-4 text-nuvia-mauve hidden sm:table-cell">{formatFileSize(item.fileSize)}</td>
+                        <td className="p-4 text-nuvia-mauve hidden md:table-cell">{formatDate(item.createdAt)}</td>
+                        <td className="p-4 text-nuvia-mauve hidden lg:table-cell capitalize">{item.type}</td>
+
                         <td className="p-4">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg text-nuvia-mauve">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg text-nuvia-mauve"
+                              >
                                 <MoreVertical className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
+                            <DropdownMenuContent
+                              align="end"
+                              className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium"
+                            >
                               <DropdownMenuItem onClick={() => window.open(getFileUrl(item), "_blank")}>
                                 <Eye className="w-4 h-4 mr-2" />
                                 Abrir
@@ -563,7 +581,7 @@ const FolderView = () => {
                                 <Download className="w-4 h-4 mr-2" />
                                 Descargar
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
                                 onClick={() => openDeleteItemModal(item)}
                               >
@@ -587,9 +605,7 @@ const FolderView = () => {
             <CardContent className="py-12 text-center">
               <Folder className="w-12 h-12 mx-auto text-nuvia-mauve mb-4" />
               <p className="text-nuvia-mauve">La carpeta está vacía</p>
-              <p className="text-sm text-nuvia-mauve/70 mt-2">
-                Agrega algunos archivos para verlos aquí
-              </p>
+              <p className="text-sm text-nuvia-mauve/70 mt-2">Agrega algunos archivos para verlos aquí</p>
             </CardContent>
           </Card>
         )}
@@ -604,7 +620,7 @@ const FolderView = () => {
         )}
       </div>
 
-      {/* ✅ MODAL PARA ELIMINAR CARPETA */}
+      {/* Modal eliminar carpeta */}
       <Dialog open={deleteFolderModalOpen} onOpenChange={setDeleteFolderModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -614,7 +630,8 @@ const FolderView = () => {
             </DialogTitle>
             <DialogDescription>
               ¿Estás seguro de que quieres eliminar la carpeta <strong>"{folderInfo?.name}"</strong>?
-              <br /><br />
+              <br />
+              <br />
               <span className="text-destructive font-medium">
                 Esta acción no se puede deshacer. Se eliminarán {stats.total} archivos de esta carpeta.
               </span>
@@ -622,18 +639,10 @@ const FolderView = () => {
           </DialogHeader>
 
           <DialogFooter className="flex gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteFolderModalOpen(false)}
-              disabled={isDeleting}
-            >
+            <Button variant="outline" onClick={() => setDeleteFolderModalOpen(false)} disabled={isDeleting}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={deleteFolder}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={deleteFolder} disabled={isDeleting}>
               {isDeleting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -650,7 +659,7 @@ const FolderView = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ MODAL PARA ELIMINAR ARCHIVO DE CARPETA */}
+      {/* Modal quitar item */}
       <Dialog open={deleteItemModalOpen} onOpenChange={setDeleteItemModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -660,7 +669,8 @@ const FolderView = () => {
             </DialogTitle>
             <DialogDescription>
               ¿Estás seguro de que quieres quitar <strong>"{itemToDelete?.title}"</strong> de esta carpeta?
-              <br /><br />
+              <br />
+              <br />
               <span className="text-destructive font-medium">
                 El archivo no se eliminará, solo se quitará de esta carpeta.
               </span>
@@ -668,18 +678,10 @@ const FolderView = () => {
           </DialogHeader>
 
           <DialogFooter className="flex gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteItemModalOpen(false)}
-              disabled={isDeleting}
-            >
+            <Button variant="outline" onClick={() => setDeleteItemModalOpen(false)} disabled={isDeleting}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={removeFromFolder}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={removeFromFolder} disabled={isDeleting}>
               {isDeleting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

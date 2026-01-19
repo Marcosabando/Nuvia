@@ -7,7 +7,6 @@ import {
   Clock,
   Folder,
   Settings,
-  User,
   LogOut,
   Plus,
   MoreVertical,
@@ -63,23 +62,29 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const collapsed = state === "collapsed";
 
-  // Precargar imagen del logo
   useEffect(() => {
     const img = new Image();
     img.src = "/nuvia-color.png";
   }, []);
 
-  // Gestión de carpetas
-  const { systemFolders, userFolders, loading, createFolder, deleteFolder } = useFolders();
+  const { systemFolders, userFolders, loading, createFolder, deleteFolder, refreshFolders } = useFolders();
 
-  // Estados
+  // ✅ 1) refresca cada vez que cambias de ruta (evita tener que F5)
+  useEffect(() => {
+    refreshFolders();
+  }, [location.pathname, refreshFolders]);
+
+  // ✅ 2) refresca por evento global
+  useEffect(() => {
+    const handler = () => refreshFolders();
+    window.addEventListener("folders:refresh", handler);
+    return () => window.removeEventListener("folders:refresh", handler);
+  }, [refreshFolders]);
+
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
 
-  // Memoizar rol de usuario
   const isAdmin = useMemo(() => localStorage.getItem("userRole") === "admin", []);
-
-  // Funciones auxiliares
   const isActive = (path: string) => location.pathname === path;
 
   const getNavClasses = (path: string) => {
@@ -89,24 +94,20 @@ export function AppSidebar() {
       : `${base} hover:bg-orange-100/50 dark:hover:bg-orange-900/30 text-muted-foreground hover:text-foreground`;
   };
 
-  // Handlers
   const handleCreateFolder = async (data: any) => {
-    try {
-      await createFolder(data);
-      setCreateDialogOpen(false);
-    } catch (error) {
-      console.error("Error al crear carpeta:", error);
-      throw error;
-    }
+    await createFolder(data);
+    setCreateDialogOpen(false);
+    window.dispatchEvent(new Event("folders:refresh"));
   };
 
   const handleDeleteFolder = async (folderId: number) => {
     try {
       await deleteFolder(folderId);
       setFolderToDelete(null);
+      window.dispatchEvent(new Event("folders:refresh"));
     } catch (error: any) {
       console.error("Error al eliminar carpeta:", error);
-      alert(error.response?.data?.error || "Error al eliminar la carpeta");
+      alert(error?.response?.data?.error || error?.message || "Error al eliminar la carpeta");
     }
   };
 
@@ -124,7 +125,7 @@ export function AppSidebar() {
                 loading="eager"
                 decoding="sync"
                 className="relative w-11 h-11 drop-shadow-lg transition-all duration-300 group-hover:drop-shadow-2xl group-hover:-translate-y-0.5"
-                style={{ imageRendering: 'crisp-edges' }}
+                style={{ imageRendering: "crisp-edges" }}
               />
             </div>
 
@@ -166,7 +167,7 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {/* Carpetas del Sistema */}
+          {/* Sistema */}
           {systemFolders.length > 0 && (
             <SidebarGroup>
               {!collapsed && (
@@ -179,9 +180,7 @@ export function AppSidebar() {
                   {systemFolders.map((folder) => (
                     <SidebarMenuItem key={folder.id}>
                       <SidebarMenuButton asChild>
-                        <NavLink
-                          to={`/folders/${folder.id}`}
-                          className={getNavClasses(`/folders/${folder.id}`)}>
+                        <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
                           <Folder className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
                           {!collapsed && (
                             <>
@@ -214,7 +213,8 @@ export function AppSidebar() {
                   size="icon"
                   className="h-6 w-6 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
                   onClick={() => setCreateDialogOpen(true)}
-                  title="Crear carpeta">
+                  title="Crear carpeta"
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
@@ -224,7 +224,8 @@ export function AppSidebar() {
                 size="icon"
                 className="w-full h-10 hover:bg-orange-200/50 dark:hover:bg-orange-900/30 mb-2"
                 onClick={() => setCreateDialogOpen(true)}
-                title="Crear carpeta">
+                title="Crear carpeta"
+              >
                 <Plus className="h-5 w-5" />
               </Button>
             )}
@@ -234,21 +235,14 @@ export function AppSidebar() {
                 {loading ? (
                   <div className="text-sm text-muted-foreground px-3 py-2">Cargando...</div>
                 ) : userFolders.length === 0 ? (
-                  !collapsed && (
-                    <div className="text-sm text-muted-foreground px-3 py-2">No hay carpetas</div>
-                  )
+                  !collapsed && <div className="text-sm text-muted-foreground px-3 py-2">No hay carpetas</div>
                 ) : (
                   userFolders.map((folder) => (
                     <SidebarMenuItem key={folder.id}>
                       <div className="flex items-center gap-1 w-full">
                         <SidebarMenuButton asChild className="flex-1">
-                          <NavLink
-                            to={`/folders/${folder.id}`}
-                            className={getNavClasses(`/folders/${folder.id}`)}>
-                            <Folder
-                              className="w-5 h-5 flex-shrink-0"
-                              style={{ color: folder.color }}
-                            />
+                          <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
+                            <Folder className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
                             {!collapsed && (
                               <>
                                 <span className="flex-1 truncate">{folder.name}</span>
@@ -262,7 +256,6 @@ export function AppSidebar() {
                           </NavLink>
                         </SidebarMenuButton>
 
-                        {/* Menú de opciones */}
                         {!collapsed && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -270,20 +263,21 @@ export function AppSidebar() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 flex-shrink-0 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
-                                onClick={(e) => e.stopPropagation()}>
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/folders/${folder.id}/edit`)}>
+                              <DropdownMenuItem onClick={() => navigate(`/folders/${folder.id}/edit`)}>
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => setFolderToDelete(folder.id)}
-                                className="text-red-600 focus:text-red-600">
+                                className="text-red-600 focus:text-red-600"
+                              >
                                 <Trash className="mr-2 h-4 w-4" />
                                 Eliminar
                               </DropdownMenuItem>
@@ -318,7 +312,6 @@ export function AppSidebar() {
         {/* FOOTER */}
         <SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
           <SidebarMenu className="space-y-1">
-            {/* Admin */}
             {isAdmin && (
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
@@ -330,7 +323,6 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
-            {/* Configuración */}
             <SidebarMenuItem>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -343,12 +335,13 @@ export function AppSidebar() {
                 <DropdownMenuContent
                   side="right"
                   align="end"
-                  className="w-48 bg-white dark:bg-neutral-900 border border-border/50 shadow-lg rounded-xl">
+                  className="w-48 bg-white dark:bg-neutral-900 border border-border/50 shadow-lg rounded-xl"
+                >
                   <DropdownMenuSeparator />
-
                   <DropdownMenuItem
                     onClick={() => AuthService.logout()}
-                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40">
+                    className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
+                  >
                     <LogOut className="mr-2 w-4 h-4" />
                     <span>Cerrar sesión</span>
                   </DropdownMenuItem>
@@ -359,7 +352,6 @@ export function AppSidebar() {
         </SidebarFooter>
       </Sidebar>
 
-      {/* Diálogos */}
       <CreateFolderDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
@@ -378,7 +370,8 @@ export function AppSidebar() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => folderToDelete && handleDeleteFolder(folderToDelete)}
-              className="bg-red-600 hover:bg-red-700">
+              className="bg-red-600 hover:bg-red-700"
+            >
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>

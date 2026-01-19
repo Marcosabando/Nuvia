@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   MoreHorizontal, Download, Heart, Trash2, Edit3, RefreshCw,
   FolderPlus, X, Calendar, Eye, EyeOff, Grid3X3, List, Search, Filter, Upload,
@@ -30,14 +30,14 @@ const formatFileSize = (bytes: number): string => {
   return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
 };
 
-const normalizePath = (path: string): string => 
+const normalizePath = (path: string): string =>
   (path.startsWith("uploads/") ? path : `uploads/${path}`).replace(/([^:]\/)\/+/g, "$1");
 
 const getImageUrl = (image: any, useThumbnail = false): string => {
-  const pathKey = useThumbnail 
-    ? (image.thumbnailPath || image.mediumPath) 
+  const pathKey = useThumbnail
+    ? (image.thumbnailPath || image.mediumPath)
     : (image.mediumPath || image.imagePath);
-  
+
   if (pathKey) {
     let path = normalizePath(pathKey);
     if (!path.includes("/images/") && !path.includes("/videos/") && path.split("/").length >= 3) {
@@ -59,19 +59,20 @@ interface Folder {
 }
 
 export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" | "list" }) {
-  const [currentViewMode, setCurrentViewMode] = useState<'grid' | 'list'>(viewMode);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [currentViewMode, setCurrentViewMode] = useState<"grid" | "list">(viewMode);
+  const [searchTerm, setSearchTerm] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
-  
+
   const { images, loading, error, refetch } = useImages();
   const [selectedImage, setSelectedImage] = useState<any>(null);
   const [optimisticUpdates, setOptimisticUpdates] = useState<Record<number, any>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
+
   const [renameModal, setRenameModal] = useState<{ open: boolean; image: any; name: string }>({
-    open: false, image: null, name: ""
+    open: false, image: null, name: "",
   });
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; image: any }>({
     open: false, image: null
@@ -79,26 +80,105 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
   const [isRenaming, setIsRenaming] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    apiService.get("/folders").then(res => {
-      if (res.success) setFolders(res.data.filter((f: Folder) => !f.isSystem));
-    }).finally(() => setFoldersLoading(false));
-  }, []);
-
   const showToast = (success: boolean, message: string) => {
     toast({
       title: success ? "✅ Éxito" : "❌ Error",
       description: message,
-      ...(success ? { className: "bg-green-50 border-green-200 text-green-800" } : { variant: "destructive" })
+      ...(success
+        ? { className: "bg-green-50 border-green-200 text-green-800" }
+        : { variant: "destructive" }),
     });
   };
 
+  // ✅ fetch folders (solo 1 vez al montar)
+  const fetchFoldersOnce = useCallback(async () => {
+    try {
+      setFoldersLoading(true);
+      const res = await apiService.get("/folders");
+      if (res.success) setFolders(res.data.filter((f: Folder) => !f.isSystem));
+    } finally {
+      setFoldersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFoldersOnce();
+  }, [fetchFoldersOnce]);
+
+  // ✅ escuchar delta global: si otra parte suma/resta, también actualiza el dropdown de aquí
+  useEffect(() => {
+    const onDelta = (ev: Event) => {
+      const e = ev as CustomEvent<{ folderId: number; delta: number }>;
+      if (!e.detail) return;
+      const { folderId, delta } = e.detail;
+
+      setFolders((prev) =>
+        prev.map((f) => {
+          const fid = Number(f.folderId ?? f.id);
+          if (fid !== Number(folderId)) return f;
+          return { ...f, itemCount: Math.max(0, (f.itemCount || 0) + delta) };
+        })
+      );
+    };
+
+    window.addEventListener("folders:itemDelta", onDelta as EventListener);
+    return () => window.removeEventListener("folders:itemDelta", onDelta as EventListener);
+  }, []);
+
+  // ✅ AÑADIR A CARPETA (optimista + sidebar)
   const addToFolder = async (imageId: number, folderId: number) => {
     if (!folderId || isNaN(folderId)) return showToast(false, "ID de carpeta inválido");
+
+    // ✅ optimista: sube contador en el dropdown inmediatamente
+    setFolders((prev) =>
+      prev.map((f) => {
+        const fid = Number(f.folderId ?? f.id);
+        if (fid !== Number(folderId)) return f;
+        return { ...f, itemCount: (f.itemCount || 0) + 1 };
+      })
+    );
+
+    // ✅ optimista: sube contador del SIDEBAR sin refetch
+    window.dispatchEvent(
+      new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: 1 } })
+    );
+
     try {
       const res = await apiService.post(`/folders/${folderId}/images`, { imageId });
-      showToast(res.success, res.success ? "Imagen añadida a la carpeta" : res.error);
+
+      if (res.success) {
+        showToast(true, "Imagen añadida a la carpeta");
+        // opcional “verificación” sin spamear:
+        // window.dispatchEvent(new Event("folders:refresh"));
+        return;
+      }
+
+      // ❌ si falla el backend, revertimos el optimismo
+      setFolders((prev) =>
+        prev.map((f) => {
+          const fid = Number(f.folderId ?? f.id);
+          if (fid !== Number(folderId)) return f;
+          return { ...f, itemCount: Math.max(0, (f.itemCount || 0) - 1) };
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } })
+      );
+
+      showToast(false, res.error || "Error al añadir imagen");
     } catch (e: any) {
+      // ❌ revertimos también si hay excepción
+      setFolders((prev) =>
+        prev.map((f) => {
+          const fid = Number(f.folderId ?? f.id);
+          if (fid !== Number(folderId)) return f;
+          return { ...f, itemCount: Math.max(0, (f.itemCount || 0) - 1) };
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } })
+      );
+
       showToast(false, e.response?.data?.error || "Error al añadir imagen");
     }
   };
@@ -107,12 +187,16 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
     if (!renameModal.name.trim()) return showToast(false, "El nombre no puede estar vacío");
     setIsRenaming(true);
     try {
-      const res = await apiService.patch(`/images/${renameModal.image.id}/title`, { title: renameModal.name.trim() });
+      const res = await apiService.patch(`/images/${renameModal.image.id}/title`, {
+        title: renameModal.name.trim(),
+      });
       if (res.success) {
         showToast(true, "Imagen renombrada");
         setRenameModal({ open: false, image: null, name: "" });
         refetch();
-      } else throw new Error(res.error);
+      } else {
+        throw new Error(res.error);
+      }
     } catch (e: any) {
       showToast(false, e.response?.data?.error || "Error al renombrar");
     } finally {
@@ -121,28 +205,23 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
   };
 
   const toggleFavorite = async (id: number) => {
-    const current = images.find(img => img.id === id)?.isFavorite;
-    setOptimisticUpdates(p => ({ ...p, [id]: { isFavorite: !current } }));
+    const current = images.find((img) => img.id === id)?.isFavorite;
+    setOptimisticUpdates((p) => ({ ...p, [id]: { isFavorite: !current } }));
     try {
       await apiService.post(`/images/${id}/favorite`);
       refetch();
     } finally {
-      setOptimisticUpdates(p => { const n = { ...p }; delete n[id]; return n; });
+      setOptimisticUpdates((p) => {
+        const n = { ...p };
+        delete n[id];
+        return n;
+      });
     }
   };
 
-  const handleDelete = async (image: any) => {
-    setDeleteModal({
-      open: true,
-      image
-    });
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteModal.image) return;
-
-    const id = deleteModal.image.id;
-    setOptimisticUpdates(p => ({ ...p, [id]: { deleted: true } }));
+  const deleteImage = async (id: number) => {
+    if (!confirm("¿Eliminar esta imagen?")) return;
+    setOptimisticUpdates((p) => ({ ...p, [id]: { deleted: true } }));
     setSelectedImage(null);
     
     try {
@@ -150,41 +229,30 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
       showToast(true, "Imagen movida a la papelera");
       refetch();
     } catch {
-      showToast(false, "Error al eliminar la imagen");
-      setOptimisticUpdates(p => { const n = { ...p }; delete n[id]; return n; });
-    } finally {
-      setDeleteModal({ open: false, image: null });
-    }
-  };
-
-  const handleDownload = async (image: any) => {
-    try {
-      window.open(getImageUrl(image, false), "_blank");
-      showToast(true, "Descarga iniciada");
-    } catch (error) {
-      console.error("Error descargando:", error);
-      showToast(false, "Error al descargar la imagen");
+      setOptimisticUpdates((p) => {
+        const n = { ...p };
+        delete n[id];
+        return n;
+      });
     }
   };
 
   const displayImages = images
-    .filter(img => !optimisticUpdates[img.id]?.deleted)
-    .map(img => ({ ...img, isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite }));
+    .filter((img) => !optimisticUpdates[img.id]?.deleted)
+    .map((img) => ({ ...img, isFavorite: optimisticUpdates[img.id]?.isFavorite ?? img.isFavorite }));
 
-  // Filtrar imágenes según búsqueda y favoritos
-  const filteredImages = displayImages.filter(image => {
-    const matchesSearch = image.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         image.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredImages = displayImages.filter((image) => {
+    const matchesSearch =
+      image.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      image.originalFilename?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFavorites = !favoritesOnly || image.isFavorite;
     return matchesSearch && matchesFavorites;
   });
 
-  // Paginación
   const totalPages = Math.ceil(filteredImages.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedImages = filteredImages.slice(startIndex, startIndex + itemsPerPage);
 
-  // Resetear página cuando cambian los filtros
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, favoritesOnly, currentViewMode]);
