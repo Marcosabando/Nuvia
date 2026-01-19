@@ -79,21 +79,15 @@ export const useFolderContent = (folderId: string | undefined): UseFolderContent
     try {
       setLoading(true);
       setError(null);
-      console.log(`🔄 Obteniendo contenido de carpeta ${folderId}...`);
-      
+
       const response = await apiService.get(`/folders/${folderId}/content`);
-      
-      console.log("📁 Respuesta de contenido:", response);
-      
+
       if (response.success && response.data) {
         setContent(response.data);
-        console.log("✅ Contenido cargado:", response.data);
       } else {
-        throw new Error(response.error || 'Error al cargar el contenido');
+        throw new Error(response.error || "Error al cargar el contenido");
       }
     } catch (err: any) {
-      console.error("❌ Error cargando contenido:", err);
-      
       if (err.response?.status === 404) {
         setError("Carpeta no encontrada");
       } else if (err.response?.data?.error) {
@@ -111,40 +105,28 @@ export const useFolderContent = (folderId: string | undefined): UseFolderContent
   const removeImage = async (imageId: number) => {
     if (!folderId) return;
 
-    try {
-      console.log(`🗑️ Eliminando imagen ${imageId} de carpeta ${folderId}`);
-      
-      const response = await apiService.delete(`/folders/${folderId}/images/${imageId}`);
-      
-      if (response.success) {
-        console.log("✅ Imagen eliminada de la carpeta");
-        await fetchContent(); // Refrescar contenido
-      } else {
-        throw new Error(response.error || 'Error al eliminar imagen');
-      }
-    } catch (err: any) {
-      console.error("❌ Error eliminando imagen:", err);
-      throw err;
+    const response = await apiService.delete(`/folders/${folderId}/images/${imageId}`);
+
+    if (response.success) {
+      await fetchContent();
+      // ✅ refresca sidebar
+      window.dispatchEvent(new Event("folders:refresh"));
+    } else {
+      throw new Error(response.error || "Error al eliminar imagen");
     }
   };
 
   const removeVideo = async (videoId: number) => {
     if (!folderId) return;
 
-    try {
-      console.log(`🗑️ Eliminando video ${videoId} de carpeta ${folderId}`);
-      
-      const response = await apiService.delete(`/folders/${folderId}/videos/${videoId}`);
-      
-      if (response.success) {
-        console.log("✅ Video eliminado de la carpeta");
-        await fetchContent(); // Refrescar contenido
-      } else {
-        throw new Error(response.error || 'Error al eliminar video');
-      }
-    } catch (err: any) {
-      console.error("❌ Error eliminando video:", err);
-      throw err;
+    const response = await apiService.delete(`/folders/${folderId}/videos/${videoId}`);
+
+    if (response.success) {
+      await fetchContent();
+      // ✅ refresca sidebar
+      window.dispatchEvent(new Event("folders:refresh"));
+    } else {
+      throw new Error(response.error || "Error al eliminar video");
     }
   };
 

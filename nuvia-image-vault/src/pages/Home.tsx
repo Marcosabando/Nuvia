@@ -13,13 +13,24 @@ import { useUserStats } from "@/hooks/useUserStats";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const Home = () => {
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const { username, stats, loading, error } = useUserStats();
+  const [viewMode] = useState<"grid" | "list">("grid");
+
+  // ✅ incluir refetch para refrescar stats
+  const { username, stats, loading, error, refetch } = useUserStats();
+
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState("images");
 
-  const handleUploadComplete = () => {
+  // ✅ refresca galerías + stats + sidebar
+  const handleUploadComplete = async () => {
     setRefreshKey((prev) => prev + 1);
+
+    // refresca stats (cards)
+    await refetch();
+
+    // refresca sidebar (carpetas + itemCount)
+    window.dispatchEvent(new Event("folders:refresh"));
+
     if (activeTab === "upload") {
       setActiveTab("images");
     }
@@ -28,6 +39,13 @@ const Home = () => {
   const handleTabChange = (value: string) => {
     setActiveTab(value);
   };
+
+  const storagePercentage =
+    typeof (stats as any)?.storagePercentage === "number"
+      ? (stats as any).storagePercentage
+      : stats?.storageLimit
+      ? (stats.storageUsed / stats.storageLimit) * 100
+      : 0;
 
   return (
     <AppLayout>
@@ -39,7 +57,9 @@ const Home = () => {
               <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
                 Bienvenido a Nuvia{username ? `, ${username}` : ""}
               </h1>
-              <p className="text-sm sm:text-base text-white/80 mt-1">Tu plataforma elegante de gestión multimedia</p>
+              <p className="text-sm sm:text-base text-white/80 mt-1">
+                Tu plataforma elegante de gestión multimedia
+              </p>
             </div>
 
             {error && (
@@ -58,7 +78,9 @@ const Home = () => {
                       <Images className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalImages}</p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                    {loading ? "..." : stats.totalImages}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -70,7 +92,9 @@ const Home = () => {
                       <Upload className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.todayUploads}</p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                    {loading ? "..." : stats.todayUploads}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -96,7 +120,9 @@ const Home = () => {
                       <FileText className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{loading ? "..." : stats.totalDocuments || 0}</p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                    {loading ? "..." : stats.totalDocuments || 0}
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -107,23 +133,17 @@ const Home = () => {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
                 <TabsList className="flex flex-wrap w-full sm:w-auto bg-white/80 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
-                  <TabsTrigger
-                    value="images"
-                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                  <TabsTrigger value="images" className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                     <Images className="w-4 h-4" />
                     Imágenes
                   </TabsTrigger>
 
-                  <TabsTrigger
-                    value="videos"
-                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                  <TabsTrigger value="videos" className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                     <Video className="w-4 h-4" />
                     Videos
                   </TabsTrigger>
 
-                  <TabsTrigger
-                    value="documents"
-                    className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+                  <TabsTrigger value="documents" className="flex-1 sm:flex-none gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
                     <FileText className="w-4 h-4" />
                     Documentos
                   </TabsTrigger>
@@ -133,7 +153,8 @@ const Home = () => {
               <div className="flex items-center gap-3">
                 <Button
                   onClick={() => setActiveTab("upload")}
-                  className="bg-gradient-to-r from-nuvia-peach to-nuvia-rose hover:from-nuvia-peach-dark hover:to-nuvia-rose-dark text-white shadow-nuvia-accent hover:shadow-nuvia-glow transition-all duration-300 hover:scale-105 gap-2">
+                  className="bg-gradient-to-r from-nuvia-peach to-nuvia-rose hover:from-nuvia-peach-dark hover:to-nuvia-rose-dark text-white shadow-nuvia-accent hover:shadow-nuvia-glow transition-all duration-300 hover:scale-105 gap-2"
+                >
                   <Upload className="w-4 h-4" />
                   Subir Archivos
                 </Button>
@@ -147,7 +168,7 @@ const Home = () => {
                     <Images className="w-5 h-5 text-nuvia-mauve" />
                     Galería de Imágenes
                     <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
-                      {stats.totalImages} elementos
+                      {loading ? "..." : stats.totalImages} elementos
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -164,7 +185,7 @@ const Home = () => {
                     <Video className="w-5 h-5 text-nuvia-mauve" />
                     Galería de Videos
                     <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
-                      {stats.totalVideos} elementos
+                      {loading ? "..." : stats.totalVideos} elementos
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -181,7 +202,7 @@ const Home = () => {
                     <FileText className="w-5 h-5 text-nuvia-mauve" />
                     Galería de Documentos
                     <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0">
-                      {stats.totalDocuments || 0} elementos
+                      {loading ? "..." : stats.totalDocuments || 0} elementos
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -215,9 +236,7 @@ const Home = () => {
                   <div className="w-full bg-nuvia-silver/30 rounded-full h-2">
                     <div
                       className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min((stats.storageUsed / stats.storageLimit) * 100, 100)}%`,
-                      }}
+                      style={{ width: `${Math.min(storagePercentage || 0, 100)}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-sm text-nuvia-deep/60 mt-2">
