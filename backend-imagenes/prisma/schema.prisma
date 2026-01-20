@@ -76,7 +76,7 @@ model albums {
   @@index([coverImageId], map: "coverImageId")
   @@index([coverVideoId], map: "coverVideoId")
   @@index([isPublic, createdAt(sort: Desc)], map: "idx_albums_public_created")
-  @@index([name(length: 200), description(length: 200)], map: "idx_albums_search")
+  @@index([name, description(length: 100)], map: "idx_albums_search")
   @@index([isSystem], map: "idx_albums_system")
   @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_albums_user_deleted_created")
 }
@@ -188,7 +188,7 @@ model documents {
   @@index([isFavorite, userId, deletedAt], map: "idx_documents_favorite_user")
   @@index([mimeType, userId, deletedAt], map: "idx_documents_mime_user_deleted")
   @@index([isPublic, createdAt(sort: Desc), deletedAt], map: "idx_documents_public_created")
-  @@index([title(length: 255), description(length: 200), tags(length: 200), originalFilename(length: 255)], map: "idx_documents_search")
+  @@index([title, description(length: 100), tags, originalFilename], map: "idx_documents_search")
   @@index([fileSize, userId], map: "idx_documents_size_user")
   @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_documents_user_deleted_created")
 }
@@ -279,6 +279,12 @@ model images {
   mimeType         String             @db.VarChar(50)
   width            Int?
   height           Int?
+  isAnimated       Boolean?           @default(false)
+  frameCount       Int?
+  duration         Decimal?           @db.Decimal(10, 2)
+  fps              Decimal?           @db.Decimal(5, 2)
+  loopCount        Int?               @default(0)
+  hasSound         Boolean?           @default(false)
   isFavorite       Boolean?           @default(false)
   isPublic         Boolean?           @default(false)
   uploadDate       DateTime?          @default(now()) @db.Timestamp(0)
@@ -300,7 +306,7 @@ model images {
   @@index([filename], map: "idx_images_filename")
   @@index([mimeType, deletedAt], map: "idx_images_mime_deleted")
   @@index([isPublic, deletedAt, createdAt(sort: Desc)], map: "idx_images_public_deleted_created")
-  @@index([title(length: 255), description(length: 200)], map: "idx_images_search")
+  @@index([title, description(length: 100)], map: "idx_images_search")
   @@index([fileSize], map: "idx_images_size")
   @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_images_user_deleted_created")
   @@index([userId, isFavorite, deletedAt, createdAt(sort: Desc)], map: "idx_images_user_favorite_deleted")
@@ -486,7 +492,7 @@ model videos {
   @@index([filename], map: "idx_videos_filename")
   @@index([mimeType, deletedAt], map: "idx_videos_mime_deleted")
   @@index([isPublic, deletedAt, createdAt(sort: Desc)], map: "idx_videos_public_deleted_created")
-  @@index([title(length: 255), description(length: 200)], map: "idx_videos_search")
+  @@index([title, description(length: 100)], map: "idx_videos_search")
   @@index([fileSize], map: "idx_videos_size")
   @@index([userId, deletedAt, createdAt(sort: Desc)], map: "idx_videos_user_deleted_created")
   @@index([userId, isFavorite, deletedAt, createdAt(sort: Desc)], map: "idx_videos_user_favorite_deleted")
