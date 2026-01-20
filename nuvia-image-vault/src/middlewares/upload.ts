@@ -195,10 +195,8 @@ export const prepareFormData = (file: File, fileType: FileType): FormData => {
   }
   
   // Debug: mostrar todos los campos del FormData
-  console.log(`📦 FormData preparado para ${fileType}:`);
-  console.log(`📋 Archivo: ${file.name} (${formatFileSize(file.size)})`);
   for (let [key, value] of formData.entries()) {
-    console.log(`  ${key}:`, value instanceof File ? `[File: ${(value as File).name}]` : value);
+   
   }
   
   return formData;

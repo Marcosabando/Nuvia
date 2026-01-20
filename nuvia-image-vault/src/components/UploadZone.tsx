@@ -4,11 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  UploadFile, 
-  UploadZoneProps, 
-  FileType 
-} from "@/types/upload";
+import { UploadFile, UploadZoneProps } from "@/types/upload";
 import {
   getUploadConfig,
   getFileType,
@@ -18,22 +14,36 @@ import {
   getUploadEndpoint,
   prepareFormData,
   validateServerResponse,
-  handleServerError
+  handleServerError,
 } from "@/middlewares/upload";
 
-export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) {
+export function UploadZone({ onUploadComplete, type = "all" }: UploadZoneProps) {
   const [dragActive, setDragActive] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<UploadFile[]>([]);
   const { toast } = useToast();
 
+  // Limpieza de object URLs para evitar fugas de memoria
+  useEffect(() => {
+    const objectUrls = new Map<string, string>();
+
+    uploadingFiles.forEach((uf) => {
+      if (getFileType(uf.file) === "image") {
+        if (!objectUrls.has(uf.id)) {
+          objectUrls.set(uf.id, URL.createObjectURL(uf.file));
+        }
+      }
+    });
+
+    return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [uploadingFiles]);
+
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
+    if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
+    if (e.type === "dragleave") setDragActive(false);
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -54,55 +64,34 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
   const uploadToServer = useCallback(
     async (uploadFile: UploadFile) => {
       try {
-        console.log("📤 Subiendo archivo:", uploadFile.file.name);
-
         const token = localStorage.getItem("authToken");
-        if (!token) {
-          throw new Error("No hay sesión activa");
-        }
+        if (!token) throw new Error("No hay sesión activa");
 
         const fileType = getFileType(uploadFile.file);
         const endpoint = getUploadEndpoint(fileType);
         const formData = prepareFormData(uploadFile.file, fileType);
 
-        console.log("📋 Campos FormData:");
-        for (let [key, value] of formData.entries()) {
-          console.log(`  ${key}:`, value instanceof File ? `File: ${(value as File).name}` : value);
-        }
-
-        return new Promise((resolve, reject) => {
+        return await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
 
           xhr.upload.addEventListener("progress", (event) => {
-            if (event.lengthComputable) {
-              const progress = Math.round((event.loaded * 100) / event.total);
-              setUploadingFiles((prev) =>
-                prev.map((file) => 
-                  file.id === uploadFile.id ? { ...file, progress } : file
-                )
-              );
-            }
+            if (!event.lengthComputable) return;
+            const progress = Math.round((event.loaded * 100) / event.total);
+            setUploadingFiles((prev) =>
+              prev.map((f) => (f.id === uploadFile.id ? { ...f, progress } : f))
+            );
           });
 
           xhr.addEventListener("load", () => {
-            console.log("📨 Respuesta del servidor:", {
-              status: xhr.status,
-              statusText: xhr.statusText,
-              response: xhr.responseText,
-            });
-
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
                 const response = JSON.parse(xhr.responseText);
 
                 if (validateServerResponse(response)) {
                   setUploadingFiles((prev) =>
-                    prev.map((file) => {
-                      if (file.id === uploadFile.id) {
-                        return { ...file, progress: 100, status: "completed" };
-                      }
-                      return file;
-                    })
+                    prev.map((f) =>
+                      f.id === uploadFile.id ? { ...f, progress: 100, status: "completed" } : f
+                    )
                   );
 
                   toast({
@@ -110,81 +99,67 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                     description: `${uploadFile.file.name} se subió correctamente`,
                   });
 
-                  if (onUploadComplete) {
-                    onUploadComplete();
-                  }
+                  onUploadComplete?.();
 
                   resolve(response);
                 } else {
-                  const errorMessage = response.error || `Error al guardar el ${fileType}`;
-                  
+                  const errorMessage =
+                    response?.error || `Error al guardar el ${fileType}`;
+
                   setUploadingFiles((prev) =>
-                    prev.map((file) => {
-                      if (file.id === uploadFile.id) {
-                        return { ...file, status: "error", errorMessage };
-                      }
-                      return file;
-                    })
+                    prev.map((f) =>
+                      f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f
+                    )
                   );
-                  
+
                   reject(new Error(errorMessage));
                 }
-              } catch (parseError) {
-                console.error("❌ Error parseando JSON:", parseError);
-                
+              } catch {
+                const errorMessage = "Error procesando respuesta del servidor";
+
                 setUploadingFiles((prev) =>
-                  prev.map((file) => {
-                    if (file.id === uploadFile.id) {
-                      return { 
-                        ...file, 
-                        status: "error", 
-                        errorMessage: "Error procesando respuesta del servidor" 
-                      };
-                    }
-                    return file;
-                  })
+                  prev.map((f) =>
+                    f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f
+                  )
                 );
-                
-                reject(new Error("Error procesando respuesta del servidor"));
+
+                reject(new Error(errorMessage));
               }
             } else {
               const errorMessage = handleServerError(xhr);
-              
+
               setUploadingFiles((prev) =>
-                prev.map((file) => {
-                  if (file.id === uploadFile.id) {
-                    return { ...file, status: "error", errorMessage };
-                  }
-                  return file;
-                })
+                prev.map((f) =>
+                  f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f
+                )
               );
-              
+
               reject(new Error(errorMessage));
             }
           });
 
           xhr.addEventListener("error", () => {
+            const errorMessage = "Error de red al conectar con el servidor";
+
             setUploadingFiles((prev) =>
-              prev.map((file) => {
-                if (file.id === uploadFile.id) {
-                  return { ...file, status: "error", errorMessage: "Error de red" };
-                }
-                return file;
-              })
+              prev.map((f) =>
+                f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f
+              )
             );
-            reject(new Error("Error de red al conectar con el servidor"));
+
+            reject(new Error(errorMessage));
           });
 
           xhr.addEventListener("abort", () => {
+            const errorMessage = "Subida cancelada";
+
             setUploadingFiles((prev) =>
-              prev.map((file) => {
-                if (file.id === uploadFile.id) {
-                  return { ...file, status: "error", errorMessage: "Subida cancelada" };
-                }
-                return file;
-              })
+              prev.map((f) =>
+                f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f
+              )
             );
-            reject(new Error("Subida cancelada"));
+
+            reject(new Error(errorMessage));
           });
 
           xhr.open("POST", endpoint);
@@ -192,17 +167,10 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
           xhr.send(formData);
         });
       } catch (error: any) {
-        console.error("❌ Error en uploadToServer:", error);
-        
-        const errorMessage = error.message || "Error desconocido al subir archivo";
-        
+        const errorMessage = error?.message || "Error desconocido al subir archivo";
+
         setUploadingFiles((prev) =>
-          prev.map((file) => {
-            if (file.id === uploadFile.id) {
-              return { ...file, status: "error", errorMessage };
-            }
-            return file;
-          })
+          prev.map((f) => (f.id === uploadFile.id ? { ...f, status: "error", errorMessage } : f))
         );
 
         toast({
@@ -224,17 +192,18 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
         const invalidCount = files.length - validFiles.length;
         toast({
           title: "Archivos no válidos",
-          description: `${invalidCount} archivo(s) no son válidos para ${type === 'all' ? 'esta zona' : type}`,
+          description: `${invalidCount} archivo(s) no son válidos para ${
+            type === "all" ? "esta zona" : type
+          }`,
           variant: "destructive",
         });
       }
 
       if (validFiles.length === 0) return;
 
-      // Verificar tamaño
       const oversizedFiles = validFiles.filter((file) => {
-        const fileType = getFileType(file);
-        return !isFileSizeValid(file, fileType);
+        const ft = getFileType(file);
+        return !isFileSizeValid(file, ft);
       });
 
       if (oversizedFiles.length > 0) {
@@ -255,43 +224,46 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
 
       setUploadingFiles((prev) => [...prev, ...newUploadFiles]);
 
-      // Subir archivos secuencialmente para evitar sobrecarga
-      newUploadFiles.reduce(async (previousPromise, uploadFile) => {
-        await previousPromise;
-        return uploadToServer(uploadFile);
+      // Subida secuencial para evitar sobrecarga
+      newUploadFiles.reduce(async (prevPromise, uf) => {
+        await prevPromise;
+        return uploadToServer(uf);
       }, Promise.resolve());
     },
     [toast, uploadToServer, type]
   );
 
   const removeUploadFile = useCallback((id: string) => {
-    setUploadingFiles((prev) => prev.filter((file) => file.id !== id));
+    setUploadingFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
-  const retryUpload = useCallback(async (uploadFile: UploadFile) => {
-    setUploadingFiles((prev) =>
-      prev.map((file) => 
-        file.id === uploadFile.id 
-          ? { ...uploadFile, progress: 0, status: "uploading", errorMessage: undefined }
-          : file
-      )
-    );
-    
-    await uploadToServer({ ...uploadFile, progress: 0, status: "uploading" });
-  }, [uploadToServer]);
+  const retryUpload = useCallback(
+    async (uploadFile: UploadFile) => {
+      setUploadingFiles((prev) =>
+        prev.map((f) =>
+          f.id === uploadFile.id
+            ? { ...uploadFile, progress: 0, status: "uploading", errorMessage: undefined }
+            : f
+        )
+      );
+
+      await uploadToServer({ ...uploadFile, progress: 0, status: "uploading" });
+    },
+    [uploadToServer]
+  );
 
   const getFileIcon = (file: File) => {
     const fileType = getFileType(file);
     switch (fileType) {
-      case 'image':
+      case "image":
         return <Image className="w-6 h-6 text-nuvia-mauve" />;
-      case 'video':
+      case "video":
         return (
           <div className="w-6 h-6 bg-nuvia-mauve rounded flex items-center justify-center">
             <span className="text-white text-xs font-bold">VID</span>
           </div>
         );
-      case 'document':
+      case "document":
         return <FileText className="w-6 h-6 text-nuvia-mauve" />;
       default:
         return <FileText className="w-6 h-6 text-nuvia-mauve" />;
@@ -301,14 +273,14 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
   const getFileTypeLabel = (file: File): string => {
     const fileType = getFileType(file);
     switch (fileType) {
-      case 'image':
-        return 'Imagen';
-      case 'video':
-        return 'Video';
-      case 'document':
-        return 'Documento';
+      case "image":
+        return "Imagen";
+      case "video":
+        return "Video";
+      case "document":
+        return "Documento";
       default:
-        return 'Archivo';
+        return "Archivo";
     }
   };
 
@@ -318,8 +290,8 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
     <div className="space-y-6">
       <Card
         className={`border-2 border-dashed transition-all duration-300 ${
-          dragActive 
-            ? "border-nuvia-rose bg-nuvia-rose/10" 
+          dragActive
+            ? "border-nuvia-rose bg-nuvia-rose/10"
             : "border-nuvia-peach/30 hover:border-nuvia-mauve/50"
         } rounded-2xl shadow-nuvia-soft`}
         onDragEnter={handleDrag}
@@ -333,7 +305,7 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
           </div>
 
           <h3 className="text-lg md:text-xl font-semibold mb-2 text-nuvia-deep">
-            Arrastra tus {type === 'all' ? 'archivos' : type} aquí
+            Arrastra tus {type === "all" ? "archivos" : type} aquí
           </h3>
           <p className="text-sm md:text-base text-nuvia-deep/70 mb-4 md:mb-6 px-4">
             O haz clic para buscar y seleccionar archivos de tu dispositivo
@@ -360,9 +332,7 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
             </Button>
           </label>
 
-          <p className="text-xs text-nuvia-deep/50 mt-3 md:mt-4">
-            {config.description}
-          </p>
+          <p className="text-xs text-nuvia-deep/50 mt-3 md:mt-4">{config.description}</p>
         </CardContent>
       </Card>
 
@@ -387,7 +357,7 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                   }`}
                 >
                   <div className="w-12 h-12 rounded-lg bg-white border border-nuvia-peach/30 flex items-center justify-center overflow-hidden shadow-nuvia-soft">
-                    {getFileType(uploadFile.file) === 'image' ? (
+                    {getFileType(uploadFile.file) === "image" ? (
                       <img
                         src={URL.createObjectURL(uploadFile.file)}
                         alt={uploadFile.file.name}
@@ -408,6 +378,7 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                           {getFileTypeLabel(uploadFile.file)}
                         </span>
                       </div>
+
                       <div className="flex items-center gap-2">
                         {uploadFile.status === "completed" && (
                           <CheckCircle className="w-5 h-5 text-green-500" />
@@ -415,6 +386,7 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                         {uploadFile.status === "error" && (
                           <AlertCircle className="w-5 h-5 text-red-500" />
                         )}
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -429,24 +401,20 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                     <div className="flex items-center gap-4">
                       <Progress
                         value={uploadFile.progress}
-                        className={`flex-1 h-2 ${
-                          uploadFile.status === "error" ? "bg-red-200" : ""
-                        }`}
+                        className={`flex-1 h-2 ${uploadFile.status === "error" ? "bg-red-200" : ""}`}
                       />
-                      <span className={`text-sm min-w-0 ${
-                        uploadFile.status === "error" 
-                          ? "text-red-600" 
-                          : "text-nuvia-deep/70"
-                      }`}>
+                      <span
+                        className={`text-sm min-w-0 ${
+                          uploadFile.status === "error" ? "text-red-600" : "text-nuvia-deep/70"
+                        }`}
+                      >
                         {Math.round(uploadFile.progress)}%
                       </span>
                     </div>
 
                     {uploadFile.status === "error" && uploadFile.errorMessage && (
                       <div className="mt-2 flex items-center justify-between">
-                        <p className="text-xs text-red-600 flex-1">
-                          {uploadFile.errorMessage}
-                        </p>
+                        <p className="text-xs text-red-600 flex-1">{uploadFile.errorMessage}</p>
                         <Button
                           variant="outline"
                           size="sm"
@@ -459,8 +427,8 @@ export function UploadZone({ onUploadComplete, type = 'all' }: UploadZoneProps) 
                     )}
 
                     <p className="text-xs text-nuvia-deep/50 mt-1">
-                      {formatFileSize(uploadFile.file.size)} • 
-                      {uploadFile.file.type.split("/")[1]?.toUpperCase() || 'ARCHIVO'}
+                      {formatFileSize(uploadFile.file.size)} •{" "}
+                      {uploadFile.file.type.split("/")[1]?.toUpperCase() || "ARCHIVO"}
                     </p>
                   </div>
                 </div>
