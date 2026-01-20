@@ -23,7 +23,6 @@ import {
   Calendar,
   Trash2,
   FolderPlus,
-  X,
   FileVideo,
   Edit3,
   AlertTriangle,
@@ -41,13 +40,13 @@ import {
   DropdownMenuPortal,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription, 
-  DialogFooter 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { apiService } from "@/services/api.services";
 import { useToast } from "@/hooks/use-toast";
@@ -78,12 +77,12 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
   const [isRenaming, setIsRenaming] = useState(false);
-  
+
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; video: Video | null }>({
     open: false,
     video: null,
   });
-  
+
   const [renameModal, setRenameModal] = useState<{ open: boolean; video: Video | null; name: string }>({
     open: false,
     video: null,
@@ -103,9 +102,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     });
   };
 
-  // -----------------------------
   // ✅ Fetch folders (solo 1 vez)
-  // -----------------------------
   const fetchFoldersOnce = useCallback(async () => {
     try {
       setFoldersLoading(true);
@@ -114,8 +111,8 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         const userFolders = response.data.filter((folder: Folder) => !folder.isSystem);
         setFolders(userFolders);
       }
-    } catch (error) {
-      console.error("Error cargando carpetas:", error);
+    } catch (err) {
+      console.error("Error cargando carpetas:", err);
     } finally {
       setFoldersLoading(false);
     }
@@ -125,9 +122,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     fetchFoldersOnce();
   }, [fetchFoldersOnce]);
 
-  // ---------------------------------------------------------
-  // ✅ Listener global: si otra parte suma/resta, aquí también
-  // ---------------------------------------------------------
+  // ✅ Listener global delta
   useEffect(() => {
     const onDelta = (ev: Event) => {
       const e = ev as CustomEvent<{ folderId: number; delta: number }>;
@@ -147,16 +142,14 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     return () => window.removeEventListener("folders:itemDelta", onDelta as EventListener);
   }, []);
 
-  // ---------------------------------------------------------
   // ✅ Añadir video a carpeta (optimista + sidebar + rollback)
-  // ---------------------------------------------------------
   const addToFolder = async (videoId: number, folderId: number) => {
     if (folderId === undefined || folderId === null || isNaN(folderId)) {
       showToast(false, "ID de carpeta inválido");
       return;
     }
 
-    // ✅ Optimista: subir contador en este dropdown
+    // optimista dropdown
     setFolders((prev) =>
       prev.map((f) => {
         const fid = Number(f.folderId ?? f.id);
@@ -165,10 +158,8 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       })
     );
 
-    // ✅ Optimista: subir contador del sidebar (sin GET)
-    window.dispatchEvent(
-      new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: 1 } })
-    );
+    // optimista sidebar
+    window.dispatchEvent(new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: 1 } }));
 
     try {
       const response = await apiService.post(`/folders/${folderId}/videos`, { videoId });
@@ -178,7 +169,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         return;
       }
 
-      // ❌ rollback
+      // rollback
       setFolders((prev) =>
         prev.map((f) => {
           const fid = Number(f.folderId ?? f.id);
@@ -187,15 +178,13 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         })
       );
 
-      window.dispatchEvent(
-        new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } })
-      );
+      window.dispatchEvent(new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } }));
 
       showToast(false, response.error || "Error al añadir video a la carpeta");
-    } catch (error: any) {
-      console.error("Error añadiendo video a carpeta:", error);
+    } catch (err: any) {
+      console.error("Error añadiendo video a carpeta:", err);
 
-      // ❌ rollback
+      // rollback
       setFolders((prev) =>
         prev.map((f) => {
           const fid = Number(f.folderId ?? f.id);
@@ -204,11 +193,9 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         })
       );
 
-      window.dispatchEvent(
-        new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } })
-      );
+      window.dispatchEvent(new CustomEvent("folders:itemDelta", { detail: { folderId: Number(folderId), delta: -1 } }));
 
-      showToast(false, error.response?.data?.error || "Error al añadir video a la carpeta");
+      showToast(false, err.response?.data?.error || "Error al añadir video a la carpeta");
     }
   };
 
@@ -223,20 +210,17 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     }
   };
 
-  // ✅ Función para manejar eliminación (abre modal)
-  const handleSoftDelete = async (video: Video) => {
-    setDeleteModal({
-      open: true,
-      video,
-    });
+  // ✅ Soft delete (abre modal)
+  const handleSoftDelete = (video: Video) => {
+    setDeleteModal({ open: true, video });
   };
 
-  // ✅ Función para confirmar eliminación
+  // ✅ Confirmar soft delete
   const confirmDelete = async () => {
     if (!deleteModal.video) return;
-    
+
     const videoId = deleteModal.video.videoId;
-    
+
     try {
       const token = localStorage.getItem("authToken");
       if (!token) {
@@ -265,7 +249,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     }
   };
 
-  // ✅ Función para renombrar video
+  // ✅ Renombrar video
   const renameVideo = async () => {
     if (!renameModal.video || !renameModal.name.trim()) {
       showToast(false, "El nombre no puede estar vacío");
@@ -285,9 +269,9 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       } else {
         throw new Error(res.error || "Error al renombrar");
       }
-    } catch (error: any) {
-      console.error("Error renombrando video:", error);
-      showToast(false, error.response?.data?.error || "Error al renombrar el video");
+    } catch (err: any) {
+      console.error("Error renombrando video:", err);
+      showToast(false, err.response?.data?.error || "Error al renombrar el video");
     } finally {
       setIsRenaming(false);
     }
@@ -353,6 +337,8 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
     const thumbnailUrl = getThumbnailUrl(video);
     const videoUrl = getVideoUrl(video);
 
+    const displayName = video.title || video.originalFilename || `Video ${video.videoId}`;
+
     if (!videoUrl) {
       return (
         <Card className="group hover:shadow-lg transition-all duration-300 border border-nuvia-silver/30 overflow-hidden bg-white/95 backdrop-blur-sm">
@@ -363,7 +349,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
             </div>
             <div className="p-3 bg-white border-t border-nuvia-silver/30">
               <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
-                {video.title || video.originalFilename || "Video no disponible"}
+                {displayName}
               </p>
               <div className="text-xs text-nuvia-deep/60">
                 <p>Formato no disponible</p>
@@ -386,7 +372,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
             {thumbnailLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
                 <div className="text-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-nuvia-mauve mx-auto mb-1"></div>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-nuvia-mauve mx-auto mb-1" />
                   <p className="text-nuvia-deep/60 text-xs">Cargando...</p>
                 </div>
               </div>
@@ -394,7 +380,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
 
             <img
               src={thumbnailUrl}
-              alt={video.title || video.originalFilename}
+              alt={displayName}
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
               loading="lazy"
               onLoad={() => setThumbnailLoading(false)}
@@ -477,7 +463,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                         {foldersLoading ? (
                           <DropdownMenuItem disabled>
                             <div className="flex items-center">
-                              <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                              <div className="w-3 h-3 border border-purple-500 border-t-transparent rounded-full animate-spin mr-2" />
                               Cargando carpetas...
                             </div>
                           </DropdownMenuItem>
@@ -516,7 +502,9 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                     Descargar
                   </DropdownMenuItem>
 
-                  <DropdownMenuItem onClick={() => setRenameModal({ open: true, video, name: video.title || video.originalFilename || "" })}>
+                  <DropdownMenuItem
+                    onClick={() => setRenameModal({ open: true, video, name: video.title || video.originalFilename || "" })}
+                  >
                     <Edit3 className="w-4 h-4 mr-2" />
                     Renombrar
                   </DropdownMenuItem>
@@ -533,9 +521,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
           </div>
 
           <div className="p-3 bg-white border-t border-nuvia-silver/30">
-            <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
-              {video.title || video.originalFilename || `Video ${video.videoId}`}
-            </p>
+            <p className="text-sm font-medium truncate text-nuvia-deep mb-1">{displayName}</p>
             <div className="flex justify-between items-center text-xs text-nuvia-deep/60">
               <span>{formatFileSize(video.fileSize)}</span>
               {video.duration && <span>{formatDuration(video.duration)}</span>}
@@ -587,13 +573,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={refetch}
-            disabled={loading}
-            className="border-nuvia-silver/30"
-          >
+          <Button variant="outline" size="icon" onClick={refetch} disabled={loading} className="border-nuvia-silver/30">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
 
@@ -619,15 +599,32 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       </div>
 
       {/* Grid */}
-      {loading && videos.length === 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="animate-pulse">
-              <div className="aspect-video bg-nuvia-silver/30 rounded-2xl mb-4" />
-              <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
-              <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
-            </div>
-          ))}
+      {loading && filteredVideos.length === 0 ? (
+        <div
+          className={
+            currentViewMode === "grid"
+              ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
+              : "space-y-4"
+          }
+        >
+          {Array.from({ length: 20 }).map((_, i) =>
+            currentViewMode === "list" ? (
+              <div key={i} className="animate-pulse flex items-center gap-4 p-4">
+                <div className="w-20 h-20 bg-nuvia-silver/30 rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-nuvia-silver/30 rounded w-3/4" />
+                  <div className="h-3 bg-nuvia-silver/30 rounded w-1/2" />
+                  <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="animate-pulse">
+                <div className="aspect-square bg-nuvia-silver/30 rounded-xl mb-3" />
+                <div className="h-4 bg-nuvia-silver/30 rounded mb-2" />
+                <div className="h-3 bg-nuvia-silver/30 rounded w-2/3" />
+              </div>
+            )
+          )}
         </div>
       ) : filteredVideos.length === 0 ? (
         <div className="text-center py-12">
@@ -646,7 +643,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
           <div
             className={
               currentViewMode === "grid"
-                ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6"
                 : "space-y-4"
             }
           >
@@ -672,6 +669,28 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) pageNum = i + 1;
+                    else if (currentPage <= 3) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                    else pageNum = currentPage - 2 + i;
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 ${currentPage === pageNum ? "" : "border-nuvia-silver/30"}`}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
 
                 <Button
                   variant="outline"
@@ -708,20 +727,16 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               </div>
 
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
-                <div className="p-4 border-b border-nuvia-silver/30 flex items-start justify-between sticky top-0 bg-white/95 z-10">
+                {/* ✅ Quitada la X extra: DialogContent ya trae su propia X */}
+                <div className="p-4 border-b border-nuvia-silver/30 sticky top-0 bg-white/95 z-10">
                   <div className="flex-1 min-w-0 pr-2">
                     <h3 className="text-lg font-semibold text-nuvia-deep break-words">
                       {selectedVideo.title || selectedVideo.originalFilename}
                     </h3>
                     {selectedVideo.title && selectedVideo.title !== selectedVideo.originalFilename && (
-                      <p className="text-sm text-nuvia-deep/60 mt-1 break-words">
-                        Original: {selectedVideo.originalFilename}
-                      </p>
+                      <p className="text-sm text-nuvia-deep/60 mt-1 break-words">Original: {selectedVideo.originalFilename}</p>
                     )}
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => setSelectedVideo(null)} className="flex-shrink-0">
-                    <X className="w-5 h-5" />
-                  </Button>
                 </div>
 
                 <div className="p-4 space-y-4">
@@ -806,10 +821,10 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                       className="w-full justify-start border-nuvia-silver/30"
                       onClick={() => {
                         setSelectedVideo(null);
-                        setRenameModal({ 
-                          open: true, 
-                          video: selectedVideo, 
-                          name: selectedVideo.title || selectedVideo.originalFilename || "" 
+                        setRenameModal({
+                          open: true,
+                          video: selectedVideo,
+                          name: selectedVideo.title || selectedVideo.originalFilename || "",
                         });
                       }}
                     >
@@ -834,28 +849,21 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       </Dialog>
 
       {/* Modal Confirmar Eliminación */}
-      <Dialog
-        open={deleteModal.open}
-        onOpenChange={(open) => !open && setDeleteModal({ open: false, video: null })}>
+      <Dialog open={deleteModal.open} onOpenChange={(open) => !open && setDeleteModal({ open: false, video: null })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="w-5 h-5" />
               Mover a papelera
             </DialogTitle>
-            <DialogDescription>
-              ¿Estás seguro de que quieres mover este video a la papelera?
-            </DialogDescription>
+            <DialogDescription>¿Estás seguro de que quieres mover este video a la papelera?</DialogDescription>
           </DialogHeader>
+
           {deleteModal.video && (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
                 <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
-                  <img 
-                    src={getThumbnailUrl(deleteModal.video)} 
-                    alt="" 
-                    className="w-full h-full object-cover" 
-                  />
+                  <img src={getThumbnailUrl(deleteModal.video)} alt="" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate text-nuvia-deep">
@@ -866,17 +874,16 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               </div>
             </div>
           )}
+
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setDeleteModal({ open: false, video: null })}
-              className="border-nuvia-silver/30">
+              className="border-nuvia-silver/30"
+            >
               Cancelar
             </Button>
-            <Button 
-              onClick={confirmDelete} 
-              variant="destructive"
-              className="bg-red-600 hover:bg-red-700 text-white">
+            <Button onClick={confirmDelete} variant="destructive" className="bg-red-600 hover:bg-red-700 text-white">
               <Trash2 className="w-4 h-4 mr-2" />
               Mover a papelera
             </Button>
@@ -885,9 +892,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       </Dialog>
 
       {/* Modal Renombrar */}
-      <Dialog
-        open={renameModal.open}
-        onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
+      <Dialog open={renameModal.open} onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -896,15 +901,12 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
             </DialogTitle>
             <DialogDescription>Cambia el nombre de tu video.</DialogDescription>
           </DialogHeader>
+
           {renameModal.video && (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-3 p-3 bg-nuvia-silver/10 rounded-lg border border-nuvia-silver/30">
                 <div className="w-12 h-12 rounded overflow-hidden flex items-center justify-center bg-gray-100">
-                  <img 
-                    src={getThumbnailUrl(renameModal.video)} 
-                    alt="" 
-                    className="w-full h-full object-cover" 
-                  />
+                  <img src={getThumbnailUrl(renameModal.video)} alt="" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate text-nuvia-deep">
@@ -913,9 +915,10 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                   <p className="text-xs text-nuvia-deep/60">{formatFileSize(renameModal.video.fileSize)}</p>
                 </div>
               </div>
+
               <Input
                 value={renameModal.name}
-                onChange={(e) => setRenameModal(p => ({ ...p, name: e.target.value }))}
+                onChange={(e) => setRenameModal((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Nuevo nombre..."
                 autoFocus
                 className="border-nuvia-silver/30"
@@ -923,17 +926,21 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               />
             </div>
           )}
+
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setRenameModal({ open: false, video: null, name: "" })}
-              className="border-nuvia-silver/30">
+              className="border-nuvia-silver/30"
+              disabled={isRenaming}
+            >
               Cancelar
             </Button>
-            <Button 
-              onClick={renameVideo} 
+            <Button
+              onClick={renameVideo}
               disabled={!renameModal.name.trim() || isRenaming}
-              className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white">
+              className="bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white"
+            >
               {isRenaming ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
