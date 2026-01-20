@@ -148,7 +148,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
 
       if (res.success) {
         showToast(true, "Imagen añadida a la carpeta");
-        // opcional “verificación” sin spamear:
+        // opcional "verificación" sin spamear:
         // window.dispatchEvent(new Event("folders:refresh"));
         return;
       }
@@ -183,6 +183,66 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
     }
   };
 
+  // ✅ FUNCIÓN PARA DESCARGAR IMAGEN
+  const handleDownload = async (image: any) => {
+    try {
+      const url = getImageUrl(image, false);
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        }
+      });
+      
+      if (!response.ok) throw new Error("Error en la descarga");
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = image.originalFilename || image.title || 'image';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      showToast(true, "Descarga iniciada");
+    } catch (error) {
+      console.error("Error descargando imagen:", error);
+      showToast(false, "Error al descargar la imagen");
+    }
+  };
+
+  // ✅ FUNCIÓN PARA ELIMINAR IMAGEN (abre modal de confirmación)
+  const handleDelete = (image: any) => {
+    setDeleteModal({
+      open: true,
+      image,
+    });
+  };
+
+  // ✅ FUNCIÓN PARA CONFIRMAR ELIMINACIÓN
+  const confirmDelete = async () => {
+    if (!deleteModal.image) return;
+    
+    const id = deleteModal.image.id;
+    setOptimisticUpdates((p) => ({ ...p, [id]: { deleted: true } }));
+    setSelectedImage(null);
+    setDeleteModal({ open: false, image: null });
+    
+    try {
+      await apiService.delete(`/images/${id}`);
+      showToast(true, "Imagen movida a la papelera");
+      refetch();
+    } catch (error) {
+      setOptimisticUpdates((p) => {
+        const n = { ...p };
+        delete n[id];
+        return n;
+      });
+      showToast(false, "Error al eliminar la imagen");
+    }
+  };
+
   const renameImage = async () => {
     if (!renameModal.name.trim()) return showToast(false, "El nombre no puede estar vacío");
     setIsRenaming(true);
@@ -211,24 +271,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
       await apiService.post(`/images/${id}/favorite`);
       refetch();
     } finally {
-      setOptimisticUpdates((p) => {
-        const n = { ...p };
-        delete n[id];
-        return n;
-      });
-    }
-  };
-
-  const deleteImage = async (id: number) => {
-    if (!confirm("¿Eliminar esta imagen?")) return;
-    setOptimisticUpdates((p) => ({ ...p, [id]: { deleted: true } }));
-    setSelectedImage(null);
-    
-    try {
-      await apiService.delete(`/images/${id}`);
-      showToast(true, "Imagen movida a la papelera");
-      refetch();
-    } catch {
       setOptimisticUpdates((p) => {
         const n = { ...p };
         delete n[id];
