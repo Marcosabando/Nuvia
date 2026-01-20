@@ -25,6 +25,8 @@ import {
   FolderPlus,
   X,
   FileVideo,
+  Edit3,
+  AlertTriangle,
 } from "lucide-react";
 import { videoApi, Video } from "@/services/videoApi";
 import { API_CONFIG } from "@/config/api.config";
@@ -39,7 +41,14 @@ import {
   DropdownMenuPortal,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from "@/components/ui/dialog";
 import { apiService } from "@/services/api.services";
 import { useToast } from "@/hooks/use-toast";
 
@@ -68,10 +77,21 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(true);
+  const [isRenaming, setIsRenaming] = useState(false);
+  
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; video: Video | null }>({
+    open: false,
+    video: null,
+  });
+  
+  const [renameModal, setRenameModal] = useState<{ open: boolean; video: Video | null; name: string }>({
+    open: false,
+    video: null,
+    name: "",
+  });
 
   const { toast } = useToast();
   const { videos, loading, error, refetch } = useVideos();
-  const { toast } = useToast();
 
   const showToast = (success: boolean, message: string) => {
     toast({
@@ -199,13 +219,22 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       showToast(true, "Favoritos actualizado");
     } catch (err) {
       console.error("Error toggling favorite:", err);
+      showToast(false, "Error al actualizar favoritos");
     }
   };
 
-  // Soft delete (tu lógica)
-  const handleSoftDelete = async (videoId: number) => {
-    if (!confirm("¿Seguro que quieres mover este video a la papelera?")) return;
+  // ✅ Función para manejar eliminación (abre modal)
+  const handleSoftDelete = async (video: Video) => {
+    setDeleteModal({
+      open: true,
+      video,
+    });
+  };
 
+  // ✅ Función para confirmar eliminación
+  const confirmDelete = async () => {
+    if (!deleteModal.video) return;
+    
     const videoId = deleteModal.video.videoId;
     
     try {
@@ -228,10 +257,39 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       if (!res.ok) throw new Error(data.error || "Error al mover el video a la papelera");
 
       showToast(true, data.message || "Video movido a la papelera correctamente");
+      setDeleteModal({ open: false, video: null });
       refetch();
     } catch (err: any) {
       console.error("Error en soft delete:", err);
       showToast(false, err.message || "No se pudo mover el video a la papelera");
+    }
+  };
+
+  // ✅ Función para renombrar video
+  const renameVideo = async () => {
+    if (!renameModal.video || !renameModal.name.trim()) {
+      showToast(false, "El nombre no puede estar vacío");
+      return;
+    }
+
+    setIsRenaming(true);
+    try {
+      const res = await apiService.patch(`/videos/${renameModal.video.videoId}/title`, {
+        title: renameModal.name.trim(),
+      });
+
+      if (res.success) {
+        showToast(true, "Video renombrado correctamente");
+        setRenameModal({ open: false, video: null, name: "" });
+        refetch();
+      } else {
+        throw new Error(res.error || "Error al renombrar");
+      }
+    } catch (error: any) {
+      console.error("Error renombrando video:", error);
+      showToast(false, error.response?.data?.error || "Error al renombrar el video");
+    } finally {
+      setIsRenaming(false);
     }
   };
 
@@ -458,9 +516,14 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                     Descargar
                   </DropdownMenuItem>
 
+                  <DropdownMenuItem onClick={() => setRenameModal({ open: true, video, name: video.title || video.originalFilename || "" })}>
+                    <Edit3 className="w-4 h-4 mr-2" />
+                    Renombrar
+                  </DropdownMenuItem>
+
                   <DropdownMenuSeparator />
 
-                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video.videoId)}>
+                  <DropdownMenuItem className="text-red-600" onClick={() => handleSoftDelete(video)}>
                     <Trash2 className="w-4 h-4 mr-2" />
                     Mover a papelera
                   </DropdownMenuItem>
@@ -741,19 +804,23 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                       variant="outline"
                       size="sm"
                       className="w-full justify-start border-nuvia-silver/30"
-                      onClick={() => handleFavoriteToggle(selectedVideo.videoId)}
+                      onClick={() => {
+                        setSelectedVideo(null);
+                        setRenameModal({ 
+                          open: true, 
+                          video: selectedVideo, 
+                          name: selectedVideo.title || selectedVideo.originalFilename || "" 
+                        });
+                      }}
                     >
-                      <Heart className={`w-4 h-4 mr-2 ${selectedVideo.isFavorite ? "text-red-500 fill-current" : ""}`} />
-                      {selectedVideo.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Renombrar
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       className="w-full justify-start text-red-600 hover:bg-red-50 border-nuvia-silver/30"
-                      onClick={() => {
-                        setSelectedVideo(null);
-                        handleSoftDelete(selectedVideo);
-                      }}
+                      onClick={() => handleSoftDelete(selectedVideo)}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       Mover a papelera

@@ -21,6 +21,8 @@ import {
   Archive,
   FileType,
   FolderPlus,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -147,7 +149,7 @@ const getCategoryColor = (category: string) => {
   return colors[category as keyof typeof colors] || colors.other;
 };
 
-const handleDownload = async (document: any, showToast: (success: boolean, message: string) => void) => {
+const handleDownload = async (document: DocumentData, showToast: (success: boolean, message: string) => void) => {
   try {
     const response = await fetch(`${API_CONFIG.BASE_URL}/documents/${document.id}/download`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
@@ -182,7 +184,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
     document: null,
     name: "",
   });
-  const [deleteModal, setDeleteModal] = useState<{ open: boolean; document: any }>({
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; document: DocumentData | null }>({
     open: false,
     document: null,
   });
@@ -249,7 +251,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
     }
   };
 
-  const handleDelete = async (document: any) => {
+  const handleDelete = (document: DocumentData) => {
     setDeleteModal({
       open: true,
       document,
@@ -442,7 +444,6 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                 const displayName = document.title || document.originalFilename;
                 const DocumentIcon = getDocumentIcon(document.category, document.mimeType);
                 const categoryColor = getCategoryColor(document.category);
-
                 const docId = document.id ?? document.documentId;
 
                 if (currentViewMode === "list") {
@@ -482,85 +483,84 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                               )}
                             </div>
 
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
-                                  onClick={() => handleToggleFavorite(document)}
-                                >
-                                  <Heart className={`w-3 h-3 ${document.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
-                                </Button>
+                            <div className="flex items-center gap-1 mt-2">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30"
+                                onClick={() => handleToggleFavorite(document)}
+                              >
+                                <Heart className={`w-3 h-3 ${document.isFavorite ? "text-red-500 fill-current" : "text-gray-600"}`} />
+                              </Button>
 
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="secondary" size="sm" className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30">
-                                      <MoreHorizontal className="w-3 h-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="secondary" size="sm" className="h-7 w-7 p-0 bg-white/90 hover:bg-white shadow-sm border border-nuvia-silver/30">
+                                    <MoreHorizontal className="w-3 h-3" />
+                                  </Button>
+                                </DropdownMenuTrigger>
 
-                                  <DropdownMenuContent align="end" className="w-56 z-[9999]">
-                                    <DropdownMenuItem onClick={() => handleToggleFavorite(document)}>
-                                      <Heart className={`w-4 h-4 mr-2 ${document.isFavorite ? "text-red-500 fill-current" : ""}`} />
-                                      {document.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
-                                    </DropdownMenuItem>
+                                <DropdownMenuContent align="end" className="w-56 z-[9999]">
+                                  <DropdownMenuItem onClick={() => handleToggleFavorite(document)}>
+                                    <Heart className={`w-4 h-4 mr-2 ${document.isFavorite ? "text-red-500 fill-current" : ""}`} />
+                                    {document.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+                                  </DropdownMenuItem>
 
-                                    {/* ✅ Añadir a carpeta */}
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger>
-                                        <FolderPlus className="w-4 h-4 mr-2" />
-                                        Añadir a carpeta
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuPortal>
-                                        <DropdownMenuSubContent className="w-56">
-                                          {foldersLoading ? (
-                                            <DropdownMenuItem disabled>Cargando...</DropdownMenuItem>
-                                          ) : folders.length === 0 ? (
-                                            <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
-                                          ) : (
-                                            folders.map((folder) => {
-                                              const fid = folder.folderId || folder.id;
-                                              if (!fid || isNaN(fid)) return null;
-                                              return (
-                                                <DropdownMenuItem key={fid} onClick={() => addToFolder(docId, fid)}>
-                                                  <div className="w-3 h-3 rounded mr-2" style={{ backgroundColor: folder.color }} />
-                                                  <span className="truncate flex-1">{folder.name}</span>
-                                                  {folder.itemCount > 0 && <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>}
-                                                </DropdownMenuItem>
-                                              );
-                                            })
-                                          )}
-                                        </DropdownMenuSubContent>
-                                      </DropdownMenuPortal>
-                                    </DropdownMenuSub>
+                                  {/* ✅ Añadir a carpeta */}
+                                  <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger>
+                                      <FolderPlus className="w-4 h-4 mr-2" />
+                                      Añadir a carpeta
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuPortal>
+                                      <DropdownMenuSubContent className="w-56">
+                                        {foldersLoading ? (
+                                          <DropdownMenuItem disabled>Cargando...</DropdownMenuItem>
+                                        ) : folders.length === 0 ? (
+                                          <DropdownMenuItem disabled>No tienes carpetas</DropdownMenuItem>
+                                        ) : (
+                                          folders.map((folder) => {
+                                            const fid = folder.folderId || folder.id;
+                                            if (!fid || isNaN(fid)) return null;
+                                            return (
+                                              <DropdownMenuItem key={fid} onClick={() => addToFolder(docId, fid)}>
+                                                <div className="w-3 h-3 rounded mr-2" style={{ backgroundColor: folder.color }} />
+                                                <span className="truncate flex-1">{folder.name}</span>
+                                                {folder.itemCount > 0 && <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>}
+                                              </DropdownMenuItem>
+                                            );
+                                          })
+                                        )}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuPortal>
+                                  </DropdownMenuSub>
 
-                                    <DropdownMenuItem onClick={() => handleDownload(document)}>
-                                      <Download className="w-4 h-4 mr-2" />
-                                      Descargar
-                                    </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownload(document, showToast)}>
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Descargar
+                                  </DropdownMenuItem>
 
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        setRenameModal({
-                                          open: true,
-                                          document,
-                                          name: displayName,
-                                        })
-                                      }
-                                    >
-                                      <Edit3 className="w-4 h-4 mr-2" />
-                                      Renombrar
-                                    </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setRenameModal({
+                                        open: true,
+                                        document,
+                                        name: displayName,
+                                      })
+                                    }
+                                  >
+                                    <Edit3 className="w-4 h-4 mr-2" />
+                                    Renombrar
+                                  </DropdownMenuItem>
 
-                                    <DropdownMenuSeparator />
+                                  <DropdownMenuSeparator />
 
-                                    <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(document)}>
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      Mover a papelera
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+                                  <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(document)}>
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Mover a papelera
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
                         </div>
@@ -652,14 +652,13 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                                 </DropdownMenuPortal>
                               </DropdownMenuSub>
 
-                              <DropdownMenuItem onClick={() => handleDownload(document)}>
+                              <DropdownMenuItem onClick={() => handleDownload(document, showToast)}>
                                 <Download className="w-4 h-4 mr-2" />
                                 Descargar
                               </DropdownMenuItem>
 
                               <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
+                                onClick={() =>
                                   setRenameModal({
                                     open: true,
                                     document,
@@ -675,11 +674,12 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
 
                               <DropdownMenuItem 
                                 className="text-red-600" 
-                                onSelect={(e) => {
+                                onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   handleDelete(document);
-                                }}>
+                                }}
+                              >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Mover a papelera
                               </DropdownMenuItem>
@@ -870,7 +870,7 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                       variant="outline"
                       size="sm"
                       className="w-full justify-start border-nuvia-silver/30"
-                      onClick={() => handleDownload(selectedDocument)}
+                      onClick={() => handleDownload(selectedDocument, showToast)}
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Descargar
