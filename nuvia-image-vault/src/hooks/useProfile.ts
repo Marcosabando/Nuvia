@@ -54,7 +54,8 @@ interface UseProfileReturn {
   error: string | null;
   refetch: () => void;
   updateProfileImage: (file: File) => Promise<{ success: boolean; error?: string }>;
-  updateUsername: (newUsername: string) => Promise<{ success: boolean; error?: string }>; // ✅ AGREGADO
+  updateUsername: (newUsername: string) => Promise<{ success: boolean; error?: string }>;
+  getProfileImageUrl: (options?: { size?: number; variant?: 'solid' | 'gradient' }) => string; // ✅ Función mejorada
 }
 
 export const useProfile = (): UseProfileReturn => {
@@ -62,6 +63,96 @@ export const useProfile = (): UseProfileReturn => {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // --------------------------------------------
+  // ✅ FUNCIÓN MEJORADA PARA OBTENER IMAGEN DE PERFIL O SVG PREDETERMINADO
+  // --------------------------------------------
+  const getProfileImageUrl = (options?: { size?: number; variant?: 'solid' | 'gradient' }): string => {
+    const { size = 100, variant = 'gradient' } = options || {};
+    
+    // Si hay una imagen de perfil en el backend, devolverla
+    if (profile?.profileImagePath) {
+      // Verificar si ya es una URL completa
+      if (profile.profileImagePath.startsWith('http')) {
+        return profile.profileImagePath;
+      }
+      
+      // Si es una ruta relativa, construir la URL completa
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      return `${baseUrl}${profile.profileImagePath.startsWith('/') ? '' : '/'}${profile.profileImagePath}`;
+    }
+    
+    // Si no hay imagen, generar SVG predeterminado con los colores de la página
+    const getFillColor = () => {
+      if (variant === 'solid') {
+        return '#8B5CF6'; // nuvia-mauve
+      }
+      return 'url(#gradient)';
+    };
+
+    const svgContent = `
+      <svg 
+        width="${size}" 
+        height="${size}" 
+        viewBox="0 0 24 24" 
+        fill="none" 
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle 
+          cx="12" 
+          cy="12" 
+          r="11" 
+          stroke="${variant === 'gradient' ? 'url(#borderGradient)' : '#8B5CF6'}"
+          stroke-width="2"
+          fill="none"
+        />
+        
+        <circle 
+          cx="12" 
+          cy="9" 
+          r="4" 
+          fill="${getFillColor()}"
+        />
+        
+        <path 
+          d="M5 20C5 16.134 8.13401 13 12 13C15.866 13 19 16.134 19 20" 
+          fill="${getFillColor()}"
+        />
+        
+        ${variant === 'gradient' ? `
+          <defs>
+            <linearGradient 
+              id="gradient" 
+              x1="8" 
+              y1="5" 
+              x2="16" 
+              y2="20"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop stop-color="#8B5CF6" />
+              <stop offset="0.5" stop-color="#A78BFA" />
+              <stop offset="1" stop-color="#EC4899" />
+            </linearGradient>
+            
+            <linearGradient 
+              id="borderGradient" 
+              x1="0" 
+              y1="0" 
+              x2="24" 
+              y2="24"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop stop-color="#8B5CF6" />
+              <stop offset="1" stop-color="#EC4899" />
+            </linearGradient>
+          </defs>
+        ` : ''}
+      </svg>
+    `;
+    
+    // Codificar el SVG como data URI
+    return `data:image/svg+xml;base64,${btoa(svgContent)}`;
+  };
 
   const fetchProfile = async () => {
     try {
@@ -218,6 +309,33 @@ export const useProfile = (): UseProfileReturn => {
     error,
     refetch: fetchProfile,
     updateProfileImage,
-    updateUsername // ✅ AHORA SÍ EXISTE
+    updateUsername,
+    getProfileImageUrl // ✅ Exporta la función mejorada
   };
 };
+
+// ==============================================
+// EJEMPLO DE USO EN UN COMPONENTE:
+// ==============================================
+// 
+// import { useProfile } from "@/hooks/useProfile";
+//
+// const UserProfileComponent = () => {
+//   const { profile, getProfileImageUrl, loading } = useProfile();
+//   
+//   if (loading) return <div>Cargando...</div>;
+//   
+//   return (
+//     <div className="flex items-center gap-4">
+//       <img
+//         src={getProfileImageUrl({ size: 48, variant: 'gradient' })}
+//         alt={profile?.username || 'Usuario'}
+//         className="w-12 h-12 rounded-full object-cover border-2 border-nuvia-mauve/30"
+//       />
+//       <div>
+//         <h2 className="font-semibold text-nuvia-deep">{profile?.username}</h2>
+//         <p className="text-sm text-nuvia-deep/70">{profile?.email}</p>
+//       </div>
+//     </div>
+//   );
+// };

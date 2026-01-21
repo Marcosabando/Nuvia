@@ -24,7 +24,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 
 const Profile = () => {
-  const { profile, stats, loading, error, refetch, updateProfileImage } = useProfile();
+  const { profile, stats, loading, error, refetch, updateProfileImage, getProfileImageUrl } = useProfile();
   const [activeTab, setActiveTab] = useState("overview");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +137,9 @@ const Profile = () => {
     );
   }
 
+  // ✅ OBTENER LA URL DE LA IMAGEN USANDO LA FUNCIÓN DEL HOOK
+  const profileImageUrl = getProfileImageUrl({ size: 256, variant: 'gradient' });
+
   return (
     <AppLayout>
       {/* ✅ Input file oculto */}
@@ -164,9 +167,10 @@ const Profile = () => {
               <CardContent className="p-6">
                 <div className="flex flex-col items-center text-center space-y-4">
                   <div className="relative">
+                    {/* ✅ AQUÍ USAMOS LA FUNCIÓN getProfileImageUrl DEL HOOK */}
                     <img
-                      src={profile.profileImagePath || "/default-avatar.jpg"}
-                      alt="Avatar"
+                      src={profileImageUrl}
+                      alt={`Avatar de ${profile.username}`}
                       className="w-32 h-32 rounded-full border-4 border-nuvia-mauve shadow-lg object-cover"
                     />
                     <Button

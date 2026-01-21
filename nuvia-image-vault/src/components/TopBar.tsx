@@ -1,3 +1,4 @@
+// src/components/TopBar.tsx
 import { useState, useCallback } from "react";
 import { Search, Grid3X3, List, Filter, Upload, MoreHorizontal, SlidersHorizontal, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,9 +14,45 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useProfile } from "@/hooks/useProfile";
+
+// Componente para el avatar del usuario
+interface UserAvatarProps {
+  size?: number;
+  className?: string;
+  showBadge?: boolean;
+}
+
+export const UserAvatar = ({ size = 32, className = "", showBadge = false }: UserAvatarProps) => {
+  const { profile, getProfileImageUrl, loading } = useProfile();
+  
+  if (loading) {
+    return (
+      <div 
+        className={`rounded-full bg-gradient-to-r from-nuvia-mauve/20 to-nuvia-rose/20 animate-pulse ${className}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  
+  return (
+    <div className="relative">
+      <img
+        src={getProfileImageUrl({ size: size * 2, variant: 'gradient' })}
+        alt={profile?.username || "Usuario"}
+        className={`rounded-full object-cover border border-nuvia-mauve/30 ${className}`}
+        style={{ width: size, height: size }}
+      />
+      {showBadge && profile?.status === "active" && (
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
+      )}
+    </div>
+  );
+};
 
 export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) {
   const navigate = useNavigate();
+  const { profile } = useProfile();
   const [searchQuery, setSearchQuery] = useState("");
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -174,6 +211,11 @@ export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) 
     input.click();
   }, [toast, uploadToServer]);
 
+  // Función para manejar la navegación al perfil con dropdown
+  const handleProfileClick = () => {
+    navigate("/profile");
+  };
+
   return (
     <header className="h-14 md:h-16 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="flex items-center justify-between h-full px-3 sm:px-4 md:px-6 gap-2 md:gap-4">
@@ -204,13 +246,67 @@ export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) 
             </Button>
           )}
 
-          {/* Profile Button - Responsive */}
-          {location.pathname !== "/profile" && (
-            <Button onClick={() => navigate("/profile")} className="cursor-pointer">
-              <User className="mr-2 w-4 h-4" />
-              <span>Mi Perfil</span>
-            </Button>
-          )}
+          {/* Upload Button */}
+          {/* <Button
+            onClick={handleFileUpload}
+            variant="ghost"
+            size="sm"
+            className="hidden sm:flex gap-2 hover:bg-primary/10"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="hidden md:inline">Subir</span>
+          </Button> */}
+
+          {/* Profile Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="flex items-center gap-2 hover:bg-primary/10 p-1 sm:p-2"
+              >
+                <UserAvatar size={isMobile ? 32 : 36} showBadge={true} />
+                {!isMobile && (
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium leading-none">
+                      {profile?.username || "Usuario"}
+                    </span>
+                    
+                  </div>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="flex items-center gap-3 p-2">
+                <UserAvatar size={40} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{profile?.username || "Usuario"}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {profile?.email || "usuario@email.com"}
+                  </p>
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/profile")}>
+                <User className="w-4 h-4 mr-2" />
+                Mi Perfil
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <SlidersHorizontal className="w-4 h-4 mr-2" />
+                Configuración
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  localStorage.clear();
+                  navigate("/login");
+                }}
+                className="text-red-600 focus:text-red-600"
+              >
+                <span className="w-4 h-4 mr-2">🚪</span>
+                Cerrar Sesión
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
