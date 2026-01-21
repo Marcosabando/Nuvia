@@ -270,7 +270,6 @@ export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) 
                     <span className="text-sm font-medium leading-none">
                       {profile?.username || "Usuario"}
                     </span>
-                    
                   </div>
                 )}
               </Button>
@@ -290,11 +289,6 @@ export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) 
                 <User className="w-4 h-4 mr-2" />
                 Mi Perfil
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/settings")}>
-                <SlidersHorizontal className="w-4 h-4 mr-2" />
-                Configuración
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
                   localStorage.clear();
