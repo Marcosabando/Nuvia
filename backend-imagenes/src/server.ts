@@ -231,14 +231,62 @@ app.use(
   })
 );
 
-// Rate limiting
+/******************************************************
+ * ⚡ RATE LIMITING - CONFIGURACIÓN CORREGIDA
+ ******************************************************/
 const apiLimiter = rateLimit({
-  windowMs: parseInt(ENV.RateLimitWindowMs || "900000"),
-  max: parseInt(ENV.RateLimitMaxRequests || "2000"),
-  message: { error: "Demasiadas peticiones desde esta IP." },
-  skip: (req: Request) => {
-    return req.path.includes("/upload") || req.path.includes("/api/video/") || req.path.includes("/api/documents/");
+  windowMs: parseInt(ENV.RateLimitWindowMs || "60000"),       // 1 minuto por defecto
+  max: parseInt(ENV.RateLimitMaxRequests || "500"),          // 500 requests por minuto
+  message: { 
+    success: false,
+    error: "Demasiadas peticiones desde esta IP. Intenta de nuevo en un momento." 
   },
+  skip: (req: Request) => {
+    const fullPath = req.originalUrl;
+    const method = req.method;
+    
+    // 1. Excluir TODAS las rutas de upload (en cualquier parte de la URL)
+    if (fullPath.toLowerCase().includes('upload')) {
+      console.log(`📤 [RATE LIMIT SKIP] Upload route: ${fullPath}`);
+      return true;
+    }
+    
+    // 2. Excluir rutas de streaming de videos y documentos
+    if (fullPath.includes('/api/video/') || fullPath.includes('/api/documents/')) {
+      return true;
+    }
+    
+    // 3. Excluir rutas de folders que manejan contenido (IMPORTANTE!)
+    // Estas son las que te estaban causando el 429
+    const isFolderContentRoute = 
+      (fullPath.includes('/folders/') && fullPath.includes('/images')) ||
+      (fullPath.includes('/folders/') && fullPath.includes('/videos'));
+    
+    if (isFolderContentRoute && (method === 'POST' || method === 'DELETE')) {
+      console.log(`📁 [RATE LIMIT SKIP] Folder content route: ${fullPath}`);
+      return true;
+    }
+    
+    // 4. Excluir creación de carpetas durante uploads
+    if (fullPath.includes('/api/folders') && method === 'POST') {
+      console.log(`📁 [RATE LIMIT SKIP] Folder creation: ${fullPath}`);
+      return true;
+    }
+    
+    // 5. Excluir health checks y system routes
+    if (fullPath === '/health' || fullPath === '/api/system/disks') {
+      return true;
+    }
+    
+    // Solo mostrar logs en desarrollo
+    if (ENV.NodeEnv === NodeEnvs.Dev) {
+      console.log(`⏱️ [RATE LIMIT ACTIVE] ${method} ${fullPath}`);
+    }
+    
+    return false;
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use("/api/", apiLimiter);
@@ -646,6 +694,7 @@ app.get("/api/system/disks", async (req: Request, res: Response) => {
     });
   }
 });
+
 /******************************************************
  * 🚫 404
  ******************************************************/
