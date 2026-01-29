@@ -37,6 +37,45 @@ interface UseDocumentsReturn {
   renameDocument: (id: number, title: string) => Promise<void>;
 }
 
+const determineCategory = (doc: any): string => {
+  if (doc.category && doc.category !== 'other') return doc.category;
+  
+  const mimeType = doc.mimeType?.toLowerCase() || '';
+  
+  if (mimeType.includes('pdf') || 
+      mimeType.includes('word') || 
+      mimeType.includes('excel') || 
+      mimeType.includes('powerpoint') ||
+      mimeType.includes('officedocument') ||
+      mimeType.includes('opendocument') ||
+      mimeType === 'application/rtf') {
+    return 'office';
+  } else if (mimeType.startsWith('text/') || 
+             mimeType.includes('json') || 
+             mimeType.includes('xml') ||
+             mimeType.includes('markdown')) {
+    return 'text';
+  } else if (mimeType.includes('zip') || 
+             mimeType.includes('rar') || 
+             mimeType.includes('7z') ||
+             mimeType.includes('tar') ||
+             mimeType.includes('gzip')) {
+    return 'archive';
+  } else if (mimeType.includes('javascript') || 
+             mimeType.includes('html') || 
+             mimeType.includes('css') ||
+             mimeType.includes('python') ||
+             mimeType.includes('java')) {
+    return 'code';
+  } else if (mimeType.startsWith('image/') || 
+             mimeType.includes('svg') ||
+             mimeType.includes('font/')) {
+    return 'design';
+  }
+  
+  return doc.category || 'other';
+};
+
 export const useDocuments = (): UseDocumentsReturn => {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +96,7 @@ export const useDocuments = (): UseDocumentsReturn => {
               userId: doc.userId,
               title: doc.title || doc.originalFilename?.replace(/\.[^/.]+$/, "") || "Sin título",
               description: doc.description,
-              category: doc.category || 'other',
+              category: determineCategory(doc),
               tags: doc.tags,
               originalFilename: doc.originalFilename,
               filename: doc.filename,
@@ -78,11 +117,9 @@ export const useDocuments = (): UseDocumentsReturn => {
           : [];
 
         setDocuments(transformedDocuments);
-
       } else {
         throw new Error(response.error || 'Error en la respuesta del servidor');
       }
-
     } catch (err: any) {
       console.error('Error fetching documents:', err);
       setError(

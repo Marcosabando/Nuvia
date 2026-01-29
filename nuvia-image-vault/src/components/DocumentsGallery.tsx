@@ -151,8 +151,9 @@ const getCategoryColor = (category: string) => {
 
 const handleDownload = async (document: DocumentData, showToast: (success: boolean, message: string) => void) => {
   try {
+    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
     const response = await fetch(`${API_CONFIG.BASE_URL}/documents/${document.id}/download`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      headers: { Authorization: `Bearer ${token || ""}` },
     });
     if (!response.ok) throw new Error("Error en la descarga");
 
@@ -772,24 +773,8 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
           {selectedDocument && (
             <div className="flex flex-col md:flex-row h-full">
               <div className="flex-1 min-h-[40vh] md:min-h-full bg-white/40">
-                {selectedDocument.mimeType?.includes("pdf") ? (
-                  <DocumentViewer documentId={selectedDocument.id} />
-                ) : (
-                  <div className="flex items-center justify-center h-full p-8 text-center">
-                    <div>
-                      <div
-                        className="w-32 h-32 mx-auto mb-6 rounded-2xl flex items-center justify-center"
-                        style={{ backgroundColor: `${getCategoryColor(selectedDocument.category)}15` }}
-                      >
-                        {(() => {
-                          const IconComponent = getDocumentIcon(selectedDocument.category, selectedDocument.mimeType);
-                          return <IconComponent className="w-16 h-16" style={{ color: getCategoryColor(selectedDocument.category) }} />;
-                        })()}
-                      </div>
-                      <p className="text-nuvia-deep/70">Vista previa no disponible para este tipo de archivo</p>
-                    </div>
-                  </div>
-                )}
+                {/* ✅ SIEMPRE usa DocumentViewer para TODOS los tipos de archivo */}
+                <DocumentViewer documentId={selectedDocument.id} noHeader />
               </div>
 
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm overflow-y-auto">
@@ -815,6 +800,14 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                       <span className="text-nuvia-deep/60">Tipo</span>
                       <span className="capitalize">{selectedDocument.mimeType}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-nuvia-deep/60">Categoría</span>
+                      <span className="capitalize">
+                        {selectedDocument.category === "other" && selectedDocument.mimeType?.startsWith("text/")
+                          ? "text"
+                          : selectedDocument.category}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="bg-white/50 p-3 rounded-xl space-y-2 text-sm">
@@ -826,10 +819,18 @@ export default function DocumentsGallery({ viewMode = "grid" }: { viewMode?: "gr
                       <span className="text-nuvia-deep/60">Subida</span>
                       <span>{new Date(selectedDocument.createdAt).toLocaleDateString("es-ES")}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-nuvia-deep/60">Categoría</span>
-                      <span className="capitalize">{selectedDocument.category}</span>
-                    </div>
+                    {selectedDocument.pageCount && (
+                      <div className="flex justify-between">
+                        <span className="text-nuvia-deep/60">Páginas</span>
+                        <span>{selectedDocument.pageCount}</span>
+                      </div>
+                    )}
+                    {selectedDocument.wordCount && (
+                      <div className="flex justify-between">
+                        <span className="text-nuvia-deep/60">Palabras</span>
+                        <span>{selectedDocument.wordCount}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
