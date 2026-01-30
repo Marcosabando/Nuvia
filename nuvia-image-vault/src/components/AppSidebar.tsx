@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
-import { useLocation, NavLink, useNavigate } from "react-router-dom";
+import { useLocation, NavLink } from "react-router-dom";
 import {
   Images,
   Heart,
   Trash2,
   Clock,
-  Folder,
+  Folder as FolderIcon,
   Settings,
   LogOut,
   Plus,
@@ -15,8 +15,9 @@ import {
   Shield,
 } from "lucide-react";
 import { AuthService } from "@/services/auth.service";
-import { useFolders } from "@/hooks/useFolders";
+import { useFolders, Folder } from "@/hooks/useFolders";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
+import { EditFolderDialog } from "@/components/EditFolderDialog";
 import {
   Sidebar,
   SidebarContent,
@@ -56,10 +57,15 @@ const MAIN_ITEMS = [
   { title: "Recientes", url: "/recent", icon: Clock },
 ];
 
+type EditFolderPayload = {
+  id: number;
+  name: string;
+  description?: string | null;
+};
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
-  const navigate = useNavigate();
   const collapsed = state === "collapsed";
 
   useEffect(() => {
@@ -67,14 +73,22 @@ export function AppSidebar() {
     img.src = "/nuvia-color.png";
   }, []);
 
-  const { systemFolders, userFolders, loading, createFolder, deleteFolder, refreshFolders } = useFolders();
+  const {
+    systemFolders,
+    userFolders,
+    loading,
+    createFolder,
+    deleteFolder,
+    refreshFolders,
+    updateFolder,
+  } = useFolders();
 
-  // ✅ 1) refresca cada vez que cambias de ruta (evita tener que F5)
+  // refresca al cambiar de ruta
   useEffect(() => {
     refreshFolders();
   }, [location.pathname, refreshFolders]);
 
-  // ✅ 2) refresca por evento global
+  // refresca por evento global
   useEffect(() => {
     const handler = () => refreshFolders();
     window.addEventListener("folders:refresh", handler);
@@ -83,6 +97,10 @@ export function AppSidebar() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
+
+  // ✅ estado para editar
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<EditFolderPayload | null>(null);
 
   const isAdmin = useMemo(() => localStorage.getItem("userRole") === "admin", []);
   const isActive = (path: string) => location.pathname === path;
@@ -109,6 +127,27 @@ export function AppSidebar() {
       console.error("Error al eliminar carpeta:", error);
       alert(error?.response?.data?.error || error?.message || "Error al eliminar la carpeta");
     }
+  };
+
+  // ✅ abrir modal editar
+  const handleOpenEdit = (folder: Folder) => {
+    setFolderToEdit({
+      id: folder.id,
+      name: folder.name,
+      description: folder.description ?? "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  // ✅ guardar cambios desde modal editar
+  const handleUpdateFolder = async (
+    folderId: number,
+    data: { name: string; description?: string }
+  ) => {
+    await updateFolder(folderId, data);
+    setEditDialogOpen(false);
+    setFolderToEdit(null);
+    window.dispatchEvent(new Event("folders:refresh"));
   };
 
   return (
@@ -181,7 +220,7 @@ export function AppSidebar() {
                     <SidebarMenuItem key={folder.id}>
                       <SidebarMenuButton asChild>
                         <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
-                          <Folder className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
+                          <FolderIcon className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
                           {!collapsed && (
                             <>
                               <span className="flex-1 truncate">{folder.name}</span>
@@ -242,7 +281,7 @@ export function AppSidebar() {
                       <div className="flex items-center gap-1 w-full">
                         <SidebarMenuButton asChild className="flex-1">
                           <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
-                            <Folder className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
+                            <FolderIcon className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
                             {!collapsed && (
                               <>
                                 <span className="flex-1 truncate">{folder.name}</span>
@@ -268,12 +307,15 @@ export function AppSidebar() {
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
+
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => navigate(`/folders/${folder.id}/edit`)}>
+                              <DropdownMenuItem onClick={() => handleOpenEdit(folder)}>
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar
                               </DropdownMenuItem>
+
                               <DropdownMenuSeparator />
+
                               <DropdownMenuItem
                                 onClick={() => setFolderToDelete(folder.id)}
                                 className="text-red-600 focus:text-red-600"
@@ -358,19 +400,59 @@ export function AppSidebar() {
         onCreateFolder={handleCreateFolder}
       />
 
+      {/* ✅ EDIT DIALOG */}
+      <EditFolderDialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) setFolderToEdit(null);
+        }}
+        folder={folderToEdit}
+        onUpdateFolder={handleUpdateFolder}
+      />
+
+      {/* ✅ MODAL ELIMINAR — mismo diseño */}
       <AlertDialog open={folderToDelete !== null} onOpenChange={() => setFolderToDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          className="
+            sm:max-w-[440px]
+            border border-gray-200 dark:border-gray-800
+            bg-white dark:bg-gray-900
+            text-gray-900 dark:text-gray-100
+            shadow-2xl
+          "
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar carpeta?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle className="text-lg font-semibold">¿Eliminar carpeta?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
               Esta acción no se puede deshacer. La carpeta se eliminará permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel
+              className="
+                bg-gray-100 hover:bg-gray-200
+                text-gray-800
+                border border-gray-200
+                dark:bg-gray-800 dark:hover:bg-gray-700
+                dark:text-gray-100 dark:border-gray-700
+                transition
+              "
+            >
+              Cancelar
+            </AlertDialogCancel>
+
             <AlertDialogAction
               onClick={() => folderToDelete && handleDeleteFolder(folderToDelete)}
-              className="bg-red-600 hover:bg-red-700"
+              className="
+                bg-red-600 hover:bg-red-700
+                text-white
+                border border-red-600
+                dark:border-red-500
+                transition
+                disabled:opacity-70
+              "
             >
               Eliminar
             </AlertDialogAction>
