@@ -60,15 +60,12 @@ const FolderView = () => {
   const { folderId } = useParams<{ folderId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [folderItems, setFolderItems] = useState<FolderItem[]>([]);
   const [folderInfo, setFolderInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Modales
   const [deleteFolderModalOpen, setDeleteFolderModalOpen] = useState(false);
   const [deleteItemModalOpen, setDeleteItemModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<FolderItem | null>(null);
@@ -84,7 +81,19 @@ const FolderView = () => {
     });
   };
 
-  // Obtener contenido de la carpeta
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === null || bytes === undefined || isNaN(bytes) || bytes === 0) {
+      return "0 Bytes";
+    }
+    
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const value = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+    
+    return `${value} ${sizes[i]}`;
+  };
+
   useEffect(() => {
     const fetchFolderContent = async () => {
       if (!folderId || folderId === "undefined") {
@@ -117,7 +126,7 @@ const FolderView = () => {
               filename: img.filename,
               filePath: img.imagePath,
               thumbnailPath: img.thumbnailPath,
-              fileSize: img.fileSize,
+              fileSize: Number(img.fileSize) || 0,
               mimeType: img.mimeType,
               createdAt: img.createdAt,
               isFavorite: img.isFavorite,
@@ -136,7 +145,7 @@ const FolderView = () => {
               filename: vid.filename,
               filePath: vid.videoPath,
               thumbnailPath: vid.thumbnailPath,
-              fileSize: vid.fileSize,
+              fileSize: Number(vid.fileSize) || 0,
               mimeType: vid.mimeType,
               createdAt: vid.createdAt,
               isFavorite: vid.isFavorite,
@@ -165,18 +174,15 @@ const FolderView = () => {
     setDeleteItemModalOpen(true);
   };
 
-  // ✅ Quitar archivo de carpeta (optimista + sidebar + toast)
   const removeFromFolder = async () => {
     if (!itemToDelete || !folderId) return;
 
     const numericFolderId = Number(folderId);
 
-    // ✅ Optimista: quitar de la lista al instante
     setFolderItems((prev) =>
       prev.filter((x) => !(x.type === itemToDelete.type && x.itemId === itemToDelete.itemId))
     );
 
-    // ✅ Optimista: bajar contador sidebar al instante (SIN GET)
     window.dispatchEvent(
       new CustomEvent("folders:itemDelta", {
         detail: { folderId: numericFolderId, delta: -1 },
@@ -198,9 +204,6 @@ const FolderView = () => {
         setItemToDelete(null);
 
         showToast(true, "Archivo quitado de la carpeta");
-
-        // ✅ (Opcional) verificación sin spamear:
-        // window.dispatchEvent(new Event("folders:refresh"));
         return;
       }
 
@@ -208,10 +211,8 @@ const FolderView = () => {
     } catch (error: any) {
       console.error("Error removiendo archivo:", error);
 
-      // ❌ Rollback: si falló, lo volvemos a poner
       setFolderItems((prev) => (itemToDelete ? [itemToDelete, ...prev] : prev));
 
-      // ❌ Rollback contador
       window.dispatchEvent(
         new CustomEvent("folders:itemDelta", {
           detail: { folderId: numericFolderId, delta: 1 },
@@ -224,7 +225,6 @@ const FolderView = () => {
     }
   };
 
-  // ✅ Eliminar carpeta completa
   const deleteFolder = async () => {
     if (!folderId) return;
 
@@ -234,13 +234,6 @@ const FolderView = () => {
       const response = await apiService.delete(`/folders/${folderId}`);
 
       if (response.success) {
-        // ✅ Opcional: si quieres reflejar que la carpeta baja a 0 rápido:
-        // window.dispatchEvent(
-        //   new CustomEvent("folders:itemDelta", {
-        //     detail: { folderId: Number(folderId), delta: -folderItems.length },
-        //   })
-        // );
-
         showToast(true, "Carpeta eliminada correctamente");
         navigate("/home");
         return;
@@ -262,14 +255,6 @@ const FolderView = () => {
       cleanPath = item.filePath.replace("uploads/", "");
     }
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   };
 
   const formatDate = (dateString: string): string => {
