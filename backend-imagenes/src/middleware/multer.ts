@@ -14,6 +14,9 @@ export const ALLOWED_MIME_TYPES = [
   'image/webp',
   'image/gif',
   'image/heic',
+  'image/svg+xml',
+  'image/tiff',
+  'image/bmp',
 
   // Videos
   'video/quicktime',
@@ -32,6 +35,9 @@ export const ALLOWED_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
   'text/plain',
   'text/csv',
   'application/rtf',
@@ -45,7 +51,13 @@ export const ALLOWED_MIME_TYPES = [
   'text/html',
   'text/css',
   'application/javascript',
-  'text/markdown'
+  'text/markdown',
+  'application/epub+zip',
+  'application/x-mobipocket-ebook',
+  'font/ttf',
+  'font/otf',
+  'font/woff',
+  'font/woff2'
 ];
 
 // ✅ TAMAÑOS MÁXIMOS ACTUALIZADOS A 3GB
@@ -109,8 +121,10 @@ const getStorage = (fileType: 'image' | 'video' | 'profile' | 'document') => {
       cb(null, typeDir);
     },
     filename: (req, file, cb) => {
+      // Sanitizar el nombre del archivo original
+      const originalName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
       const uniqueId = uuidv4();
-      const extension = path.extname(file.originalname).toLowerCase();
+      const extension = path.extname(originalName).toLowerCase();
       const filename = `${Date.now()}-${uniqueId}${extension}`;
       cb(null, filename);
     }
@@ -129,6 +143,9 @@ export const uploadDocument = multer({
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      'application/vnd.oasis.opendocument.presentation',
       'text/plain',
       'text/csv',
       'text/markdown',
@@ -142,7 +159,13 @@ export const uploadDocument = multer({
       'application/x-rar-compressed',
       'application/x-7z-compressed',
       'application/x-tar',
-      'application/gzip'
+      'application/gzip',
+      'application/epub+zip',
+      'application/x-mobipocket-ebook',
+      'font/ttf',
+      'font/otf',
+      'font/woff',
+      'font/woff2'
     ];
 
     if (documentMimeTypes.includes(file.mimetype)) {
@@ -194,7 +217,8 @@ export const uploadImage = multer({
       'image/png',
       'image/webp',
       'image/gif',
-      'image/heic'
+      'image/heic',
+      'image/svg+xml'
     ];
 
     if (imageMimeTypes.includes(file.mimetype)) {
@@ -560,7 +584,7 @@ export const uploadSingleVideo = (req: Request, res: Response, next: NextFunctio
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
       size: req.file.size,
-      fieldname: req.file.fieldname // ← Esto es importante
+      fieldname: req.file.fieldname
     } : 'No file');
 
     next();
@@ -605,42 +629,115 @@ export const uploadMultipleVideos = (req: Request, res: Response, next: NextFunc
   });
 };
 
-// ✅ FUNCIÓN PARA EXTRAER INFORMACIÓN DE DOCUMENTOS
+// ✅ FUNCIÓN MEJORADA PARA EXTRAER INFORMACIÓN DE DOCUMENTOS
 const extractDocumentInfo = async (file: Express.Multer.File): Promise<void> => {
   const documentInfo: any = {
     originalName: file.originalname,
     mimeType: file.mimetype,
     size: file.size,
-    extension: path.extname(file.originalname).toLowerCase()
+    extension: path.extname(file.originalname).toLowerCase(),
+    uploadedAt: new Date()
   };
 
-  // Determinar categoría basada en MIME type
-  if (file.mimetype.includes('word') || file.mimetype.includes('document')) {
-    documentInfo.category = 'office';
-  } else if (file.mimetype.includes('spreadsheet') || file.mimetype.includes('excel')) {
-    documentInfo.category = 'office';
-  } else if (file.mimetype.includes('presentation') || file.mimetype.includes('powerpoint')) {
-    documentInfo.category = 'office';
-  } else if (file.mimetype.includes('pdf')) {
-    documentInfo.category = 'office';
-  } else if (file.mimetype.includes('text')) {
-    documentInfo.category = 'text';
-  } else if (file.mimetype.includes('json') || file.mimetype.includes('xml') || 
-             file.mimetype.includes('html') || file.mimetype.includes('css') ||
-             file.mimetype.includes('javascript')) {
-    documentInfo.category = 'code';
-  } else if (file.mimetype.includes('zip') || file.mimetype.includes('rar') ||
-             file.mimetype.includes('7z') || file.mimetype.includes('tar') ||
-             file.mimetype.includes('gzip')) {
-    documentInfo.category = 'archive';
-  } else {
-    documentInfo.category = 'other';
+  // Determinar categoría basada en MIME type y extensión
+  const mime = file.mimetype.toLowerCase();
+  const ext = documentInfo.extension;
+  
+  let category = 'other';
+  
+  // Office (Word, Excel, PowerPoint, PDF, OpenDocument, RTF)
+  if (
+    mime.includes('word') ||
+    mime.includes('excel') ||
+    mime.includes('powerpoint') ||
+    mime.includes('officedocument') ||
+    mime.includes('opendocument') ||
+    mime.includes('pdf') ||
+    mime === 'application/rtf'
+  ) {
+    category = 'office';
+  }
+  // Texto y código
+  else if (
+    mime.startsWith('text/') ||
+    mime.includes('json') ||
+    mime.includes('xml') ||
+    mime.includes('javascript') ||
+    mime.includes('html') ||
+    mime.includes('css') ||
+    mime.includes('markdown') ||
+    ['.txt', '.md', '.log', '.ini', '.conf', '.cfg'].includes(ext)
+  ) {
+    category = 'text';
+  }
+  // Imágenes (incluyendo SVG)
+  else if (mime.startsWith('image/')) {
+    category = 'design';
+  }
+  // Archivos comprimidos
+  else if (
+    mime.includes('zip') ||
+    mime.includes('rar') ||
+    mime.includes('7z') ||
+    mime.includes('tar') ||
+    mime.includes('gzip') ||
+    ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(ext)
+  ) {
+    category = 'archive';
+  }
+  // Fuentes
+  else if (
+    mime.startsWith('font/') ||
+    ['.ttf', '.otf', '.woff', '.woff2'].includes(ext)
+  ) {
+    category = 'design';
+  }
+  // eBooks
+  else if (
+    mime.includes('epub') ||
+    mime.includes('mobipocket') ||
+    ['.epub', '.mobi'].includes(ext)
+  ) {
+    category = 'text';
   }
 
-  // Agregar información al objeto file
+  documentInfo.category = category;
+
+  // Intentar extraer metadatos específicos según tipo
+  try {
+    if (mime.startsWith('image/') && mime !== 'image/svg+xml') {
+      const metadata = await sharp(file.path).metadata();
+      documentInfo.width = metadata.width;
+      documentInfo.height = metadata.height;
+      documentInfo.format = metadata.format;
+      documentInfo.hasAlpha = metadata.hasAlpha;
+      documentInfo.space = metadata.space;
+    }
+    
+    // Para archivos de texto, contar líneas y palabras
+    if (mime.startsWith('text/') || mime === 'application/json') {
+      const content = fs.readFileSync(file.path, 'utf-8');
+      const lines = content.split('\n').length;
+      const words = content.split(/\s+/).filter(word => word.length > 0).length;
+      documentInfo.lineCount = lines;
+      documentInfo.wordCount = words;
+    }
+    
+  } catch (error) {
+    console.log('⚠️ No se pudieron extraer metadatos adicionales:', error);
+  }
+
   (file as any).documentInfo = documentInfo;
   
-  console.log('📊 Información del documento extraída:', documentInfo);
+  console.log('📊 Metadatos del documento:', {
+    filename: file.originalname,
+    mimeType: documentInfo.mimeType,
+    category: documentInfo.category,
+    size: documentInfo.size,
+    ...(documentInfo.width && { dimensions: `${documentInfo.width}x${documentInfo.height}` }),
+    ...(documentInfo.lineCount && { lines: documentInfo.lineCount }),
+    ...(documentInfo.wordCount && { words: documentInfo.wordCount })
+  });
 };
 
 // ✅ FUNCIÓN PARA CREAR VERSIONES DE IMAGEN DE PERFIL

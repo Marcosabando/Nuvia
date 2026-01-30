@@ -3,7 +3,7 @@ import { customDeepCompare } from 'jet-validators/utils';
 
 import UserRepo from '@src/repos/UserRepo';
 import User, { IUser } from '@src/models/User';
-import { USER_NOT_FOUND_ERR } from '@src/services/UserService';
+import { USER_NOT_FOUND_ERR } from '@src/types/UserService';
 
 import HttpStatusCodes from '@src/common/constants/HttpStatusCodes';
 import { ValidationError } from '@src/common/util/route-errors';
