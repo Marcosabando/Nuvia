@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useLocation, NavLink } from "react-router-dom";
 import {
   Images,
@@ -83,22 +83,38 @@ export function AppSidebar() {
     updateFolder,
   } = useFolders();
 
-  // refresca al cambiar de ruta
-  useEffect(() => {
-    refreshFolders();
-  }, [location.pathname, refreshFolders]);
+  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // refresca por evento global
-  useEffect(() => {
-    const handler = () => refreshFolders();
-    window.addEventListener("folders:refresh", handler);
-    return () => window.removeEventListener("folders:refresh", handler);
+  const safeRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    
+    refreshTimerRef.current = setTimeout(() => {
+      refreshFolders();
+    }, 300);
   }, [refreshFolders]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      safeRefresh();
+    };
+
+    window.addEventListener("folders:refresh", handleRefresh);
+
+    return () => {
+      window.removeEventListener("folders:refresh", handleRefresh);
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, [safeRefresh]);
+
+  // ✅ ELIMINADO: El listener de location.pathname que causaba el doble conteo
+  // Ya no se refresca automáticamente al cambiar de ruta
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
-
-  // ✅ estado para editar
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [folderToEdit, setFolderToEdit] = useState<EditFolderPayload | null>(null);
 
@@ -113,23 +129,24 @@ export function AppSidebar() {
   };
 
   const handleCreateFolder = async (data: any) => {
-    await createFolder(data);
-    setCreateDialogOpen(false);
-    window.dispatchEvent(new Event("folders:refresh"));
+    try {
+      await createFolder(data);
+      setCreateDialogOpen(false);
+    } catch (error) {
+      console.error("Error al crear carpeta:", error);
+    }
   };
 
   const handleDeleteFolder = async (folderId: number) => {
     try {
       await deleteFolder(folderId);
       setFolderToDelete(null);
-      window.dispatchEvent(new Event("folders:refresh"));
     } catch (error: any) {
       console.error("Error al eliminar carpeta:", error);
       alert(error?.response?.data?.error || error?.message || "Error al eliminar la carpeta");
     }
   };
 
-  // ✅ abrir modal editar
   const handleOpenEdit = (folder: Folder) => {
     setFolderToEdit({
       id: folder.id,
@@ -139,21 +156,22 @@ export function AppSidebar() {
     setEditDialogOpen(true);
   };
 
-  // ✅ guardar cambios desde modal editar
   const handleUpdateFolder = async (
     folderId: number,
     data: { name: string; description?: string }
   ) => {
-    await updateFolder(folderId, data);
-    setEditDialogOpen(false);
-    setFolderToEdit(null);
-    window.dispatchEvent(new Event("folders:refresh"));
+    try {
+      await updateFolder(folderId, data);
+      setEditDialogOpen(false);
+      setFolderToEdit(null);
+    } catch (error) {
+      console.error("Error al actualizar carpeta:", error);
+    }
   };
 
   return (
     <>
       <Sidebar className="border-r border-border/50 bg-gradient-to-br from-orange-100/90 to-peach-100/80 dark:from-orange-950/50 dark:to-peach-950/40 backdrop-blur-sm">
-        {/* HEADER */}
         <SidebarHeader className="p-6 border-b border-orange-200/30 dark:border-orange-900/30 bg-gradient-to-r from-orange-50/50 to-transparent dark:from-orange-950/30 dark:to-transparent">
           <div className="flex items-center gap-4">
             <div className="relative group">
@@ -181,9 +199,7 @@ export function AppSidebar() {
           </div>
         </SidebarHeader>
 
-        {/* CONTENT */}
         <SidebarContent className="p-4">
-          {/* Biblioteca */}
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-2">
@@ -206,7 +222,6 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {/* Sistema */}
           {systemFolders.length > 0 && (
             <SidebarGroup>
               {!collapsed && (
@@ -240,7 +255,6 @@ export function AppSidebar() {
             </SidebarGroup>
           )}
 
-          {/* Mis Carpetas */}
           <SidebarGroup>
             {!collapsed ? (
               <div className="flex items-center justify-between mb-2 px-2">
@@ -285,11 +299,11 @@ export function AppSidebar() {
                             {!collapsed && (
                               <>
                                 <span className="flex-1 truncate">{folder.name}</span>
-                                {folder.itemCount > 0 && (
+                                {/* {folder.itemCount > 0 && (
                                   <Badge variant="secondary" className="text-xs ml-auto">
                                     {folder.itemCount}
                                   </Badge>
-                                )}
+                                )} */}
                               </>
                             )}
                           </NavLink>
@@ -334,7 +348,6 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          {/* Papelera */}
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -351,7 +364,6 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        {/* FOOTER */}
         <SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
           <SidebarMenu className="space-y-1">
             {isAdmin && (
@@ -400,7 +412,6 @@ export function AppSidebar() {
         onCreateFolder={handleCreateFolder}
       />
 
-      {/* ✅ EDIT DIALOG */}
       <EditFolderDialog
         open={editDialogOpen}
         onOpenChange={(open) => {
@@ -411,7 +422,6 @@ export function AppSidebar() {
         onUpdateFolder={handleUpdateFolder}
       />
 
-      {/* ✅ MODAL ELIMINAR — mismo diseño */}
       <AlertDialog open={folderToDelete !== null} onOpenChange={() => setFolderToDelete(null)}>
         <AlertDialogContent
           className="

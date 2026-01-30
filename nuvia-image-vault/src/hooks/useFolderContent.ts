@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiService } from "@/services/api.services";
 
 interface ImageData {
@@ -68,13 +68,16 @@ export const useFolderContent = (folderId: string | undefined): UseFolderContent
   const [content, setContent] = useState<FolderContentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMounted = useRef(true);
 
-  const fetchContent = async () => {
+  const fetchContent = useCallback(async () => {
     if (!folderId) {
       setError("ID de carpeta no válido");
       setLoading(false);
       return;
     }
+
+    if (!isMounted.current) return;
 
     try {
       setLoading(true);
@@ -83,56 +86,101 @@ export const useFolderContent = (folderId: string | undefined): UseFolderContent
       const response = await apiService.get(`/folders/${folderId}/content`);
 
       if (response.success && response.data) {
-        setContent(response.data);
+        if (isMounted.current) {
+          setContent(response.data);
+        }
       } else {
         throw new Error(response.error || "Error al cargar el contenido");
       }
     } catch (err: any) {
-      if (err.response?.status === 404) {
-        setError("Carpeta no encontrada");
-      } else if (err.response?.data?.error) {
-        setError(err.response.data.error);
-      } else if (err.message) {
-        setError(err.message);
-      } else {
-        setError("No se pudo cargar el contenido de la carpeta");
+      if (isMounted.current) {
+        if (err.response?.status === 404) {
+          setError("Carpeta no encontrada");
+        } else if (err.response?.data?.error) {
+          setError(err.response.data.error);
+        } else if (err.message) {
+          setError(err.message);
+        } else {
+          setError("No se pudo cargar el contenido de la carpeta");
+        }
       }
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [folderId]);
 
   const removeImage = async (imageId: number) => {
-    if (!folderId) return;
+    if (!folderId || !content) return;
 
-    const response = await apiService.delete(`/folders/${folderId}/images/${imageId}`);
+    try {
+      // Primero llama a la API
+      const response = await apiService.delete(`/folders/${folderId}/images/${imageId}`);
 
-    if (response.success) {
+      if (response.success) {
+        const updatedImages = content.images.filter(img => img.imageId !== imageId);
+        setContent({
+          ...content,
+          images: updatedImages,
+          totalItems: content.totalItems - 1,
+          folder: {
+            ...content.folder,
+            itemCount: Math.max(0, content.folder.itemCount - 1)
+          }
+        });
+
+        // ✅ ELIMINADO: Ya no disparamos folders:refresh aquí
+        // Esto causaba que se hiciera un GET innecesario al backend
+        // El FolderView ya maneja la actualización optimista con eventos delta
+      } else {
+        throw new Error(response.error || "Error al eliminar imagen");
+      }
+    } catch (error) {
+      console.error("Error al eliminar imagen:", error);
       await fetchContent();
-      // ✅ refresca sidebar
-      window.dispatchEvent(new Event("folders:refresh"));
-    } else {
-      throw new Error(response.error || "Error al eliminar imagen");
+      throw error;
     }
   };
 
   const removeVideo = async (videoId: number) => {
-    if (!folderId) return;
+    if (!folderId || !content) return;
 
-    const response = await apiService.delete(`/folders/${folderId}/videos/${videoId}`);
+    try {
+      const response = await apiService.delete(`/folders/${folderId}/videos/${videoId}`);
 
-    if (response.success) {
+      if (response.success) {
+        const updatedVideos = content.videos.filter(vid => vid.videoId !== videoId);
+        setContent({
+          ...content,
+          videos: updatedVideos,
+          totalItems: content.totalItems - 1,
+          folder: {
+            ...content.folder,
+            itemCount: Math.max(0, content.folder.itemCount - 1)
+          }
+        });
+
+        // ✅ ELIMINADO: Ya no disparamos folders:refresh aquí
+        // El FolderView ya maneja la actualización optimista con eventos delta
+      } else {
+        throw new Error(response.error || "Error al eliminar video");
+      }
+    } catch (error) {
+      console.error("Error al eliminar video:", error);
       await fetchContent();
-      // ✅ refresca sidebar
-      window.dispatchEvent(new Event("folders:refresh"));
-    } else {
-      throw new Error(response.error || "Error al eliminar video");
+      throw error;
     }
   };
 
   useEffect(() => {
+    isMounted.current = true;
     fetchContent();
-  }, [folderId]);
+
+    return () => {
+      isMounted.current = false;
+    };
+  }, [fetchContent]);
 
   return {
     content,
