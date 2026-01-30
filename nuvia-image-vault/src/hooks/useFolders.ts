@@ -19,6 +19,7 @@ interface UseFoldersReturn {
   error: string | null;
   createFolder: (data: any) => Promise<void>;
   deleteFolder: (folderId: number) => Promise<void>;
+  updateFolder: (folderId: number, data: { name: string; description?: string }) => Promise<void>; // ✅ AÑADIDO
   refreshFolders: () => Promise<void>;
   // ✅ útil si quieres update manual sin eventos
   applyItemDelta: (folderId: number, delta: number) => void;
@@ -101,13 +102,19 @@ export const useFolders = (): UseFoldersReturn => {
   const createFolder = async (data: any) => {
     const response = await apiService.post("/folders", data);
     if (!response?.success) throw new Error(response?.error || "Error creating folder");
-    // ✅ aquí sí conviene refetch 1 vez
     await fetchFolders();
   };
 
   const deleteFolder = async (folderId: number) => {
     const response = await apiService.delete(`/folders/${folderId}`);
     if (!response?.success) throw new Error(response?.error || "Error deleting folder");
+    await fetchFolders();
+  };
+
+  // ✅ UPDATE FOLDER (PATCH)
+  const updateFolder = async (folderId: number, data: { name: string; description?: string }) => {
+    const response = await apiService.patch(`/folders/${folderId}`, data);
+    if (!response?.success) throw new Error(response?.error || "Error updating folder");
     await fetchFolders();
   };
 
@@ -143,6 +150,7 @@ export const useFolders = (): UseFoldersReturn => {
     error,
     createFolder,
     deleteFolder,
+    updateFolder,
     refreshFolders,
     applyItemDelta,
   };
