@@ -4,16 +4,20 @@
     "module": "CommonJS",
     "lib": ["ES2020"],
     "strict": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "node10",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "jsx": "react-jsx", 
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./",
+    "baseUrl": "./",
     "paths": {
       "@src/*": ["./src/*"]
     },
     "useUnknownInCatchVariables": false,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "node"],
+    "ignoreDeprecations": "6.0"
   },
   "ts-node": {
     "swc": true,
@@ -27,11 +31,13 @@
     "src/**/*.d.ts",
     "tests/**/*.ts",
     "config.ts",
-    "scripts",
+    "scripts/**/*.ts",
     "eslint.config.ts",
     "vitest.config.mts"
   ],
   "exclude": [
-    "src/public/*"
+    "src/public/*",
+    "node_modules",
+    "dist"
   ]
 }
