@@ -1,6 +1,7 @@
-// src/hooks/useProfile.ts
+// src/hooks/useProfile.ts (versión con useFolders)
 import { useEffect, useState } from "react";
 import { apiService } from "@/services/api.services";
+import { useFolders } from "./useFolders"; // Importa el hook de carpetas
 
 interface ProfileData {
   userId: number;
@@ -35,6 +36,7 @@ interface UserStats {
   emailVerified: boolean;
   imageCount: number;
   videoCount: number;
+  documentCount: number;
   albumCount: number;
   totalMediaCount: number;
   storageUsed: number;
@@ -55,7 +57,7 @@ interface UseProfileReturn {
   refetch: () => void;
   updateProfileImage: (file: File) => Promise<{ success: boolean; error?: string }>;
   updateUsername: (newUsername: string) => Promise<{ success: boolean; error?: string }>;
-  getProfileImageUrl: (options?: { size?: number; variant?: 'solid' | 'gradient' }) => string; // ✅ Función mejorada
+  getProfileImageUrl: (options?: { size?: number; variant?: 'solid' | 'gradient' }) => string;
 }
 
 export const useProfile = (): UseProfileReturn => {
@@ -63,33 +65,22 @@ export const useProfile = (): UseProfileReturn => {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Usar el hook de carpetas para obtener el conteo real
+  const { userFolders, loading: foldersLoading } = useFolders();
 
-  // --------------------------------------------
-  // ✅ FUNCIÓN MEJORADA PARA OBTENER IMAGEN DE PERFIL O SVG PREDETERMINADO
-  // --------------------------------------------
   const getProfileImageUrl = (options?: { size?: number; variant?: 'solid' | 'gradient' }): string => {
     const { size = 100, variant = 'gradient' } = options || {};
     
-    // Si hay una imagen de perfil en el backend, devolverla
     if (profile?.profileImagePath) {
-      // Verificar si ya es una URL completa
       if (profile.profileImagePath.startsWith('http')) {
         return profile.profileImagePath;
       }
       
-      // Si es una ruta relativa, construir la URL completa
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
       return `${baseUrl}${profile.profileImagePath.startsWith('/') ? '' : '/'}${profile.profileImagePath}`;
     }
     
-    // Si no hay imagen, generar SVG predeterminado con los colores de la página
-    const getFillColor = () => {
-      if (variant === 'solid') {
-        return '#8B5CF6'; // nuvia-mauve
-      }
-      return 'url(#gradient)';
-    };
-
     const svgContent = `
       <svg 
         width="${size}" 
@@ -98,59 +89,12 @@ export const useProfile = (): UseProfileReturn => {
         fill="none" 
         xmlns="http://www.w3.org/2000/svg"
       >
-        <circle 
-          cx="12" 
-          cy="12" 
-          r="11" 
-          stroke="${variant === 'gradient' ? 'url(#borderGradient)' : '#8B5CF6'}"
-          stroke-width="2"
-          fill="none"
-        />
-        
-        <circle 
-          cx="12" 
-          cy="9" 
-          r="4" 
-          fill="${getFillColor()}"
-        />
-        
-        <path 
-          d="M5 20C5 16.134 8.13401 13 12 13C15.866 13 19 16.134 19 20" 
-          fill="${getFillColor()}"
-        />
-        
-        ${variant === 'gradient' ? `
-          <defs>
-            <linearGradient 
-              id="gradient" 
-              x1="8" 
-              y1="5" 
-              x2="16" 
-              y2="20"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop stop-color="#8B5CF6" />
-              <stop offset="0.5" stop-color="#A78BFA" />
-              <stop offset="1" stop-color="#EC4899" />
-            </linearGradient>
-            
-            <linearGradient 
-              id="borderGradient" 
-              x1="0" 
-              y1="0" 
-              x2="24" 
-              y2="24"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop stop-color="#8B5CF6" />
-              <stop offset="1" stop-color="#EC4899" />
-            </linearGradient>
-          </defs>
-        ` : ''}
+        <circle cx="12" cy="12" r="11" stroke="#8B5CF6" stroke-width="2" fill="none" />
+        <circle cx="12" cy="9" r="4" fill="#8B5CF6" />
+        <path d="M5 20C5 16.134 8.13401 13 12 13C15.866 13 19 16.134 19 20" fill="#8B5CF6" />
       </svg>
     `;
     
-    // Codificar el SVG como data URI
     return `data:image/svg+xml;base64,${btoa(svgContent)}`;
   };
 
@@ -163,24 +107,24 @@ export const useProfile = (): UseProfileReturn => {
 
       if (profileResponse.success && profileResponse.data) {
         const transformedProfile: ProfileData = {
-          userId: profileResponse.data.userId,
-          username: profileResponse.data.username,
-          email: profileResponse.data.email,
-          profileImagePath: profileResponse.data.profileImagePath,
-          bio: profileResponse.data.bio,
-          location: profileResponse.data.location,
-          role: profileResponse.data.role,
-          status: profileResponse.data.status,
+          userId: profileResponse.data.userId || 0,
+          username: profileResponse.data.username || 'Usuario',
+          email: profileResponse.data.email || '',
+          profileImagePath: profileResponse.data.profileImagePath || null,
+          bio: profileResponse.data.bio || null,
+          location: profileResponse.data.location || null,
+          role: profileResponse.data.role || 'user',
+          status: profileResponse.data.status || 'active',
           emailVerified: Boolean(profileResponse.data.emailVerified),
-          storageUsed: Number(profileResponse.data.storageUsed),
-          storageLimit: Number(profileResponse.data.storageLimit),
-          imageCount: Number(profileResponse.data.imageCount),
-          videoCount: Number(profileResponse.data.videoCount),
-          albumCount: Number(profileResponse.data.albumCount),
-          totalMediaCount: Number(profileResponse.data.totalMediaCount),
-          createdAt: profileResponse.data.createdAt,
-          lastLogin: profileResponse.data.lastLogin,
-          updatedAt: profileResponse.data.updatedAt
+          storageUsed: Number(profileResponse.data.storageUsed || 0),
+          storageLimit: Number(profileResponse.data.storageLimit || 1024 * 1024 * 1024),
+          imageCount: Number(profileResponse.data.imageCount || 0),
+          videoCount: Number(profileResponse.data.videoCount || 0),
+          albumCount: Number(profileResponse.data.albumCount || 0),
+          totalMediaCount: Number(profileResponse.data.totalMediaCount || 0),
+          createdAt: profileResponse.data.createdAt || new Date().toISOString(),
+          lastLogin: profileResponse.data.lastLogin || null,
+          updatedAt: profileResponse.data.updatedAt || new Date().toISOString()
         };
 
         setProfile(transformedProfile);
@@ -191,28 +135,35 @@ export const useProfile = (): UseProfileReturn => {
       const statsResponse = await apiService.get('/profile/stats');
 
       if (statsResponse.success && statsResponse.data) {
+        const storageUsed = Number(statsResponse.data.storageUsed || 0);
+        const storageLimit = Number(statsResponse.data.storageLimit || 1024 * 1024 * 1024);
+        const storagePercentage = statsResponse.data.storagePercentage !== undefined 
+          ? Number(statsResponse.data.storagePercentage)
+          : storageLimit > 0 ? Math.round((storageUsed / storageLimit) * 100) : 0;
+
         const transformedStats: UserStats = {
-          userId: statsResponse.data.userId,
-          username: statsResponse.data.username,
-          email: statsResponse.data.email,
-          profileImagePath: statsResponse.data.profileImagePath,
-          bio: statsResponse.data.bio,
-          location: statsResponse.data.location,
-          role: statsResponse.data.role,
-          status: statsResponse.data.status,
-          emailVerified: Boolean(statsResponse.data.emailVerified),
-          imageCount: Number(statsResponse.data.imageCount),
-          videoCount: Number(statsResponse.data.videoCount),
-          albumCount: Number(statsResponse.data.albumCount),
-          totalMediaCount: Number(statsResponse.data.totalMediaCount),
-          storageUsed: Number(statsResponse.data.storageUsed),
-          storageLimit: Number(statsResponse.data.storageLimit),
-          storagePercentage: Number(statsResponse.data.storagePercentage),
-          trashCount: Number(statsResponse.data.trashCount),
-          favoriteImageCount: Number(statsResponse.data.favoriteImageCount),
-          favoriteVideoCount: Number(statsResponse.data.favoriteVideoCount),
-          createdAt: statsResponse.data.createdAt,
-          lastLogin: statsResponse.data.lastLogin
+          userId: statsResponse.data.userId || profile?.userId || 0,
+          username: statsResponse.data.username || profile?.username || 'Usuario',
+          email: statsResponse.data.email || profile?.email || '',
+          profileImagePath: statsResponse.data.profileImagePath || profile?.profileImagePath || null,
+          bio: statsResponse.data.bio || profile?.bio || null,
+          location: statsResponse.data.location || profile?.location || null,
+          role: statsResponse.data.role || profile?.role || 'user',
+          status: statsResponse.data.status || profile?.status || 'active',
+          emailVerified: Boolean(statsResponse.data.emailVerified || profile?.emailVerified),
+          imageCount: Number(statsResponse.data.imageCount || 0),
+          videoCount: Number(statsResponse.data.videoCount || 0),
+          documentCount: Number(statsResponse.data.documentCount || 0),
+          albumCount: userFolders.length,
+          totalMediaCount: Number(statsResponse.data.totalMediaCount || 0),
+          storageUsed: storageUsed,
+          storageLimit: storageLimit,
+          storagePercentage: storagePercentage,
+          trashCount: Number(statsResponse.data.trashCount || 0),
+          favoriteImageCount: Number(statsResponse.data.favoriteImageCount || 0),
+          favoriteVideoCount: Number(statsResponse.data.favoriteVideoCount || 0),
+          createdAt: statsResponse.data.createdAt || profile?.createdAt || new Date().toISOString(),
+          lastLogin: statsResponse.data.lastLogin || profile?.lastLogin || null
         };
 
         setStats(transformedStats);
@@ -226,9 +177,16 @@ export const useProfile = (): UseProfileReturn => {
     }
   };
 
-  // --------------------------------------------
-  // ✅ FUNCIÓN PARA ACTUALIZAR USERNAME
-  // --------------------------------------------
+
+  useEffect(() => {
+    if (stats && !foldersLoading) {
+      setStats({
+        ...stats,
+        albumCount: userFolders.length
+      });
+    }
+  }, [userFolders, foldersLoading]);
+
   const updateUsername = async (
     newUsername: string
   ): Promise<{ success: boolean; error?: string }> => {
@@ -263,9 +221,6 @@ export const useProfile = (): UseProfileReturn => {
     }
   };
 
-  // --------------------------------------------
-  // FUNCION PARA SUBIR FOTO DE PERFIL
-  // --------------------------------------------
   const updateProfileImage = async (file: File): Promise<{ success: boolean; error?: string }> => {
     try {
       const formData = new FormData();
@@ -305,37 +260,11 @@ export const useProfile = (): UseProfileReturn => {
   return {
     profile,
     stats,
-    loading,
+    loading: loading || foldersLoading,
     error,
     refetch: fetchProfile,
     updateProfileImage,
     updateUsername,
-    getProfileImageUrl // ✅ Exporta la función mejorada
+    getProfileImageUrl
   };
 };
-
-// ==============================================
-// EJEMPLO DE USO EN UN COMPONENTE:
-// ==============================================
-// 
-// import { useProfile } from "@/hooks/useProfile";
-//
-// const UserProfileComponent = () => {
-//   const { profile, getProfileImageUrl, loading } = useProfile();
-//   
-//   if (loading) return <div>Cargando...</div>;
-//   
-//   return (
-//     <div className="flex items-center gap-4">
-//       <img
-//         src={getProfileImageUrl({ size: 48, variant: 'gradient' })}
-//         alt={profile?.username || 'Usuario'}
-//         className="w-12 h-12 rounded-full object-cover border-2 border-nuvia-mauve/30"
-//       />
-//       <div>
-//         <h2 className="font-semibold text-nuvia-deep">{profile?.username}</h2>
-//         <p className="text-sm text-nuvia-deep/70">{profile?.email}</p>
-//       </div>
-//     </div>
-//   );
-// };
