@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import DocumentViewer from "@/components/DocumentViewer";
 import {
   Heart,
   Download,
@@ -14,6 +15,7 @@ import {
   Trash2,
   Eye,
   X,
+  Maximize2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
@@ -50,7 +52,13 @@ interface FavoriteVideo extends BaseFavorite {
   type: 'video';
 }
 
-type FavoriteItem = FavoriteImage | FavoriteVideo;
+interface FavoriteDocument extends BaseFavorite {
+  documentId: number;
+  documentPath: string;
+  type: 'document';
+}
+
+type FavoriteItem = FavoriteImage | FavoriteVideo | FavoriteDocument;
 
 const Favorites = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,6 +68,8 @@ const Favorites = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FavoriteItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [fullscreenDocument, setFullscreenDocument] = useState<FavoriteDocument | null>(null);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
   // Función para obtener la URL de la miniatura
   const getThumbnailUrl = (item: FavoriteItem): string | null => {
@@ -80,9 +90,19 @@ const Favorites = () => {
 
   // Función para obtener la URL del archivo original
   const getFileUrl = (item: FavoriteItem): string => {
-    const path = item.type === 'image' 
-      ? (item as FavoriteImage).imagePath 
-      : (item as FavoriteVideo).videoPath;
+    let path = '';
+    
+    switch (item.type) {
+      case 'image':
+        path = (item as FavoriteImage).imagePath;
+        break;
+      case 'video':
+        path = (item as FavoriteVideo).videoPath;
+        break;
+      case 'document':
+        path = (item as FavoriteDocument).documentPath;
+        break;
+    }
     
     let cleanPath = path;
     if (path.startsWith("uploads/")) {
@@ -101,7 +121,7 @@ const Favorites = () => {
       return getFileUrl(item);
     }
     
-    // Para videos, no hay miniatura
+    // Para videos y documentos, no hay miniatura
     return null;
   };
 
@@ -111,10 +131,16 @@ const Favorites = () => {
         setLoading(true);
         setError(null);
         
+        // Obtener imágenes favoritas
         const imagesResponse = await apiService.get('/images?favorites=true');
+        // Obtener videos favoritas
         const videosResponse = await apiService.get('/videos?favorites=true');
+        // Obtener documentos favoritas
+        const documentsResponse = await apiService.get('/documents?favorites=true');
+        
         const allFavorites: FavoriteItem[] = [];
 
+        // Procesar imágenes
         if (imagesResponse.success && imagesResponse.data) {
           const images = imagesResponse.data.map((img: any): FavoriteImage => ({
             id: img.imageId,
@@ -134,6 +160,7 @@ const Favorites = () => {
           allFavorites.push(...images);
         }
 
+        // Procesar videos
         if (videosResponse.success && videosResponse.data) {
           const videos = videosResponse.data.map((vid: any): FavoriteVideo => ({
             id: vid.videoId,
@@ -153,6 +180,27 @@ const Favorites = () => {
           allFavorites.push(...videos);
         }
 
+        // Procesar documentos
+        if (documentsResponse.success && documentsResponse.data) {
+          const documents = documentsResponse.data.map((doc: any): FavoriteDocument => ({
+            id: doc.documentId,
+            documentId: doc.documentId,
+            userId: doc.userId,
+            title: doc.title,
+            originalFilename: doc.originalFilename,
+            filename: doc.filename,
+            documentPath: doc.documentPath,
+            thumbnailPath: doc.thumbnailPath,
+            fileSize: doc.fileSize,
+            mimeType: doc.mimeType,
+            createdAt: doc.createdAt,
+            isFavorite: doc.isFavorite,
+            type: 'document'
+          }));
+          allFavorites.push(...documents);
+        }
+
+        // Ordenar por fecha de creación (más reciente primero)
         allFavorites.sort((a, b) => 
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
@@ -174,9 +222,20 @@ const Favorites = () => {
     try {
       console.log("🗑️ Quitando de favoritos:", item);
       
-      const endpoint = item.type === 'image' 
-        ? `/images/${item.id}/favorite`
-        : `/videos/${item.id}/favorite`;
+      let endpoint = '';
+      
+      // Determinar el endpoint según el tipo de archivo
+      switch (item.type) {
+        case 'image':
+          endpoint = `/images/${item.id}/favorite`;
+          break;
+        case 'video':
+          endpoint = `/videos/${item.id}/favorite`;
+          break;
+        case 'document':
+          endpoint = `/documents/${item.id}/favorite`;
+          break;
+      }
       
       const response = await apiService.post(endpoint);
       
@@ -207,9 +266,20 @@ const Favorites = () => {
       console.log("🧹 Limpiando todos los favoritos...");
       
       const promises = favorites.map(fav => {
-        const endpoint = fav.type === 'image' 
-          ? `/images/${fav.id}/favorite`
-          : `/videos/${fav.id}/favorite`;
+        let endpoint = '';
+        
+        switch (fav.type) {
+          case 'image':
+            endpoint = `/images/${fav.id}/favorite`;
+            break;
+          case 'video':
+            endpoint = `/videos/${fav.id}/favorite`;
+            break;
+          case 'document':
+            endpoint = `/documents/${fav.id}/favorite`;
+            break;
+        }
+        
         return apiService.post(endpoint);
       });
       
@@ -238,6 +308,12 @@ const Favorites = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const openDocumentFullscreen = (document: FavoriteDocument) => {
+    setFullscreenDocument(document);
+    setIsFullscreenOpen(true);
+    setIsModalOpen(false); // Cerrar el modal si está abierto
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -271,7 +347,7 @@ const Favorites = () => {
     total: favorites.length,
     images: favorites.filter(fav => fav.type === 'image').length,
     videos: favorites.filter(fav => fav.type === 'video').length,
-    documents: 0,
+    documents: favorites.filter(fav => fav.type === 'document').length,
   };
 
   if (loading) {
@@ -366,14 +442,12 @@ const Favorites = () => {
               <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-nuvia-deep/70 font-medium">Espacio usado</p>
+                    <p className="text-sm text-nuvia-deep/70 font-medium">Documentos</p>
                     <div className="p-2 rounded-lg bg-gradient-nuvia-dawn shadow-nuvia-soft">
                       <FileText className="w-4 h-4 text-white" />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">
-                    {formatFileSize(favorites.reduce((acc, fav) => acc + fav.fileSize, 0))}
-                  </p>
+                  <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.documents}</p>
                 </CardContent>
               </Card>
             </div>
@@ -403,6 +477,7 @@ const Favorites = () => {
                   <DropdownMenuItem onClick={() => setFilterType("all")}>Todos</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setFilterType("image")}>Imágenes</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setFilterType("video")}>Vídeos</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterType("document")}>Documentos</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -454,15 +529,18 @@ const Favorites = () => {
                                     className="w-full h-full object-cover"
                                     loading="lazy"
                                     onError={(e) => {
-                                      // Si la miniatura falla, mostrar icono
                                       (e.currentTarget as HTMLImageElement).style.display = 'none';
                                       const parent = e.currentTarget.parentElement;
                                       if (parent) {
                                         const fallbackDiv = document.createElement('div');
                                         fallbackDiv.className = 'w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center';
-                                        fallbackDiv.innerHTML = favorite.type === 'image' 
-                                          ? '<Image class="w-6 h-6 text-nuvia-mauve" />'
-                                          : '<Video class="w-6 h-6 text-nuvia-mauve" />';
+                                        if (favorite.type === 'image') {
+                                          fallbackDiv.innerHTML = '<Image class="w-6 h-6 text-nuvia-mauve" />';
+                                        } else if (favorite.type === 'video') {
+                                          fallbackDiv.innerHTML = '<Video class="w-6 h-6 text-nuvia-mauve" />';
+                                        } else {
+                                          fallbackDiv.innerHTML = '<FileText class="w-6 h-6 text-nuvia-mauve" />';
+                                        }
                                         parent.appendChild(fallbackDiv);
                                       }
                                     }}
@@ -471,8 +549,10 @@ const Favorites = () => {
                                   <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
                                     {favorite.type === 'image' ? (
                                       <Image className="w-6 h-6 text-nuvia-mauve" />
-                                    ) : (
+                                    ) : favorite.type === 'video' ? (
                                       <Video className="w-6 h-6 text-nuvia-mauve" />
+                                    ) : (
+                                      <FileText className="w-6 h-6 text-nuvia-mauve" />
                                     )}
                                   </div>
                                 )}
@@ -507,7 +587,7 @@ const Favorites = () => {
 
                           {/* Tipo - Solo desktop */}
                           <div className="hidden lg:block col-span-2 text-nuvia-mauve capitalize">
-                            {favorite.type}
+                            {favorite.type === 'document' ? 'Documento' : favorite.type}
                           </div>
 
                           {/* Acciones */}
@@ -573,47 +653,74 @@ const Favorites = () => {
         </div>
       </div>
 
-      {/* Modal para ver detalles del archivo - FONDO MORADO CON CONTENIDO BLANCO */}
+      {/* Modal para ver detalles del archivo */}
       {isModalOpen && selectedFile && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong max-w-2xl w-full max-h-[90vh] overflow-hidden border border-white/20">
+          <div className={`bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong ${
+            selectedFile.type === 'document' ? 'max-w-4xl' : 'max-w-2xl'
+          } w-full max-h-[90vh] overflow-hidden border border-white/20`}>
             {/* Header del modal - Fondo morado con texto blanco */}
             <div className="flex items-center justify-between p-6 border-b border-white/20">
               <h3 className="text-lg font-semibold text-white truncate">
                 {selectedFile.originalFilename}
               </h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setSelectedFile(null);
-                }}
-                className="h-8 w-8 hover:bg-white/20 text-white"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {selectedFile.type === 'document' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      openDocumentFullscreen(selectedFile as FavoriteDocument);
+                    }}
+                    className="h-8 w-8 hover:bg-white/20 text-white"
+                    title="Ver en pantalla completa"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setSelectedFile(null);
+                  }}
+                  className="h-8 w-8 hover:bg-white/20 text-white"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
 
             {/* Contenido del modal - Fondo blanco con texto negro */}
             <div className="bg-white p-6">
               <div className="flex flex-col items-center space-y-6">
-                {/* Vista previa */}
-                <div className="w-full max-w-md aspect-square rounded-lg overflow-hidden border border-nuvia-silver/30 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
-                  {selectedFile.type === "image" ? (
-                    <img
-                      src={getFileUrl(selectedFile)}
-                      alt={selectedFile.originalFilename}
-                      className="w-full h-full object-contain"
+                {/* Vista previa - Diferente para documentos */}
+                {selectedFile.type === "document" ? (
+                  <div className="w-full h-[400px] rounded-lg overflow-hidden border border-nuvia-silver/30">
+                    <DocumentViewer 
+                      documentId={selectedFile.id} 
+                      noHeader={false}
+                      noActions={true}
                     />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                      <Video className="w-16 h-16 text-nuvia-mauve" />
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="w-full max-w-md aspect-square rounded-lg overflow-hidden border border-nuvia-silver/30 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
+                    {selectedFile.type === "image" ? (
+                      <img
+                        src={getFileUrl(selectedFile)}
+                        alt={selectedFile.originalFilename}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
+                        <Video className="w-16 h-16 text-nuvia-mauve" />
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                {/* Información del archivo - Fondo blanco con texto negro */}
+                {/* Información del archivo */}
                 <div className="w-full space-y-3">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -622,7 +729,9 @@ const Favorites = () => {
                     </div>
                     <div>
                       <p className="text-nuvia-mauve font-medium">Tipo</p>
-                      <p className="text-nuvia-deep capitalize">{selectedFile.type}</p>
+                      <p className="text-nuvia-deep capitalize">
+                        {selectedFile.type === 'document' ? 'Documento' : selectedFile.type}
+                      </p>
                     </div>
                     <div>
                       <p className="text-nuvia-mauve font-medium">Agregado</p>
@@ -655,6 +764,47 @@ const Favorites = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de pantalla completa para documentos */}
+      {isFullscreenOpen && fullscreenDocument && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex flex-col z-[100]">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white">
+            <div className="flex items-center gap-3">
+              <FileText className="w-6 h-6" />
+              <h2 className="text-lg font-semibold truncate">
+                {fullscreenDocument.originalFilename}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => handleDownload(fullscreenDocument)}
+                className="gap-2 bg-white/20 hover:bg-white/30 text-white"
+              >
+                <Download className="w-4 h-4" />
+                Descargar
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsFullscreenOpen(false)}
+                className="h-8 w-8 hover:bg-white/20 text-white"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Contenido del documento */}
+          <div className="flex-1 overflow-hidden">
+            <DocumentViewer 
+              documentId={fullscreenDocument.id} 
+              noHeader={true}
+              noActions={false}
+            />
           </div>
         </div>
       )}
