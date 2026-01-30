@@ -1,5 +1,5 @@
-// src/pages/Profile.tsx - COMPONENTE COMPLETO Y CORREGIDO
-import { useState, useRef } from "react";
+// src/pages/Profile.tsx
+import { useState, useRef, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,38 +10,43 @@ import {
   Mail,
   MapPin,
   Calendar,
-  Image,
+  Image as ImageIcon,
   Video,
   Folder,
   HardDrive,
   Edit,
   Camera,
-  Upload,
+  FileText,
   Trash2,
   Star,
 } from "lucide-react";
 import { useProfile } from "@/hooks/useProfile";
+import { useFolders } from "@/hooks/useFolders"; // ¡IMPORTANTE!
 import { toast } from "sonner";
 
 const Profile = () => {
-  const { profile, stats, loading, error, refetch, updateProfileImage, getProfileImageUrl } = useProfile();
+  const { profile, stats, loading: profileLoading, error, refetch, updateProfileImage, getProfileImageUrl } = useProfile();
+  const { userFolders, loading: foldersLoading } = useFolders(); // Obtener carpetas del usuario
   const [activeTab, setActiveTab] = useState("overview");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Función para manejar la subida de imagen (USANDO EL HOOK)
+  // Calcular el número total de álbumes/carpetas del usuario
+  const userAlbumCount = userFolders.length;
+
+  // Combinar estados de loading
+  const loading = profileLoading || foldersLoading;
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validar tipo de archivo
     const validTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!validTypes.includes(file.type)) {
       toast.error("Formato no válido. Usa JPEG, PNG, WebP o GIF.");
       return;
     }
 
-    // Validar tamaño (máximo 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("La imagen es demasiado grande. Máximo 5MB.");
       return;
@@ -54,7 +59,6 @@ const Profile = () => {
 
       if (result.success) {
         toast.success("Imagen de perfil actualizada correctamente");
-        // Recargar los datos completos para asegurar consistencia
         await refetch();
       } else {
         toast.error(result.error || "Error al actualizar la imagen");
@@ -64,19 +68,16 @@ const Profile = () => {
       toast.error("Error al subir la imagen");
     } finally {
       setUploading(false);
-      // Limpiar input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
   };
 
-  // ✅ Función para activar el input file
   const triggerFileInput = () => {
     fileInputRef.current?.click();
   };
 
-  // ✅ Función para formatear bytes a MB/GB
   const formatStorage = (bytes: number) => {
     const mb = bytes / 1024 / 1024;
     if (mb >= 1024) {
@@ -89,14 +90,14 @@ const Profile = () => {
     return (
       <AppLayout>
         <div className="max-w-7xl mx-auto p-6">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-1">
                 <div className="h-64 bg-gray-200 rounded-lg"></div>
               </div>
-              <div className="lg:col-span-2">
-                <div className="h-32 bg-gray-200 rounded-lg mb-4"></div>
+              <div className="lg:col-span-2 space-y-4">
+                <div className="h-32 bg-gray-200 rounded-lg"></div>
                 <div className="h-32 bg-gray-200 rounded-lg"></div>
               </div>
             </div>
@@ -112,8 +113,11 @@ const Profile = () => {
         <div className="max-w-7xl mx-auto p-6">
           <Card className="border-red-200 bg-red-50">
             <CardContent className="p-6 text-center">
-              <p className="text-red-600 font-semibold">Error: {error}</p>
-              <Button onClick={refetch} className="mt-4">
+              <p className="text-red-600 font-semibold mb-4">Error: {error}</p>
+              <Button 
+                onClick={refetch} 
+                className="bg-nuvia-mauve hover:bg-nuvia-mauve/80"
+              >
                 Reintentar
               </Button>
             </CardContent>
@@ -130,6 +134,12 @@ const Profile = () => {
           <Card>
             <CardContent className="p-6 text-center">
               <p className="text-gray-600">No se encontró el perfil</p>
+              <Button 
+                onClick={refetch} 
+                className="mt-4 bg-nuvia-mauve hover:bg-nuvia-mauve/80"
+              >
+                Cargar perfil
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -137,12 +147,10 @@ const Profile = () => {
     );
   }
 
-  // ✅ OBTENER LA URL DE LA IMAGEN USANDO LA FUNCIÓN DEL HOOK
   const profileImageUrl = getProfileImageUrl({ size: 256, variant: 'gradient' });
 
   return (
     <AppLayout>
-      {/* ✅ Input file oculto */}
       <input
         type="file"
         ref={fileInputRef}
@@ -167,7 +175,6 @@ const Profile = () => {
               <CardContent className="p-6">
                 <div className="flex flex-col items-center text-center space-y-4">
                   <div className="relative">
-                    {/* ✅ AQUÍ USAMOS LA FUNCIÓN getProfileImageUrl DEL HOOK */}
                     <img
                       src={profileImageUrl}
                       alt={`Avatar de ${profile.username}`}
@@ -177,7 +184,8 @@ const Profile = () => {
                       size="icon"
                       className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-nuvia-mauve hover:bg-nuvia-mauve/80 transition-all"
                       onClick={triggerFileInput}
-                      disabled={uploading}>
+                      disabled={uploading}
+                    >
                       {uploading ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       ) : (
@@ -207,7 +215,13 @@ const Profile = () => {
 
                     <div className="flex items-center justify-center gap-2 text-nuvia-deep/70">
                       <Calendar className="w-4 h-4" />
-                      <span className="text-sm">Miembro desde {new Date(profile.createdAt).toLocaleDateString()}</span>
+                      <span className="text-sm">
+                        Miembro desde {new Date(profile.createdAt).toLocaleDateString('es-ES', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </span>
                     </div>
                   </div>
 
@@ -217,12 +231,11 @@ const Profile = () => {
                     </Badge>
                   )}
 
-                  <Button className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose transition-smooth duration-smooth ease-smooth hover:from-nuvia-mauve-hover hover:to-nuvia-rose-hover hover:shadow-nuvia-glow hover:scale-[1.02]">
+                  <Button className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve/90 hover:to-nuvia-rose/90 transition-all">
                     <Edit className="w-4 h-4 mr-2" />
                     Editar Perfil
                   </Button>
 
-                  {/* ✅ Información de formatos aceptados */}
                   <div className="text-xs text-nuvia-deep/50 text-center">
                     Formatos: JPEG, PNG, WebP, GIF
                     <br />
@@ -240,20 +253,24 @@ const Profile = () => {
 
             {/* Stats Cards */}
             <div className="lg:col-span-2 space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Imágenes */}
+                <Card className="bg-gradient-to-br from-white to-blue-50/50 border border-blue-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-nuvia-deep/70 font-medium">Imágenes</p>
                       <div className="p-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 shadow-nuvia-soft">
-                        <Image className="w-4 h-4 text-white" />
+                        <ImageIcon className="w-4 h-4 text-white" />
                       </div>
                     </div>
-                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats?.imageCount || 0}</p>
+                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                      {stats?.imageCount?.toLocaleString() || "0"}
+                    </p>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                {/* Videos */}
+                <Card className="bg-gradient-to-br from-white to-green-50/50 border border-green-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-nuvia-deep/70 font-medium">Videos</p>
@@ -261,19 +278,42 @@ const Profile = () => {
                         <Video className="w-4 h-4 text-white" />
                       </div>
                     </div>
-                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats?.videoCount || 0}</p>
+                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                      {stats?.videoCount?.toLocaleString() || "0"}
+                    </p>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                {/* Documentos */}
+                <Card className="bg-gradient-to-br from-white to-amber-50/50 border border-amber-100 shadow-nuvia-soft rounded-2xl">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-nuvia-deep/70 font-medium">Documentos</p>
+                      <div className="p-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 shadow-nuvia-soft">
+                        <FileText className="w-4 h-4 text-white" />
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                      {stats?.documentCount?.toLocaleString() || "0"}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* Álbumes - ¡USANDO EL CONTEO REAL DE CARPETAS! */}
+                <Card className="bg-gradient-to-br from-white to-red-50/50 border border-red-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-nuvia-deep/70 font-medium">Álbumes</p>
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-orange-500 to-red-600 shadow-nuvia-soft">
+                      <div className="p-2 rounded-lg bg-gradient-to-r from-red-500 to-pink-600 shadow-nuvia-soft">
                         <Folder className="w-4 h-4 text-white" />
                       </div>
                     </div>
-                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats?.albumCount || 0}</p>
+                    <p className="text-2xl font-bold mt-2 text-nuvia-deep">
+                      {userAlbumCount.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-nuvia-deep/50 mt-1">
+                      {!foldersLoading ? "Carpetas activas" : "Cargando..."}
+                    </p>
                   </CardContent>
                 </Card>
               </div>
@@ -297,13 +337,13 @@ const Profile = () => {
                     <div
                       className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-3 rounded-full transition-all duration-500"
                       style={{
-                        width: `${stats?.storagePercentage || 0}%`,
+                        width: `${Math.min(stats?.storagePercentage || 0, 100)}%`,
                       }}
                     />
                   </div>
 
                   <div className="flex justify-between text-sm text-nuvia-deep/60">
-                    <span>{Math.round(stats?.storagePercentage || 0)}% usado</span>
+                    <span>{Math.min(Math.round(stats?.storagePercentage || 0), 100)}% usado</span>
                     <span>{formatStorage((stats?.storageLimit || 0) - (stats?.storageUsed || 0))} disponibles</span>
                   </div>
                 </CardContent>
@@ -311,45 +351,51 @@ const Profile = () => {
 
               {/* Additional Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                <Card className="bg-gradient-to-br from-white to-yellow-50/50 border border-yellow-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4 text-center">
                     <div className="p-2 rounded-lg bg-gradient-to-r from-yellow-500 to-amber-600 shadow-nuvia-soft inline-block mb-2">
                       <Star className="w-4 h-4 text-white" />
                     </div>
-                    <p className="text-sm text-nuvia-deep/70 font-medium">Favoritos</p>
+                    <p className="text-sm text-nuvia-deep/70 font-medium">Total Favoritos</p>
                     <p className="text-xl font-bold mt-1 text-nuvia-deep">
-                      {(stats?.favoriteImageCount || 0) + (stats?.favoriteVideoCount || 0)}
+                      {((stats?.favoriteImageCount || 0) + (stats?.favoriteVideoCount || 0)).toLocaleString()}
                     </p>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                <Card className="bg-gradient-to-br from-white to-gray-50/50 border border-gray-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4 text-center">
                     <div className="p-2 rounded-lg bg-gradient-to-r from-gray-500 to-gray-700 shadow-nuvia-soft inline-block mb-2">
                       <Trash2 className="w-4 h-4 text-white" />
                     </div>
                     <p className="text-sm text-nuvia-deep/70 font-medium">Papelera</p>
-                    <p className="text-xl font-bold mt-1 text-nuvia-deep">{stats?.trashCount || 0}</p>
+                    <p className="text-xl font-bold mt-1 text-nuvia-deep">
+                      {stats?.trashCount?.toLocaleString() || "0"}
+                    </p>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                <Card className="bg-gradient-to-br from-white to-indigo-50/50 border border-indigo-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4 text-center">
                     <div className="p-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 shadow-nuvia-soft inline-block mb-2">
-                      <Image className="w-4 h-4 text-white" />
+                      <ImageIcon className="w-4 h-4 text-white" />
                     </div>
                     <p className="text-sm text-nuvia-deep/70 font-medium">Img. Fav.</p>
-                    <p className="text-xl font-bold mt-1 text-nuvia-deep">{stats?.favoriteImageCount || 0}</p>
+                    <p className="text-xl font-bold mt-1 text-nuvia-deep">
+                      {stats?.favoriteImageCount?.toLocaleString() || "0"}
+                    </p>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl">
+                <Card className="bg-gradient-to-br from-white to-emerald-50/50 border border-emerald-100 shadow-nuvia-soft rounded-2xl">
                   <CardContent className="p-4 text-center">
                     <div className="p-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 shadow-nuvia-soft inline-block mb-2">
                       <Video className="w-4 h-4 text-white" />
                     </div>
                     <p className="text-sm text-nuvia-deep/70 font-medium">Vid. Fav.</p>
-                    <p className="text-xl font-bold mt-1 text-nuvia-deep">{stats?.favoriteVideoCount || 0}</p>
+                    <p className="text-xl font-bold mt-1 text-nuvia-deep">
+                      {stats?.favoriteVideoCount?.toLocaleString() || "0"}
+                    </p>
                   </CardContent>
                 </Card>
               </div>
@@ -362,19 +408,22 @@ const Profile = () => {
           <TabsList className="grid w-full grid-cols-3 bg-white/50 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl">
             <TabsTrigger
               value="overview"
-              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300"
+            >
               <User className="w-4 h-4" />
               Resumen
             </TabsTrigger>
             <TabsTrigger
               value="favorites"
-              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300"
+            >
               <Star className="w-4 h-4" />
               Favoritos
             </TabsTrigger>
             <TabsTrigger
               value="activity"
-              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300">
+              className="gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300"
+            >
               <Calendar className="w-4 h-4" />
               Actividad
             </TabsTrigger>
@@ -395,8 +444,11 @@ const Profile = () => {
                         <Badge
                           variant={profile.status === "active" ? "default" : "secondary"}
                           className={
-                            profile.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
-                          }>
+                            profile.status === "active" 
+                              ? "bg-green-100 text-green-800 border-green-200" 
+                              : "bg-gray-100 text-gray-800 border-gray-200"
+                          }
+                        >
                           {profile.status === "active" ? "Activo" : "Inactivo"}
                         </Badge>
                       </div>
@@ -405,15 +457,26 @@ const Profile = () => {
                         <Badge
                           variant={profile.emailVerified ? "default" : "secondary"}
                           className={
-                            profile.emailVerified ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
-                          }>
+                            profile.emailVerified 
+                              ? "bg-green-100 text-green-800 border-green-200" 
+                              : "bg-yellow-100 text-yellow-800 border-yellow-200"
+                          }
+                        >
                           {profile.emailVerified ? "Sí" : "No"}
                         </Badge>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-nuvia-deep/70">Último acceso:</span>
                         <span className="text-nuvia-deep">
-                          {profile.lastLogin ? new Date(profile.lastLogin).toLocaleDateString() : "Nunca"}
+                          {profile.lastLogin 
+                            ? new Date(profile.lastLogin).toLocaleDateString('es-ES', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : "Nunca"}
                         </span>
                       </div>
                     </div>
@@ -424,15 +487,27 @@ const Profile = () => {
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="text-nuvia-deep/70">Total archivos:</span>
-                        <span className="font-semibold text-nuvia-deep">{stats?.totalMediaCount || 0}</span>
+                        <span className="font-semibold text-nuvia-deep">
+                          {stats?.totalMediaCount?.toLocaleString() || "0"}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-nuvia-deep/70">Imágenes favoritas:</span>
-                        <span className="font-semibold text-nuvia-deep">{stats?.favoriteImageCount || 0}</span>
+                        <span className="font-semibold text-nuvia-deep">
+                          {stats?.favoriteImageCount?.toLocaleString() || "0"}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-nuvia-deep/70">Videos favoritos:</span>
-                        <span className="font-semibold text-nuvia-deep">{stats?.favoriteVideoCount || 0}</span>
+                        <span className="font-semibold text-nuvia-deep">
+                          {stats?.favoriteVideoCount?.toLocaleString() || "0"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-nuvia-deep/70">Álbumes/Carpetas:</span>
+                        <span className="font-semibold text-nuvia-deep">
+                          {userAlbumCount.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -449,17 +524,21 @@ const Profile = () => {
               <CardContent className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="text-center p-6 bg-gradient-to-br from-yellow-50 to-amber-50 rounded-2xl border border-amber-200">
-                    <Image className="w-12 h-12 text-amber-600 mx-auto mb-4" />
+                    <ImageIcon className="w-12 h-12 text-amber-600 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-amber-800 mb-2">Imágenes Favoritas</h3>
-                    <p className="text-3xl font-bold text-amber-600 mb-2">{stats?.favoriteImageCount || 0}</p>
+                    <p className="text-3xl font-bold text-amber-600 mb-2">
+                      {stats?.favoriteImageCount?.toLocaleString() || "0"}
+                    </p>
                     <p className="text-amber-700 text-sm">Tus imágenes marcadas como favoritas</p>
                   </div>
 
                   <div className="text-center p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-emerald-200">
                     <Video className="w-12 h-12 text-emerald-600 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-emerald-800 mb-2">Videos Favoritos</h3>
-                    <p className="text-3xl font-bold text-emerald-600 mb-2">{stats?.favoriteVideoCount || 0}</p>
-                    <p className="text-emerald-700 text-sm">Tus videos marcados como favoritos</p>
+                    <p className="text-3xl font-bold text-emerald-600 mb-2">
+                      {stats?.favoriteVideoCount?.toLocaleString() || "0"}
+                    </p>
+                    <p className="text-emerald-700 text-sm">Tus videos marcados como favoritas</p>
                   </div>
                 </div>
               </CardContent>
@@ -478,14 +557,30 @@ const Profile = () => {
                   <p className="text-nuvia-deep/70 mb-6">
                     Próximamente podrás ver tu historial completo de actividad en la plataforma.
                   </p>
-                  <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
                     <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-2xl font-bold text-blue-600">{stats?.imageCount || 0}</p>
-                      <p className="text-sm text-blue-700">Imágenes subidas</p>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {stats?.imageCount?.toLocaleString() || "0"}
+                      </p>
+                      <p className="text-sm text-blue-700">Imágenes</p>
                     </div>
                     <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                      <p className="text-2xl font-bold text-green-600">{stats?.videoCount || 0}</p>
-                      <p className="text-sm text-green-700">Videos subidos</p>
+                      <p className="text-2xl font-bold text-green-600">
+                        {stats?.videoCount?.toLocaleString() || "0"}
+                      </p>
+                      <p className="text-sm text-green-700">Videos</p>
+                    </div>
+                    <div className="text-center p-4 bg-amber-50 rounded-lg border border-amber-200">
+                      <p className="text-2xl font-bold text-amber-600">
+                        {stats?.documentCount?.toLocaleString() || "0"}
+                      </p>
+                      <p className="text-sm text-amber-700">Documentos</p>
+                    </div>
+                    <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
+                      <p className="text-2xl font-bold text-red-600">
+                        {userAlbumCount.toLocaleString()}
+                      </p>
+                      <p className="text-sm text-red-700">Álbumes</p>
                     </div>
                   </div>
                 </div>
