@@ -68,8 +68,6 @@ export default function DocumentViewer({ documentId, noHeader = false, noActions
   const fetchDocumentMetadata = async () => {
     if (!metadataUrl) return;
 
-    console.log("[DOC_VIEWER] Fetching metadata:", metadataUrl);
-
     try {
       const token = localStorage.getItem("authToken") || localStorage.getItem("token");
       const response = await fetch(metadataUrl, {
@@ -145,8 +143,6 @@ export default function DocumentViewer({ documentId, noHeader = false, noActions
 
   const testPreviewConnection = async () => {
     if (!previewUrl) return;
-
-    console.log("[DOC_VIEWER] Testing preview URL:", previewUrl);
 
     try {
       const response = await fetch(previewUrl, { method: "HEAD" });

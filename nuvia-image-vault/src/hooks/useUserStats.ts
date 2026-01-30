@@ -1,4 +1,3 @@
-// src/hooks/useUserStats.ts - VERSIÓN OPTIMIZADA
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "@/services/api.services";
 
@@ -21,15 +20,12 @@ interface UseUserStatsReturn {
   refetch: () => Promise<void>;
 }
 
-// Cache para evitar peticiones redundantes
 let statsCache: UserStats | null = null;
 let lastFetchTime = 0;
-const CACHE_DURATION = 30000; // 30 segundos de cache
+const CACHE_DURATION = 30000;
 
-/** Convierte cualquier Date a "fecha/hora" Europe/Madrid */
 const toMadridDate = (d: Date) => new Date(d.toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
 
-/** Devuelve true si dateStr cae "hoy" en Europe/Madrid */
 const isTodayMadrid = (dateStr?: string) => {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -45,12 +41,10 @@ const isTodayMadrid = (dateStr?: string) => {
   );
 };
 
-/** Intenta sacar fecha de creación con varios nombres típicos */
 const pickCreatedDate = (item: any): string | undefined => {
   return item?.createdAt || item?.uploadedAt || item?.created_at || item?.uploadDate || item?.date;
 };
 
-/** Normaliza respuestas tipo {data: []} o [] */
 const normalizeList = (res: any): any[] => {
   if (!res) return [];
   if (Array.isArray(res)) return res;
@@ -75,13 +69,9 @@ export const useUserStats = (): UseUserStatsReturn => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Función para calcular subidas de hoy de forma optimizada
   const fetchTodayUploadsFromLists = useCallback(async (): Promise<number | null> => {
     try {
-      // OPTIMIZACIÓN: Hacer las peticiones de forma secuencial en lugar de en paralelo
       let todayCount = 0;
-      
-      // Intentar cada endpoint con delay entre ellos
       const endpoints = ['/images', '/videos', '/documents'];
       
       for (const endpoint of endpoints) {
@@ -94,13 +84,11 @@ export const useUserStats = (): UseUserStatsReturn => {
             todayCount += count;
           }
           
-          // Pequeño delay entre peticiones para evitar rate limiting
           if (endpoint !== endpoints[endpoints.length - 1]) {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         } catch (err) {
           console.warn(`⚠️ No se pudo obtener ${endpoint}:`, err);
-          // Continuar con el siguiente endpoint
         }
       }
       
@@ -117,7 +105,6 @@ export const useUserStats = (): UseUserStatsReturn => {
       setLoading(true);
       setError(null);
 
-      // Usar cache si la petición es reciente
       const now = Date.now();
       if (statsCache && (now - lastFetchTime) < CACHE_DURATION) {
         setUsername(statsCache.username);
@@ -126,7 +113,6 @@ export const useUserStats = (): UseUserStatsReturn => {
         return;
       }
 
-      // 1) Obtener stats del backend
       const statsResponse = await apiService.get("/profile/stats");
 
       if (!statsResponse.success || !statsResponse.data) {
@@ -134,11 +120,8 @@ export const useUserStats = (): UseUserStatsReturn => {
       }
 
       const userData = statsResponse.data;
-
-      // 2) Solo calcular subidas de hoy si realmente es necesario
       let todayUploadsFinal = userData.todayUploads || 0;
       
-      // Si el backend no proporciona todayUploads, lo calculamos nosotros
       if (!userData.todayUploads) {
         const computedToday = await fetchTodayUploadsFromLists();
         if (computedToday !== null) {
@@ -157,7 +140,6 @@ export const useUserStats = (): UseUserStatsReturn => {
         storagePercentage: userData.storagePercentage || 0,
       };
 
-      // Actualizar cache
       statsCache = newStats;
       lastFetchTime = Date.now();
 
@@ -165,7 +147,6 @@ export const useUserStats = (): UseUserStatsReturn => {
       setStats(newStats);
       
     } catch (err: any) {
-      // Manejo específico de errores de rate limiting
       if (err.response?.status === 429) {
         setError("Demasiadas peticiones. Por favor, espera unos momentos antes de intentar nuevamente.");
       } else if (err.response?.data?.error) {
@@ -176,7 +157,6 @@ export const useUserStats = (): UseUserStatsReturn => {
         setError("No se pudieron cargar las estadísticas");
       }
       
-      // Intentar usar cache si hay un error
       if (statsCache) {
         setUsername(statsCache.username);
         setStats(statsCache);
