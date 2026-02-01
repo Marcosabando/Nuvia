@@ -43,19 +43,19 @@ interface BaseFavorite {
 interface FavoriteImage extends BaseFavorite {
   imageId: number;
   imagePath: string;
-  type: 'image';
+  type: "image";
 }
 
 interface FavoriteVideo extends BaseFavorite {
   videoId: number;
   videoPath: string;
-  type: 'video';
+  type: "video";
 }
 
 interface FavoriteDocument extends BaseFavorite {
   documentId: number;
   documentPath: string;
-  type: 'document';
+  type: "document";
 }
 
 type FavoriteItem = FavoriteImage | FavoriteVideo | FavoriteDocument;
@@ -74,7 +74,7 @@ const Favorites = () => {
   // Función para obtener la URL de la miniatura
   const getThumbnailUrl = (item: FavoriteItem): string | null => {
     if (!item.thumbnailPath) return null;
-    
+
     let cleanPath = item.thumbnailPath;
     // Limpiar la ruta si empieza con uploads/
     if (cleanPath.startsWith("uploads/")) {
@@ -84,26 +84,26 @@ const Favorites = () => {
     if (cleanPath.startsWith("thumbnails/")) {
       cleanPath = cleanPath.replace("thumbnails/", "");
     }
-    
+
     return `${API_CONFIG.UPLOADS_URL}/${cleanPath}`;
   };
 
   // Función para obtener la URL del archivo original
   const getFileUrl = (item: FavoriteItem): string => {
-    let path = '';
-    
+    let path = "";
+
     switch (item.type) {
-      case 'image':
+      case "image":
         path = (item as FavoriteImage).imagePath;
         break;
-      case 'video':
+      case "video":
         path = (item as FavoriteVideo).videoPath;
         break;
-      case 'document':
+      case "document":
         path = (item as FavoriteDocument).documentPath;
         break;
     }
-    
+
     let cleanPath = path;
     if (path.startsWith("uploads/")) {
       cleanPath = path.replace("uploads/", "");
@@ -115,12 +115,12 @@ const Favorites = () => {
   const getSafeThumbnailUrl = (item: FavoriteItem): string | null => {
     const thumbnailUrl = getThumbnailUrl(item);
     if (thumbnailUrl) return thumbnailUrl;
-    
+
     // Si no hay miniatura, para imágenes podemos usar la imagen original
-    if (item.type === 'image') {
+    if (item.type === "image") {
       return getFileUrl(item);
     }
-    
+
     // Para videos y documentos, no hay miniatura
     return null;
   };
@@ -130,83 +130,86 @@ const Favorites = () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         // Obtener imágenes favoritas
-        const imagesResponse = await apiService.get('/images?favorites=true');
+        const imagesResponse = await apiService.get("/images?favorites=true");
         // Obtener videos favoritas
-        const videosResponse = await apiService.get('/videos?favorites=true');
+        const videosResponse = await apiService.get("/videos?favorites=true");
         // Obtener documentos favoritas
-        const documentsResponse = await apiService.get('/documents?favorites=true');
-        
+        const documentsResponse = await apiService.get("/documents?favorites=true");
+
         const allFavorites: FavoriteItem[] = [];
 
         // Procesar imágenes
         if (imagesResponse.success && imagesResponse.data) {
-          const images = imagesResponse.data.map((img: any): FavoriteImage => ({
-            id: img.imageId,
-            imageId: img.imageId,
-            userId: img.userId,
-            title: img.title,
-            originalFilename: img.originalFilename,
-            filename: img.filename,
-            imagePath: img.imagePath,
-            thumbnailPath: img.thumbnailPath,
-            fileSize: img.fileSize,
-            mimeType: img.mimeType,
-            createdAt: img.createdAt,
-            isFavorite: img.isFavorite,
-            type: 'image'
-          }));
+          const images = imagesResponse.data.map(
+            (img: any): FavoriteImage => ({
+              id: img.imageId,
+              imageId: img.imageId,
+              userId: img.userId,
+              title: img.title,
+              originalFilename: img.originalFilename,
+              filename: img.filename,
+              imagePath: img.imagePath,
+              thumbnailPath: img.thumbnailPath,
+              fileSize: img.fileSize,
+              mimeType: img.mimeType,
+              createdAt: img.createdAt,
+              isFavorite: img.isFavorite,
+              type: "image",
+            }),
+          );
           allFavorites.push(...images);
         }
 
         // Procesar videos
         if (videosResponse.success && videosResponse.data) {
-          const videos = videosResponse.data.map((vid: any): FavoriteVideo => ({
-            id: vid.videoId,
-            videoId: vid.videoId,
-            userId: vid.userId,
-            title: vid.title,
-            originalFilename: vid.originalFilename,
-            filename: vid.filename,
-            videoPath: vid.videoPath,
-            thumbnailPath: vid.thumbnailPath,
-            fileSize: vid.fileSize,
-            mimeType: vid.mimeType,
-            createdAt: vid.createdAt,
-            isFavorite: vid.isFavorite,
-            type: 'video'
-          }));
+          const videos = videosResponse.data.map(
+            (vid: any): FavoriteVideo => ({
+              id: vid.videoId,
+              videoId: vid.videoId,
+              userId: vid.userId,
+              title: vid.title,
+              originalFilename: vid.originalFilename,
+              filename: vid.filename,
+              videoPath: vid.videoPath,
+              thumbnailPath: vid.thumbnailPath,
+              fileSize: vid.fileSize,
+              mimeType: vid.mimeType,
+              createdAt: vid.createdAt,
+              isFavorite: vid.isFavorite,
+              type: "video",
+            }),
+          );
           allFavorites.push(...videos);
         }
 
         // Procesar documentos
         if (documentsResponse.success && documentsResponse.data) {
-          const documents = documentsResponse.data.map((doc: any): FavoriteDocument => ({
-            id: doc.documentId,
-            documentId: doc.documentId,
-            userId: doc.userId,
-            title: doc.title,
-            originalFilename: doc.originalFilename,
-            filename: doc.filename,
-            documentPath: doc.documentPath,
-            thumbnailPath: doc.thumbnailPath,
-            fileSize: doc.fileSize,
-            mimeType: doc.mimeType,
-            createdAt: doc.createdAt,
-            isFavorite: doc.isFavorite,
-            type: 'document'
-          }));
+          const documents = documentsResponse.data.map(
+            (doc: any): FavoriteDocument => ({
+              id: doc.documentId,
+              documentId: doc.documentId,
+              userId: doc.userId,
+              title: doc.title,
+              originalFilename: doc.originalFilename,
+              filename: doc.filename,
+              documentPath: doc.documentPath,
+              thumbnailPath: doc.thumbnailPath,
+              fileSize: doc.fileSize,
+              mimeType: doc.mimeType,
+              createdAt: doc.createdAt,
+              isFavorite: doc.isFavorite,
+              type: "document",
+            }),
+          );
           allFavorites.push(...documents);
         }
 
         // Ordenar por fecha de creación (más reciente primero)
-        allFavorites.sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        allFavorites.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         setFavorites(allFavorites);
-        
       } catch (err: any) {
         console.error("❌ Error cargando favoritos:", err);
         setError(err.message || "No se pudieron cargar los favoritos");
@@ -221,31 +224,30 @@ const Favorites = () => {
   const removeFromFavorites = async (item: FavoriteItem) => {
     try {
       console.log("🗑️ Quitando de favoritos:", item);
-      
-      let endpoint = '';
-      
+
+      let endpoint = "";
+
       // Determinar el endpoint según el tipo de archivo
       switch (item.type) {
-        case 'image':
+        case "image":
           endpoint = `/images/${item.id}/favorite`;
           break;
-        case 'video':
+        case "video":
           endpoint = `/videos/${item.id}/favorite`;
           break;
-        case 'document':
+        case "document":
           endpoint = `/documents/${item.id}/favorite`;
           break;
       }
-      
-      const response = await apiService.post(endpoint);
-      
+
+      // ✅ CAMBIO: usar PATCH en lugar de POST
+      const response = await apiService.patch(endpoint);
+
       if (response.success) {
         console.log("✅ Favorito removido:", response.data);
-        
-        setFavorites(prev => prev.filter(fav => 
-          !(fav.type === item.type && fav.id === item.id)
-        ));
-        
+
+        setFavorites((prev) => prev.filter((fav) => !(fav.type === item.type && fav.id === item.id)));
+
         // Cerrar modal si el archivo seleccionado fue removido
         if (selectedFile && selectedFile.id === item.id && selectedFile.type === item.type) {
           setIsModalOpen(false);
@@ -257,43 +259,44 @@ const Favorites = () => {
     }
   };
 
-  const clearAllFavorites = async () => {
-    try {
-      if (!confirm("¿Estás seguro de que quieres quitar todos los archivos de favoritos?")) {
-        return;
-      }
-
-      console.log("🧹 Limpiando todos los favoritos...");
-      
-      const promises = favorites.map(fav => {
-        let endpoint = '';
-        
-        switch (fav.type) {
-          case 'image':
-            endpoint = `/images/${fav.id}/favorite`;
-            break;
-          case 'video':
-            endpoint = `/videos/${fav.id}/favorite`;
-            break;
-          case 'document':
-            endpoint = `/documents/${fav.id}/favorite`;
-            break;
-        }
-        
-        return apiService.post(endpoint);
-      });
-      
-      await Promise.all(promises);
-      
-      setFavorites([]);
-      setIsModalOpen(false);
-      setSelectedFile(null);
-      
-      console.log("✅ Todos los favoritos removidos");
-    } catch (error) {
-      console.error("❌ Error limpiando favoritos:", error);
+const clearAllFavorites = async () => {
+  try {
+    if (!confirm("¿Estás seguro de que quieres quitar todos los archivos de favoritos?")) {
+      return;
     }
-  };
+
+    console.log("🧹 Limpiando todos los favoritos...");
+    
+    const promises = favorites.map(fav => {
+      let endpoint = '';
+      
+      switch (fav.type) {
+        case 'image':
+          endpoint = `/images/${fav.id}/favorite`;
+          break;
+        case 'video':
+          endpoint = `/videos/${fav.id}/favorite`;
+          break;
+        case 'document':
+          endpoint = `/documents/${fav.id}/favorite`;
+          break;
+      }
+      
+      // ✅ CAMBIO: usar PATCH en lugar de POST
+      return apiService.patch(endpoint);
+    });
+    
+    await Promise.all(promises);
+    
+    setFavorites([]);
+    setIsModalOpen(false);
+    setSelectedFile(null);
+    
+    console.log("✅ Todos los favoritos removidos");
+  } catch (error) {
+    console.error("❌ Error limpiando favoritos:", error);
+  }
+};
 
   const handleFileClick = (file: FavoriteItem) => {
     setSelectedFile(file);
@@ -302,7 +305,7 @@ const Favorites = () => {
 
   const handleDownload = (file: FavoriteItem) => {
     const fileUrl = getFileUrl(file);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = fileUrl;
     link.download = file.originalFilename;
     document.body.appendChild(link);
@@ -329,7 +332,7 @@ const Favorites = () => {
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 1) return "Hace 1 día";
     if (diffDays < 7) return `Hace ${diffDays} días`;
     if (diffDays < 30) return `Hace ${Math.ceil(diffDays / 7)} semanas`;
@@ -345,9 +348,9 @@ const Favorites = () => {
 
   const stats = {
     total: favorites.length,
-    images: favorites.filter(fav => fav.type === 'image').length,
-    videos: favorites.filter(fav => fav.type === 'video').length,
-    documents: favorites.filter(fav => fav.type === 'document').length,
+    images: favorites.filter((fav) => fav.type === "image").length,
+    videos: favorites.filter((fav) => fav.type === "video").length,
+    documents: favorites.filter((fav) => fav.type === "document").length,
   };
 
   if (loading) {
@@ -393,12 +396,8 @@ const Favorites = () => {
           {/* Header Section */}
           <div className="space-y-4">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
-                Favoritos
-              </h1>
-              <p className="text-sm sm:text-base text-white/80 mt-1">
-                Tus archivos más importantes y destacados
-              </p>
+              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">Favoritos</h1>
+              <p className="text-sm sm:text-base text-white/80 mt-1">Tus archivos más importantes y destacados</p>
             </div>
 
             {/* Stats Cards */}
@@ -483,10 +482,9 @@ const Favorites = () => {
             </div>
 
             {favorites.length > 0 && (
-              <Button 
+              <Button
                 onClick={clearAllFavorites}
-                className="gap-2 bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white whitespace-nowrap"
-              >
+                className="gap-2 bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white whitespace-nowrap">
                 <Heart className="w-4 h-4" />
                 Limpiar Favoritos
               </Button>
@@ -510,12 +508,11 @@ const Favorites = () => {
                 <div className="divide-y divide-nuvia-peach/20">
                   {filteredFavorites.map((favorite) => {
                     const thumbnailUrl = getSafeThumbnailUrl(favorite);
-                    
+
                     return (
                       <div
                         key={`${favorite.type}-${favorite.id}`}
-                        className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
-                      >
+                        className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all">
                         <div className="grid grid-cols-12 gap-4 items-center">
                           {/* Archivo */}
                           <div className="col-span-12 sm:col-span-6 lg:col-span-5">
@@ -523,20 +520,21 @@ const Favorites = () => {
                               {/* Miniatura */}
                               <div className="w-16 h-16 rounded-lg overflow-hidden border border-nuvia-silver/30 shadow-sm flex-shrink-0 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
                                 {thumbnailUrl ? (
-                                  <img 
-                                    src={thumbnailUrl} 
+                                  <img
+                                    src={thumbnailUrl}
                                     alt={favorite.originalFilename}
                                     className="w-full h-full object-cover"
                                     loading="lazy"
                                     onError={(e) => {
-                                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                      (e.currentTarget as HTMLImageElement).style.display = "none";
                                       const parent = e.currentTarget.parentElement;
                                       if (parent) {
-                                        const fallbackDiv = document.createElement('div');
-                                        fallbackDiv.className = 'w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center';
-                                        if (favorite.type === 'image') {
+                                        const fallbackDiv = document.createElement("div");
+                                        fallbackDiv.className =
+                                          "w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center";
+                                        if (favorite.type === "image") {
                                           fallbackDiv.innerHTML = '<Image class="w-6 h-6 text-nuvia-mauve" />';
-                                        } else if (favorite.type === 'video') {
+                                        } else if (favorite.type === "video") {
                                           fallbackDiv.innerHTML = '<Video class="w-6 h-6 text-nuvia-mauve" />';
                                         } else {
                                           fallbackDiv.innerHTML = '<FileText class="w-6 h-6 text-nuvia-mauve" />';
@@ -547,9 +545,9 @@ const Favorites = () => {
                                   />
                                 ) : (
                                   <div className="w-full h-full bg-gradient-to-br from-nuvia-mauve/10 to-nuvia-rose/10 flex items-center justify-center">
-                                    {favorite.type === 'image' ? (
+                                    {favorite.type === "image" ? (
                                       <Image className="w-6 h-6 text-nuvia-mauve" />
-                                    ) : favorite.type === 'video' ? (
+                                    ) : favorite.type === "video" ? (
                                       <Video className="w-6 h-6 text-nuvia-mauve" />
                                     ) : (
                                       <FileText className="w-6 h-6 text-nuvia-mauve" />
@@ -558,14 +556,15 @@ const Favorites = () => {
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p 
+                                <p
                                   className="font-medium text-nuvia-deep truncate hover:text-nuvia-rose cursor-pointer transition-colors"
-                                  onClick={() => handleFileClick(favorite)}
-                                >
+                                  onClick={() => handleFileClick(favorite)}>
                                   {favorite.originalFilename}
                                 </p>
                                 <div className="sm:hidden flex flex-wrap gap-2 mt-1">
-                                  <span className="text-xs text-nuvia-mauve/70">{formatFileSize(favorite.fileSize)}</span>
+                                  <span className="text-xs text-nuvia-mauve/70">
+                                    {formatFileSize(favorite.fileSize)}
+                                  </span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
                                   <span className="text-xs text-nuvia-mauve/70 capitalize">{favorite.type}</span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
@@ -587,14 +586,17 @@ const Favorites = () => {
 
                           {/* Tipo - Solo desktop */}
                           <div className="hidden lg:block col-span-2 text-nuvia-mauve capitalize">
-                            {favorite.type === 'document' ? 'Documento' : favorite.type}
+                            {favorite.type === "document" ? "Documento" : favorite.type}
                           </div>
 
                           {/* Acciones */}
                           <div className="col-span-12 sm:col-span-1 flex justify-end sm:justify-start">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve">
                                   <MoreVertical className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -607,10 +609,9 @@ const Favorites = () => {
                                   <Download className="w-4 h-4 mr-2" />
                                   Descargar
                                 </DropdownMenuItem>
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   className="text-red-600"
-                                  onClick={() => removeFromFavorites(favorite)}
-                                >
+                                  onClick={() => removeFromFavorites(favorite)}>
                                   <Trash2 className="w-4 h-4 mr-2" />
                                   Quitar de favoritos
                                 </DropdownMenuItem>
@@ -632,9 +633,7 @@ const Favorites = () => {
               <CardContent className="py-16 text-center">
                 <Heart className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
                 <p className="text-nuvia-deep text-lg font-semibold mb-2">No tienes archivos en favoritos</p>
-                <p className="text-nuvia-mauve/70">
-                  Marca algunos archivos como favoritos para verlos aquí
-                </p>
+                <p className="text-nuvia-mauve/70">Marca algunos archivos como favoritos para verlos aquí</p>
               </CardContent>
             </Card>
           )}
@@ -644,9 +643,7 @@ const Favorites = () => {
               <CardContent className="py-16 text-center">
                 <Search className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
                 <p className="text-nuvia-deep text-lg font-semibold mb-2">No se encontraron favoritos</p>
-                <p className="text-nuvia-mauve/70">
-                  Intenta con otros términos de búsqueda o filtros
-                </p>
+                <p className="text-nuvia-mauve/70">Intenta con otros términos de búsqueda o filtros</p>
               </CardContent>
             </Card>
           )}
@@ -656,16 +653,15 @@ const Favorites = () => {
       {/* Modal para ver detalles del archivo */}
       {isModalOpen && selectedFile && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className={`bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong ${
-            selectedFile.type === 'document' ? 'max-w-4xl' : 'max-w-2xl'
-          } w-full max-h-[90vh] overflow-hidden border border-white/20`}>
+          <div
+            className={`bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong ${
+              selectedFile.type === "document" ? "max-w-4xl" : "max-w-2xl"
+            } w-full max-h-[90vh] overflow-hidden border border-white/20`}>
             {/* Header del modal - Fondo morado con texto blanco */}
             <div className="flex items-center justify-between p-6 border-b border-white/20">
-              <h3 className="text-lg font-semibold text-white truncate">
-                {selectedFile.originalFilename}
-              </h3>
+              <h3 className="text-lg font-semibold text-white truncate">{selectedFile.originalFilename}</h3>
               <div className="flex items-center gap-2">
-                {selectedFile.type === 'document' && (
+                {selectedFile.type === "document" && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -673,8 +669,7 @@ const Favorites = () => {
                       openDocumentFullscreen(selectedFile as FavoriteDocument);
                     }}
                     className="h-8 w-8 hover:bg-white/20 text-white"
-                    title="Ver en pantalla completa"
-                  >
+                    title="Ver en pantalla completa">
                     <Maximize2 className="w-4 h-4" />
                   </Button>
                 )}
@@ -685,8 +680,7 @@ const Favorites = () => {
                     setIsModalOpen(false);
                     setSelectedFile(null);
                   }}
-                  className="h-8 w-8 hover:bg-white/20 text-white"
-                >
+                  className="h-8 w-8 hover:bg-white/20 text-white">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -698,11 +692,7 @@ const Favorites = () => {
                 {/* Vista previa - Diferente para documentos */}
                 {selectedFile.type === "document" ? (
                   <div className="w-full h-[400px] rounded-lg overflow-hidden border border-nuvia-silver/30">
-                    <DocumentViewer 
-                      documentId={selectedFile.id} 
-                      noHeader={false}
-                      noActions={true}
-                    />
+                    <DocumentViewer documentId={selectedFile.id} noHeader={false} noActions={true} />
                   </div>
                 ) : (
                   <div className="w-full max-w-md aspect-square rounded-lg overflow-hidden border border-nuvia-silver/30 bg-gradient-to-br from-nuvia-deep/5 to-nuvia-peach/5">
@@ -730,7 +720,7 @@ const Favorites = () => {
                     <div>
                       <p className="text-nuvia-mauve font-medium">Tipo</p>
                       <p className="text-nuvia-deep capitalize">
-                        {selectedFile.type === 'document' ? 'Documento' : selectedFile.type}
+                        {selectedFile.type === "document" ? "Documento" : selectedFile.type}
                       </p>
                     </div>
                     <div>
@@ -748,16 +738,14 @@ const Favorites = () => {
                 <div className="flex gap-3 w-full justify-center">
                   <Button
                     onClick={() => handleDownload(selectedFile)}
-                    className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow"
-                  >
+                    className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow">
                     <Download className="w-4 h-4" />
                     Descargar
                   </Button>
                   <Button
                     onClick={() => removeFromFavorites(selectedFile)}
                     variant="outline"
-                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  >
+                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700">
                     <Trash2 className="w-4 h-4" />
                     Quitar de favoritos
                   </Button>
@@ -775,15 +763,12 @@ const Favorites = () => {
           <div className="flex items-center justify-between p-4 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white">
             <div className="flex items-center gap-3">
               <FileText className="w-6 h-6" />
-              <h2 className="text-lg font-semibold truncate">
-                {fullscreenDocument.originalFilename}
-              </h2>
+              <h2 className="text-lg font-semibold truncate">{fullscreenDocument.originalFilename}</h2>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 onClick={() => handleDownload(fullscreenDocument)}
-                className="gap-2 bg-white/20 hover:bg-white/30 text-white"
-              >
+                className="gap-2 bg-white/20 hover:bg-white/30 text-white">
                 <Download className="w-4 h-4" />
                 Descargar
               </Button>
@@ -791,8 +776,7 @@ const Favorites = () => {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsFullscreenOpen(false)}
-                className="h-8 w-8 hover:bg-white/20 text-white"
-              >
+                className="h-8 w-8 hover:bg-white/20 text-white">
                 <X className="w-4 h-4" />
               </Button>
             </div>
@@ -800,11 +784,7 @@ const Favorites = () => {
 
           {/* Contenido del documento */}
           <div className="flex-1 overflow-hidden">
-            <DocumentViewer 
-              documentId={fullscreenDocument.id} 
-              noHeader={true}
-              noActions={false}
-            />
+            <DocumentViewer documentId={fullscreenDocument.id} noHeader={true} noActions={false} />
           </div>
         </div>
       )}
