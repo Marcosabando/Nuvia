@@ -7,7 +7,7 @@ import {
   updateProfile, 
   changePassword, 
   deleteAccount 
-} from '@src/types/UserService';
+} from '@src/services/UserService';
 import authenticate from '@src/middleware/auth';
 import logger from 'jet-logger';
 
