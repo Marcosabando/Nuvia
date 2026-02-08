@@ -19,7 +19,6 @@ temp/
 # -------------------------
 # 🔐 ENTORNOS Y CONFIGS PRIVADAS
 # -------------------------
-.env
 .env.*
 config.js    # solo si contiene claves
 config/*.local.*
