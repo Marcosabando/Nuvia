@@ -6,7 +6,7 @@
     "strict": false,
     "noImplicitAny": false,
     "strictNullChecks": false,
-    "moduleResolution": "node10",
+    "moduleResolution": "node",  // ← Cambiado de "node10" a "node"
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -15,7 +15,8 @@
     "rootDir": "./",
     "baseUrl": "./",
     "paths": {
-      "@src/*": ["./src/*"]
+      "@src/*": ["./src/*"],
+      "@prisma/client": ["./node_modules/@prisma/client"]  // ← Agregado
     },
     "useUnknownInCatchVariables": false,
     "types": ["vitest/globals", "node"],
@@ -26,7 +27,8 @@
     "require": [
       "tsconfig-paths/register",
       "./config.ts"
-    ]
+    ],
+    "transpileOnly": true  // ← Agregado para mejor rendimiento
   },
   "include": [
     "src/**/*.ts",

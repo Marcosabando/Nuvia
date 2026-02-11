@@ -33,23 +33,62 @@ export const getUserFolders = async (req: Request, res: Response) => {
         itemCount: true,
         createdAt: true,
         updatedAt: true,
+        folder_documents: {
+          select: {
+            documentId: true,
+            sortOrder: true,
+            createdAt: true,
+            documents: {
+              select: {
+                documentId: true,
+                title: true,
+                description: true,
+                category: true,
+                originalFilename: true,
+                filename: true,
+                thumbnailPath: true,
+                fileSize: true,
+                mimeType: true,
+                pageCount: true,
+                isFavorite: true,
+                isPublic: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
       orderBy: [{ isSystem: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
     });
 
+    // Transformar la respuesta para un formato más limpio
+    const foldersWithDocuments = folders.map((folder) => ({
+      ...folder,
+      documents: folder.folder_documents.map((fd) => ({
+        ...fd.documents,
+        folderSortOrder: fd.sortOrder,
+        addedToFolderAt: fd.createdAt,
+      })),
+      folder_documents: undefined, // Remover la propiedad original
+    }));
+
     return res.json({
       success: true,
-      data: folders,
-      count: folders.length,
+      data: foldersWithDocuments,
+      count: foldersWithDocuments.length,
     });
   } catch (error: any) {
+    console.error("Error al obtener las carpetas:", error);
     return res.status(500).json({
       success: false,
       error: "Error al obtener las carpetas",
     });
   }
 };
-
 // ============================================================================
 // 🆕 CREAR NUEVA CARPETA
 // ============================================================================
@@ -73,10 +112,7 @@ export const createFolder = async (req: Request, res: Response) => {
     }
 
     const cleanName = String(name).trim();
-    const cleanDescription =
-      description !== undefined && description !== null
-        ? String(description).trim()
-        : "";
+    const cleanDescription = description !== undefined && description !== null ? String(description).trim() : "";
 
     const existing = await prisma.folders.findFirst({
       where: {
@@ -266,8 +302,7 @@ export const updateFolder = async (req: Request, res: Response) => {
 
     // description (si viene)
     if (description !== undefined) {
-      const cleanDescription =
-        description === null ? "" : String(description).trim();
+      const cleanDescription = description === null ? "" : String(description).trim();
       updateData.description = cleanDescription ? cleanDescription : null;
     }
 
@@ -415,6 +450,7 @@ export const getFolderContent = async (req: Request, res: Response) => {
       });
     }
 
+    // ========== IMÁGENES ==========
     const folderImages = await prisma.folder_images.findMany({
       where: { folderId: folderId },
       include: {
@@ -449,6 +485,7 @@ export const getFolderContent = async (req: Request, res: Response) => {
       orderBy: { sortOrder: "asc" },
     });
 
+    // ========== VIDEOS ==========
     const folderVideos = await prisma.folder_videos.findMany({
       where: { folderId: folderId },
       include: {
@@ -486,6 +523,35 @@ export const getFolderContent = async (req: Request, res: Response) => {
       orderBy: { sortOrder: "asc" },
     });
 
+    // ========== DOCUMENTOS (NUEVO) ==========
+    const folderDocuments = await prisma.folder_documents.findMany({
+      where: { folderId: folderId },
+      include: {
+        documents: {
+          select: {
+            documentId: true,
+            userId: true,
+            title: true,
+            description: true,
+            category: true,
+            originalFilename: true,
+            filename: true,
+            thumbnailPath: true,
+            fileSize: true,
+            mimeType: true,
+            pageCount: true,
+            isFavorite: true,
+            isPublic: true,
+            version: true,
+            createdAt: true,
+            updatedAt: true,
+            deletedAt: true,
+          },
+        },
+      },
+      orderBy: { sortOrder: "asc" },
+    });
+
     const images = folderImages
       .filter((fi) => fi.images && fi.images.deletedAt === null)
       .map((fi) => ({
@@ -500,13 +566,21 @@ export const getFolderContent = async (req: Request, res: Response) => {
         sortOrder: fv.sortOrder || 0,
       }));
 
+    const documents = folderDocuments
+      .filter((fd) => fd.documents && fd.documents.deletedAt === null)
+      .map((fd) => ({
+        ...fd.documents,
+        sortOrder: fd.sortOrder || 0,
+      }));
+
     return res.json({
       success: true,
       data: {
         folder: folder,
         images: images,
         videos: videos,
-        totalItems: images.length + videos.length,
+        documents: documents, // ← NUEVO
+        totalItems: images.length + videos.length + documents.length, // ← ACTUALIZADO
       },
     });
   } catch (error: any) {
@@ -516,6 +590,7 @@ export const getFolderContent = async (req: Request, res: Response) => {
     });
   }
 };
+
 
 // ============================================================================
 // ➕ AÑADIR IMAGEN A CARPETA
@@ -861,6 +936,195 @@ export const removeVideoFromFolder = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: "Error al eliminar video de la carpeta",
+    });
+  }
+};
+
+// ============================================================================
+// ➕ AÑADIR DOCUMENTOS A CARPETAS
+// ============================================================================
+
+export const addDocumentToFolder = async (req: Request, res: Response) => {
+  try {
+    console.log("📂 ADD DOCUMENT TO FOLDER:", req.params, req.body);
+
+    const userId = req.user?.userId;
+    const folderId = Number(req.params.id);
+    const { documentId } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado",
+      });
+    }
+
+    if (!Number.isFinite(folderId) || !Number.isFinite(documentId)) {
+      return res.status(400).json({
+        success: false,
+        error: "IDs inválidos",
+      });
+    }
+
+    // Verificar carpeta
+    const folder = await prisma.folders.findFirst({
+      where: {
+        folderId: folderId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!folder) {
+      return res.status(404).json({
+        success: false,
+        error: "Carpeta no encontrada",
+      });
+    }
+
+    // Verificar documento
+    const document = await prisma.documents.findFirst({
+      where: {
+        documentId: documentId,
+        userId: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: "Documento no encontrado",
+      });
+    }
+
+    // Verificar si ya existe
+    const existing = await prisma.folder_documents.findFirst({
+      where: {
+        folderId: folderId,
+        documentId: documentId,
+      },
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: "El documento ya está en esta carpeta",
+      });
+    }
+
+    // Obtener último orden
+    const lastItem = await prisma.folder_documents.findFirst({
+      where: { folderId: folderId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+
+    const nextOrder = (lastItem?.sortOrder || 0) + 1;
+
+    // Crear asociación
+    await prisma.folder_documents.create({
+      data: {
+        folderId: folderId,
+        documentId: documentId,
+        sortOrder: nextOrder,
+        createdAt: new Date(),
+      },
+    });
+
+    // Actualizar contador
+    await prisma.folders.update({
+      where: { folderId: folderId },
+      data: {
+        itemCount: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "Documento añadido a la carpeta exitosamente",
+    });
+  } catch (error: any) {
+    console.error("❌ Error en addDocumentToFolder:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al añadir documento a la carpeta",
+    });
+  }
+};
+
+// ============================================================================
+// ➖ ELIMINAR DOCUMENTOS DE CARPETAS
+// ============================================================================
+export const removeDocumentFromFolder = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const folderId = Number(req.params.id);
+    const documentId = Number(req.params.documentId);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Usuario no autenticado",
+      });
+    }
+
+    if (!Number.isFinite(folderId) || !Number.isFinite(documentId)) {
+      return res.status(400).json({
+        success: false,
+        error: "IDs inválidos",
+      });
+    }
+
+    // Verificar que la carpeta pertenece al usuario
+    const folder = await prisma.folders.findFirst({
+      where: {
+        folderId: folderId,
+        userId: userId,
+      },
+    });
+
+    if (!folder) {
+      return res.status(404).json({
+        success: false,
+        error: "Carpeta no encontrada",
+      });
+    }
+
+    // Eliminar la asociación
+    const result = await prisma.folder_documents.deleteMany({
+      where: {
+        folderId: folderId,
+        documentId: documentId,
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "El documento no está en esta carpeta",
+      });
+    }
+
+    // Actualizar contador
+    await prisma.folders.update({
+      where: { folderId: folderId },
+      data: {
+        itemCount: { decrement: 1 },
+        updatedAt: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "Documento eliminado de la carpeta",
+    });
+  } catch (error: any) {
+    console.error("❌ Error en removeDocumentFromFolder:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al eliminar documento de la carpeta",
     });
   }
 };
