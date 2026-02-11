@@ -5,6 +5,7 @@ import ImageGallery from "@/components/ImageGallery";
 import { VideoGallery } from "@/components/VideoGallery";
 import DocumentsGallery from "@/components/DocumentsGallery";
 import { UploadZone } from "@/components/UploadZone";
+import { StorageIndicator } from "@/components/ui/storageIndicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,23 +15,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const Home = () => {
   const [viewMode] = useState<"grid" | "list">("grid");
-
-  // ✅ incluir refetch para refrescar stats
   const { username, stats, loading, error, refetch } = useUserStats();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState("images");
 
-  // ✅ refresca galerías + stats + sidebar
   const handleUploadComplete = async () => {
     setRefreshKey((prev) => prev + 1);
-
-    // refresca stats (cards)
     await refetch();
-
-    // refresca sidebar (carpetas + itemCount)
     window.dispatchEvent(new Event("folders:refresh"));
-
+    
     if (activeTab === "upload") {
       setActiveTab("images");
     }
@@ -40,14 +34,7 @@ const Home = () => {
     setActiveTab(value);
   };
 
-  const storagePercentage =
-    typeof (stats as any)?.storagePercentage === "number"
-      ? (stats as any).storagePercentage
-      : stats?.storageLimit
-      ? (stats.storageUsed / stats.storageLimit) * 100
-      : 0;
-
- return (
+  return (
     <AppLayout>
       <div className="min-h-screen bg-gradient-to-br from-nuvia-deep via-nuvia-mauve to-nuvia-rose">
         <div className="max-w-7xl mx-auto space-y-8 p-4 sm:p-6">
@@ -68,22 +55,9 @@ const Home = () => {
               </div>
             )}
 
-            {/* Quick Stats - Ajustado para móviles */}
+            {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-xl sm:rounded-2xl hover:shadow-nuvia-glow transition-all">
-                <CardContent className="p-3 sm:p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs sm:text-sm text-nuvia-deep/70 font-medium truncate">Imágenes Totales</p>
-                    <div className="p-1 sm:p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
-                      <Images className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
-                    </div>
-                  </div>
-                  <p className="text-lg sm:text-xl md:text-2xl font-bold mt-1 sm:mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.totalImages}
-                  </p>
-                </CardContent>
-              </Card>
-
+              
               <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-xl sm:rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center justify-between">
@@ -101,13 +75,28 @@ const Home = () => {
               <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-xl sm:rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-3 sm:p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs sm:text-sm text-nuvia-deep/70 font-medium truncate">Almacenamiento</p>
+                    <p className="text-xs sm:text-sm text-nuvia-deep/70 font-medium truncate">Imágenes</p>
+                    <div className="p-1 sm:p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
+                      <Images className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                    </div>
+                  </div>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold mt-1 sm:mt-2 text-nuvia-deep">
+                    {loading ? "..." : stats.totalImages}
+                  </p>
+                </CardContent>
+              </Card>
+
+
+              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-xl sm:rounded-2xl hover:shadow-nuvia-glow transition-all">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs sm:text-sm text-nuvia-deep/70 font-medium truncate">Videos</p>
                     <div className="p-1 sm:p-2 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft">
                       <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                     </div>
                   </div>
                   <p className="text-lg sm:text-xl md:text-2xl font-bold mt-1 sm:mt-2 text-nuvia-deep truncate">
-                    {loading ? "..." : `${stats.storageUsed} GB`}
+                    {loading ? "..." : stats.totalVideos}
                   </p>
                 </CardContent>
               </Card>
@@ -128,7 +117,7 @@ const Home = () => {
             </div>
           </div>
 
-          {/* Main Content Tabs - FIXED RESPONSIVE */}
+          {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4 sm:space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
               <div className="w-full sm:w-auto">
@@ -170,7 +159,7 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Contenido de las pestañas - Se mantiene igual */}
+            {/* Contenido de las pestañas */}
             <TabsContent value="images" className="space-y-4 sm:space-y-6 animate-fade-in">
               <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-medium rounded-xl sm:rounded-2xl">
                 <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 p-4 sm:p-6">
@@ -243,30 +232,12 @@ const Home = () => {
             </TabsContent>
           </Tabs>
 
-          {/* Storage Usage */}
-          <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-soft rounded-xl sm:rounded-2xl">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-nuvia-deep mb-2 text-sm sm:text-base">Uso de Almacenamiento</h3>
-                  <div className="w-full bg-nuvia-silver/30 rounded-full h-1.5 sm:h-2">
-                    <div
-                      className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-1.5 sm:h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(storagePercentage || 0, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs sm:text-sm text-nuvia-deep/60 mt-1 sm:mt-2">
-                    <span>{stats.storageUsed} GB usados</span>
-                    <span>{stats.storageLimit} GB disponibles</span>
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0 mt-2 sm:mt-0">
-                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-nuvia-deep">{stats.storageUsed} GB</p>
-                  <p className="text-xs sm:text-sm text-nuvia-deep/60">de {stats.storageLimit} GB</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Storage Usage - Reemplazado por StorageIndicator */}
+          <StorageIndicator 
+            variant="card" 
+            showRefresh={true}
+            showBreakdown={true}
+          />
         </div>
       </div>
     </AppLayout>

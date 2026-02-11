@@ -405,7 +405,7 @@ const clearAllFavorites = async () => {
               <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-nuvia-deep/70 font-medium">Total Favoritos</p>
+                    <p className="text-sm text-nuvia-deep/70 font-medium">Favoritos</p>
                     <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
                       <Heart className="w-4 h-4 text-white" />
                     </div>

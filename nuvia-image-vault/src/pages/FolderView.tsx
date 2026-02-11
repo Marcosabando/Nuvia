@@ -18,6 +18,11 @@ import {
   AlertCircle,
   Settings,
   Edit3,
+  File,
+  FileImage,
+  FileCode,
+  Archive,
+  FileType,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -42,7 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface FolderItem {
   id: number;
-  type: "image" | "video";
+  type: "image" | "video" | "document";
   itemId: number;
   userId: number;
   title: string;
@@ -54,6 +59,8 @@ interface FolderItem {
   mimeType: string;
   createdAt: string;
   isFavorite: boolean;
+  category?: string;
+  pageCount?: number;
 }
 
 const FolderView = () => {
@@ -94,6 +101,44 @@ const FolderView = () => {
     return `${value} ${sizes[i]}`;
   };
 
+  // ✅ Función para obtener el icono según el tipo de documento
+  const getDocumentIcon = (category?: string, mimeType?: string) => {
+    if (mimeType?.includes("pdf")) return FileText;
+    if (mimeType?.includes("word") || mimeType?.includes("document")) return FileType;
+    if (mimeType?.includes("spreadsheet") || mimeType?.includes("excel")) return File;
+    if (mimeType?.includes("presentation") || mimeType?.includes("powerpoint")) return FileImage;
+    if (mimeType?.includes("zip") || mimeType?.includes("rar") || mimeType?.includes("archive")) return Archive;
+    if (mimeType?.includes("text") || mimeType?.includes("markdown")) return FileText;
+    if (mimeType?.includes("json") || mimeType?.includes("xml") || mimeType?.includes("code")) return FileCode;
+
+    switch (category) {
+      case "office":
+      case "text":
+        return FileText;
+      case "design":
+        return FileImage;
+      case "code":
+        return FileCode;
+      case "archive":
+        return Archive;
+      default:
+        return File;
+    }
+  };
+
+  // ✅ Función para obtener el color según categoría
+  const getCategoryColor = (category?: string) => {
+    const colors = {
+      office: "#3B82F6",
+      text: "#10B981",
+      design: "#8B5CF6",
+      code: "#F59E0B",
+      archive: "#6B7280",
+      other: "#9CA3AF",
+    };
+    return colors[category as keyof typeof colors] || colors.other;
+  };
+
   useEffect(() => {
     const fetchFolderContent = async () => {
       if (!folderId || folderId === "undefined") {
@@ -109,12 +154,13 @@ const FolderView = () => {
         const response = await apiService.get(`/folders/${folderId}/content`);
 
         if (response.success && response.data) {
-          const { folder, images, videos } = response.data;
+          const { folder, images, videos, documents } = response.data;
 
           setFolderInfo(folder);
 
           const allItems: FolderItem[] = [];
 
+          // ✅ Procesar imágenes
           if (images && Array.isArray(images)) {
             const imageItems = images.map((img: any): FolderItem => ({
               id: img.imageId,
@@ -134,6 +180,7 @@ const FolderView = () => {
             allItems.push(...imageItems);
           }
 
+          // ✅ Procesar vídeos
           if (videos && Array.isArray(videos)) {
             const videoItems = videos.map((vid: any): FolderItem => ({
               id: vid.videoId,
@@ -151,6 +198,28 @@ const FolderView = () => {
               isFavorite: vid.isFavorite,
             }));
             allItems.push(...videoItems);
+          }
+
+          // ✅ Procesar documentos (NUEVO)
+          if (documents && Array.isArray(documents)) {
+            const documentItems = documents.map((doc: any): FolderItem => ({
+              id: doc.documentId,
+              type: "document",
+              itemId: doc.documentId,
+              userId: doc.userId,
+              title: doc.title || doc.originalFilename,
+              originalFilename: doc.originalFilename,
+              filename: doc.filename,
+              filePath: doc.documentPath,
+              thumbnailPath: doc.thumbnailPath,
+              fileSize: Number(doc.fileSize) || 0,
+              mimeType: doc.mimeType,
+              createdAt: doc.createdAt,
+              isFavorite: doc.isFavorite,
+              category: doc.category,
+              pageCount: doc.pageCount,
+            }));
+            allItems.push(...documentItems);
           }
 
           allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -179,6 +248,7 @@ const FolderView = () => {
 
     const numericFolderId = Number(folderId);
 
+    // Actualización optimista
     setFolderItems((prev) =>
       prev.filter((x) => !(x.type === itemToDelete.type && x.itemId === itemToDelete.itemId))
     );
@@ -192,17 +262,21 @@ const FolderView = () => {
     try {
       setIsDeleting(true);
 
-      const endpoint =
-        itemToDelete.type === "image"
-          ? `/folders/${folderId}/images/${itemToDelete.itemId}`
-          : `/folders/${folderId}/videos/${itemToDelete.itemId}`;
+      // ✅ Determinar el endpoint según el tipo
+      let endpoint = "";
+      if (itemToDelete.type === "image") {
+        endpoint = `/folders/${folderId}/images/${itemToDelete.itemId}`;
+      } else if (itemToDelete.type === "video") {
+        endpoint = `/folders/${folderId}/videos/${itemToDelete.itemId}`;
+      } else if (itemToDelete.type === "document") {
+        endpoint = `/folders/${folderId}/documents/${itemToDelete.itemId}`;
+      }
 
       const response = await apiService.delete(endpoint);
 
       if (response.success) {
         setDeleteItemModalOpen(false);
         setItemToDelete(null);
-
         showToast(true, "Archivo quitado de la carpeta");
         return;
       }
@@ -211,6 +285,7 @@ const FolderView = () => {
     } catch (error: any) {
       console.error("Error removiendo archivo:", error);
 
+      // Revertir cambio optimista
       setFolderItems((prev) => (itemToDelete ? [itemToDelete, ...prev] : prev));
 
       window.dispatchEvent(
@@ -283,6 +358,7 @@ const FolderView = () => {
     total: folderItems.length,
     images: folderItems.filter((item) => item.type === "image").length,
     videos: folderItems.filter((item) => item.type === "video").length,
+    documents: folderItems.filter((item) => item.type === "document").length,
     totalSize: folderItems.reduce((acc, item) => acc + item.fileSize, 0),
   };
 
@@ -292,20 +368,18 @@ const FolderView = () => {
         return "text-nuvia-mauve";
       case "image":
         return "text-nuvia-peach";
+      case "document":
+        return "text-nuvia-deep";
       default:
         return "text-muted-foreground";
     }
   };
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case "video":
-        return VideoIcon;
-      case "image":
-        return ImageIcon;
-      default:
-        return FileText;
-    }
+  const getTypeIcon = (item: FolderItem) => {
+    if (item.type === "video") return VideoIcon;
+    if (item.type === "image") return ImageIcon;
+    if (item.type === "document") return getDocumentIcon(item.category, item.mimeType);
+    return FileText;
   };
 
   if (loading) {
@@ -434,10 +508,10 @@ const FolderView = () => {
           <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-nuvia-mauve">Espacio usado</p>
+                <p className="text-sm text-nuvia-mauve">Documentos</p>
                 <FileText className="w-5 h-5 text-nuvia-silver" />
               </div>
-              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{formatFileSize(stats.totalSize)}</p>
+              <p className="text-2xl font-bold mt-2 text-nuvia-deep">{stats.documents}</p>
             </CardContent>
           </Card>
         </div>
@@ -465,6 +539,7 @@ const FolderView = () => {
               <DropdownMenuItem onClick={() => setFilterType("all")}>Todos</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setFilterType("image")}>Imágenes</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setFilterType("video")}>Vídeos</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterType("document")}>Documentos</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -486,7 +561,7 @@ const FolderView = () => {
 
                 <tbody>
                   {filteredItems.map((item) => {
-                    const Icon = getTypeIcon(item.type);
+                    const Icon = getTypeIcon(item);
 
                     return (
                       <tr
@@ -521,8 +596,11 @@ const FolderView = () => {
                                   }}
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-nuvia-deep/10 to-nuvia-silver/10 flex items-center justify-center">
-                                  <Icon className={`w-6 h-6 ${getTypeColor(item.type)}`} />
+                                <div 
+                                  className="w-full h-full flex items-center justify-center"
+                                  style={{ backgroundColor: `${getCategoryColor(item.category)}15` }}
+                                >
+                                  <Icon className={`w-6 h-6`} style={{ color: getCategoryColor(item.category) }} />
                                 </div>
                               )}
                             </div>
@@ -534,6 +612,9 @@ const FolderView = () => {
                               </p>
                               {item.title !== item.originalFilename && (
                                 <p className="text-xs text-nuvia-silver mt-1">Original: {item.originalFilename}</p>
+                              )}
+                              {item.pageCount && (
+                                <p className="text-xs text-nuvia-silver mt-1">{item.pageCount} páginas</p>
                               )}
                             </div>
                           </div>
