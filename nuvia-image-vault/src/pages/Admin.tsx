@@ -1,6 +1,7 @@
 // src/pages/Admin.tsx
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
+import { StorageIndicator } from "@/components/ui/storageIndicator"; // Importar el componente
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Añadir Tabs
 
 interface User {
   id: string;
@@ -102,6 +104,7 @@ const Admin = () => {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [activeTab, setActiveTab] = useState("overview"); // Para las tabs
 
   const [usersPerPage, setUsersPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -583,451 +586,623 @@ const Admin = () => {
           )}
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Usuarios</p>
-                  <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.totalUsers}
-                  </p>
-                </div>
-                <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft flex-shrink-0">
-                  <Users className="w-4 h-4 md:w-6 md:h-6 text-white" />
-                </div>
-              </div>
-              <div className="mt-2">
-                <Badge variant="secondary" className="text-xs">
-                  {stats.activeUsers} activos
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Tabs para diferentes secciones */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid grid-cols-3 w-full bg-white/80 backdrop-blur-sm border border-nuvia-silver/30 rounded-xl p-1">
+            <TabsTrigger 
+              value="overview" 
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300 rounded-lg py-2"
+            >
+              <Database className="w-4 h-4 mr-2" />
+              Resumen
+            </TabsTrigger>
+            <TabsTrigger 
+              value="users" 
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300 rounded-lg py-2"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Usuarios
+            </TabsTrigger>
+            <TabsTrigger 
+              value="storage" 
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-nuvia-mauve data-[state=active]:to-nuvia-rose data-[state=active]:text-white transition-all duration-300 rounded-lg py-2"
+            >
+              <HardDrive className="w-4 h-4 mr-2" />
+              Almacenamiento
+            </TabsTrigger>
+          </TabsList>
 
-          <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Almacenamiento</p>
-                  <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
-                    {loading ? "..." : `${stats.usedStorage}GB`}
-                  </p>
-                </div>
-                <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-warm shadow-nuvia-soft flex-shrink-0">
-                  <HardDrive className="w-4 h-4 md:w-6 md:h-6 text-white" />
-                </div>
-              </div>
-              <div className="mt-2">
-                <div className="w-full bg-nuvia-silver/30 rounded-full h-1.5">
-                  <div
-                    className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-1.5 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min((stats.usedStorage / stats.totalStorage) * 100, 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Pestaña: Resumen */}
+          <TabsContent value="overview" className="space-y-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+                <CardContent className="p-3 md:p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Usuarios</p>
+                      <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
+                        {loading ? "..." : stats.totalUsers}
+                      </p>
+                    </div>
+                    <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft flex-shrink-0">
+                      <Users className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {stats.activeUsers} activos
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Multimedia</p>
-                  <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.totalImages + stats.totalVideos}
-                  </p>
-                </div>
-                <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft flex-shrink-0">
-                  <Database className="w-4 h-4 md:w-6 md:h-6 text-white" />
-                </div>
-              </div>
-              <div className="mt-2 flex items-center gap-2 text-xs text-nuvia-deep/60 flex-wrap">
-                <span>{stats.totalImages} img</span>
-                <span>•</span>
-                <span>{stats.totalVideos} vid</span>
-              </div>
-            </CardContent>
-          </Card>
+              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+                <CardContent className="p-3 md:p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Almacenamiento Total</p>
+                      <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
+                        {loading ? "..." : `${stats.usedStorage}GB`}
+                      </p>
+                    </div>
+                    <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-warm shadow-nuvia-soft flex-shrink-0">
+                      <HardDrive className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <div className="w-full bg-nuvia-silver/30 rounded-full h-1.5">
+                      <div
+                        className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-1.5 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min((stats.usedStorage / stats.totalStorage) * 100, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Subidas Hoy</p>
-                  <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
-                    {loading ? "..." : stats.uploadsToday}
-                  </p>
-                </div>
-                <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-dawn shadow-nuvia-soft flex-shrink-0">
-                  <Upload className="w-4 h-4 md:w-6 md:h-6 text-white" />
-                </div>
-              </div>
-              <div className="mt-2">
-                <Badge variant="secondary" className="text-xs">
-                  {stats.totalImages + stats.totalVideos} en total
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+                <CardContent className="p-3 md:p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Total Multimedia</p>
+                      <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
+                        {loading ? "..." : stats.totalImages + stats.totalVideos}
+                      </p>
+                    </div>
+                    <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft flex-shrink-0">
+                      <Database className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-nuvia-deep/60 flex-wrap">
+                    <span>{stats.totalImages} img</span>
+                    <span>•</span>
+                    <span>{stats.totalVideos} vid</span>
+                  </div>
+                </CardContent>
+              </Card>
 
-        {/* Users Table */}
-        <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
-          <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 p-4 md:p-6">
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold text-base md:text-lg">
-                  <Users className="w-4 h-4 md:w-5 md:h-5 text-nuvia-mauve flex-shrink-0" />
-                  <span className="truncate">Gestión de Usuarios</span>
-                  <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0 text-xs">
-                    {sortedUsers.length}
-                  </Badge>
-                </CardTitle>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-nuvia-deep/40" />
-                  <Input
-                    placeholder="Buscar usuarios..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 bg-white/50 border-nuvia-silver/30 text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Filtros y ordenamiento */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1">
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-full bg-white/50 border-nuvia-silver/30">
-                      <Filter className="w-4 h-4 mr-2" />
-                      <SelectValue placeholder="Filtrar por estado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos los estados</SelectItem>
-                      <SelectItem value="active">Activos</SelectItem>
-                      <SelectItem value="suspended">Suspendidos</SelectItem>
-                      <SelectItem value="inactive">Inactivos</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex-1">
-                  <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="w-full bg-white/50 border-nuvia-silver/30">
-                      <ArrowUpDown className="w-4 h-4 mr-2" />
-                      <SelectValue placeholder="Ordenar por" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="createdAt">Fecha de registro</SelectItem>
-                      <SelectItem value="username">Nombre de usuario</SelectItem>
-                      <SelectItem value="email">Email</SelectItem>
-                      <SelectItem value="storageUsed">Almacenamiento usado</SelectItem>
-                      <SelectItem value="totalImages">Número de imágenes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                  className="bg-white/50 border-nuvia-silver/30">
-                  <ArrowUpDown className={`w-4 h-4 transition-transform ${sortOrder === "desc" ? "rotate-180" : ""}`} />
-                </Button>
-              </div>
+              <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+                <CardContent className="p-3 md:p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium truncate">Subidas Hoy</p>
+                      <p className="text-xl md:text-2xl lg:text-3xl font-bold mt-1 md:mt-2 text-nuvia-deep">
+                        {loading ? "..." : stats.uploadsToday}
+                      </p>
+                    </div>
+                    <div className="p-2 md:p-3 rounded-lg bg-gradient-nuvia-dawn shadow-nuvia-soft flex-shrink-0">
+                      <Upload className="w-4 h-4 md:w-6 md:h-6 text-white" />
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {stats.totalImages + stats.totalVideos} en total
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-nuvia-silver/20">
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Usuario</TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden md:table-cell">
-                      Email
-                    </TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Estado</TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden lg:table-cell">
-                      Multimedia
-                    </TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden xl:table-cell">
-                      Almacenamiento
-                    </TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden xl:table-cell">
-                      Último Acceso
-                    </TableHead>
-                    <TableHead className="text-nuvia-deep/70 text-xs md:text-sm text-right whitespace-nowrap">
-                      Acciones
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-nuvia-deep/60 text-sm">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <div className="flex items-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-nuvia-mauve" />
-                            <span>Cargando datos...</span>
-                          </div>
-                          <p className="text-xs text-nuvia-deep/40">Obteniendo información de usuarios</p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : sortedUsers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-nuvia-deep/60">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <Users className="w-12 h-12 text-nuvia-silver/40" />
-                          <div className="space-y-1">
-                            <p className="font-medium">
-                              {searchTerm || filterStatus !== "all"
-                                ? "No se encontraron usuarios con los filtros aplicados"
-                                : "No hay usuarios registrados"}
-                            </p>
-                            {(searchTerm || filterStatus !== "all") && (
-                              <p className="text-sm text-nuvia-deep/40">
-                                Intenta con otros términos o ajusta los filtros
-                              </p>
-                            )}
-                          </div>
-                          {(searchTerm || filterStatus !== "all") && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setSearchTerm("");
-                                setFilterStatus("all");
-                              }}
-                              className="mt-2">
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              Limpiar filtros
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    // 🔥 CORRECCIÓN PRINCIPAL: Usar sortedUsers en lugar de currentUsers
-                    sortedUsers.map((user) => (
-                      <TableRow
-                        key={user.id}
-                        className="border-nuvia-silver/10 hover:bg-nuvia-peach/5 transition-colors duration-150">
-                        <TableCell className="font-medium text-nuvia-deep">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center border border-nuvia-silver/30">
-                              <span className="text-sm font-semibold text-nuvia-deep">
-                                {user.username.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                            <div className="min-w-0">
-                              <div className="max-w-[120px] md:max-w-[150px] truncate text-sm font-medium">
-                                {user.username}
+
+            {/* Vista rápida de usuarios */}
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 p-4 md:p-6">
+                <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold text-base md:text-lg">
+                  <Users className="w-5 h-5 text-nuvia-mauve" />
+                  Vista Rápida de Usuarios
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 md:p-6">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-nuvia-silver/20">
+                        <TableHead className="text-nuvia-deep/70">Usuario</TableHead>
+                        <TableHead className="text-nuvia-deep/70">Estado</TableHead>
+                        <TableHead className="text-nuvia-deep/70">Almacenamiento</TableHead>
+                        <TableHead className="text-nuvia-deep/70">Multimedia</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedUsers.slice(0, 5).map((user) => (
+                        <TableRow key={user.id} className="border-nuvia-silver/10">
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center">
+                                <span className="text-sm font-semibold text-nuvia-deep">
+                                  {user.username.charAt(0).toUpperCase()}
+                                </span>
                               </div>
-                              <div className="text-xs text-nuvia-deep/60 md:hidden truncate">{user.email}</div>
+                              <span className="truncate max-w-[120px]">{user.username}</span>
                             </div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-nuvia-deep/70 text-sm hidden md:table-cell">
-                          <div className="max-w-[180px] lg:max-w-[220px] truncate flex items-center gap-2">
-                            <span>{user.email}</span>
-                            {user.role === "admin" && (
-                              <Badge className="bg-gradient-nuvia-royal text-[10px] px-1.5 py-0 border-0">Admin</Badge>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${
-                                user.status === "active"
-                                  ? "bg-green-500"
-                                  : user.status === "suspended"
-                                  ? "bg-red-500"
-                                  : "bg-gray-500"
-                              }`}
-                            />
-                            <Badge
-                              className={`${getStatusColor(user.status)} text-xs whitespace-nowrap px-2 py-1 border`}>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`${getStatusColor(user.status)} text-xs`}>
                               {getStatusText(user.status)}
                             </Badge>
-                          </div>
-                        </TableCell>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {user.storageUsed.toFixed(1)} / {user.storageLimit} GB
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-nuvia-mauve">{user.totalImages} img</span>
+                              <span className="text-nuvia-rose">{user.totalVideos} vid</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="mt-4 text-center">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setActiveTab("users")}
+                    className="text-nuvia-mauve hover:text-nuvia-rose"
+                  >
+                    Ver todos los usuarios ({sortedUsers.length})
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-                        <TableCell className="text-nuvia-deep/70 hidden lg:table-cell">
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-1.5">
-                              <div className="p-1.5 rounded-md bg-nuvia-mauve/10">
-                                <Image className="w-3.5 h-3.5 text-nuvia-mauve" />
+          {/* Pestaña: Usuarios (mantiene la tabla completa) */}
+          <TabsContent value="users" className="space-y-6">
+            <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+              <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 p-4 md:p-6">
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold text-base md:text-lg">
+                      <Users className="w-4 h-4 md:w-5 md:h-5 text-nuvia-mauve flex-shrink-0" />
+                      <span className="truncate">Gestión de Usuarios</span>
+                      <Badge variant="secondary" className="ml-2 bg-nuvia-mauve/20 text-nuvia-mauve border-0 text-xs">
+                        {sortedUsers.length}
+                      </Badge>
+                    </CardTitle>
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-nuvia-deep/40" />
+                      <Input
+                        placeholder="Buscar usuarios..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 bg-white/50 border-nuvia-silver/30 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Filtros y ordenamiento */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex-1">
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger className="w-full bg-white/50 border-nuvia-silver/30">
+                          <Filter className="w-4 h-4 mr-2" />
+                          <SelectValue placeholder="Filtrar por estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos los estados</SelectItem>
+                          <SelectItem value="active">Activos</SelectItem>
+                          <SelectItem value="suspended">Suspendidos</SelectItem>
+                          <SelectItem value="inactive">Inactivos</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex-1">
+                      <Select value={sortBy} onValueChange={setSortBy}>
+                        <SelectTrigger className="w-full bg-white/50 border-nuvia-silver/30">
+                          <ArrowUpDown className="w-4 h-4 mr-2" />
+                          <SelectValue placeholder="Ordenar por" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="createdAt">Fecha de registro</SelectItem>
+                          <SelectItem value="username">Nombre de usuario</SelectItem>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="storageUsed">Almacenamiento usado</SelectItem>
+                          <SelectItem value="totalImages">Número de imágenes</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                      className="bg-white/50 border-nuvia-silver/30">
+                      <ArrowUpDown className={`w-4 h-4 transition-transform ${sortOrder === "desc" ? "rotate-180" : ""}`} />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-nuvia-silver/20">
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Usuario</TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden md:table-cell">
+                          Email
+                        </TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap">Estado</TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden lg:table-cell">
+                          Multimedia
+                        </TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden xl:table-cell">
+                          Almacenamiento
+                        </TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm whitespace-nowrap hidden xl:table-cell">
+                          Último Acceso
+                        </TableHead>
+                        <TableHead className="text-nuvia-deep/70 text-xs md:text-sm text-right whitespace-nowrap">
+                          Acciones
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-nuvia-deep/60 text-sm">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <div className="flex items-center gap-2">
+                                <RefreshCw className="w-4 h-4 animate-spin text-nuvia-mauve" />
+                                <span>Cargando datos...</span>
                               </div>
-                              <div>
-                                <div className="text-sm font-medium">{user.totalImages}</div>
-                                <div className="text-[10px] text-nuvia-deep/50">Imágenes</div>
-                              </div>
+                              <p className="text-xs text-nuvia-deep/40">Obteniendo información de usuarios</p>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <div className="p-1.5 rounded-md bg-nuvia-rose/10">
-                                <Video className="w-3.5 h-3.5 text-nuvia-rose" />
+                          </TableCell>
+                        </TableRow>
+                      ) : sortedUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-12 text-nuvia-deep/60">
+                            <div className="flex flex-col items-center justify-center gap-3">
+                              <Users className="w-12 h-12 text-nuvia-silver/40" />
+                              <div className="space-y-1">
+                                <p className="font-medium">
+                                  {searchTerm || filterStatus !== "all"
+                                    ? "No se encontraron usuarios con los filtros aplicados"
+                                    : "No hay usuarios registrados"}
+                                </p>
+                                {(searchTerm || filterStatus !== "all") && (
+                                  <p className="text-sm text-nuvia-deep/40">
+                                    Intenta con otros términos o ajusta los filtros
+                                  </p>
+                                )}
                               </div>
-                              <div>
-                                <div className="text-sm font-medium">{user.totalVideos}</div>
-                                <div className="text-[10px] text-nuvia-deep/50">Videos</div>
+                              {(searchTerm || filterStatus !== "all") && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSearchTerm("");
+                                    setFilterStatus("all");
+                                  }}
+                                  className="mt-2">
+                                  <RefreshCw className="w-4 h-4 mr-2" />
+                                  Limpiar filtros
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        sortedUsers.map((user) => (
+                          <TableRow
+                            key={user.id}
+                            className="border-nuvia-silver/10 hover:bg-nuvia-peach/5 transition-colors duration-150">
+                            <TableCell className="font-medium text-nuvia-deep">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center border border-nuvia-silver/30">
+                                  <span className="text-sm font-semibold text-nuvia-deep">
+                                    {user.username.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="max-w-[120px] md:max-w-[150px] truncate text-sm font-medium">
+                                    {user.username}
+                                  </div>
+                                  <div className="text-xs text-nuvia-deep/60 md:hidden truncate">{user.email}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-nuvia-deep/70 text-sm hidden md:table-cell">
+                              <div className="max-w-[180px] lg:max-w-[220px] truncate flex items-center gap-2">
+                                <span>{user.email}</span>
+                                {user.role === "admin" && (
+                                  <Badge className="bg-gradient-nuvia-royal text-[10px] px-1.5 py-0 border-0">Admin</Badge>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className={`w-2 h-2 rounded-full ${
+                                    user.status === "active"
+                                      ? "bg-green-500"
+                                      : user.status === "suspended"
+                                      ? "bg-red-500"
+                                      : "bg-gray-500"
+                                  }`}
+                                />
+                                <Badge
+                                  className={`${getStatusColor(user.status)} text-xs whitespace-nowrap px-2 py-1 border`}>
+                                  {getStatusText(user.status)}
+                                </Badge>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-nuvia-deep/70 hidden lg:table-cell">
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="p-1.5 rounded-md bg-nuvia-mauve/10">
+                                    <Image className="w-3.5 h-3.5 text-nuvia-mauve" />
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium">{user.totalImages}</div>
+                                    <div className="text-[10px] text-nuvia-deep/50">Imágenes</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="p-1.5 rounded-md bg-nuvia-rose/10">
+                                    <Video className="w-3.5 h-3.5 text-nuvia-rose" />
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium">{user.totalVideos}</div>
+                                    <div className="text-[10px] text-nuvia-deep/50">Videos</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-nuvia-deep/70 hidden xl:table-cell">
+                              <div className="space-y-2 min-w-[120px]">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs font-medium">
+                                    {user.storageUsed.toFixed(1)} / {user.storageLimit} GB
+                                  </span>
+                                  <span className="text-xs text-nuvia-deep/60">
+                                    {Math.round((user.storageUsed / user.storageLimit) * 100)}%
+                                  </span>
+                                </div>
+                                <div className="w-full bg-nuvia-silver/20 rounded-full h-2">
+                                  <div
+                                    className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min((user.storageUsed / user.storageLimit) * 100, 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex justify-between text-[10px] text-nuvia-deep/50">
+                                  <span>Disponible: {(user.storageLimit - user.storageUsed).toFixed(1)} GB</span>
+                                  <span
+                                    className={`${
+                                      user.storageUsed / user.storageLimit > 0.8 ? "text-red-500 font-medium" : ""
+                                    }`}>
+                                    {user.storageUsed / user.storageLimit > 0.8 && "⚠️ Límite cercano"}
+                                  </span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-nuvia-deep/70 text-sm hidden xl:table-cell">
+                              <div className="space-y-1">
+                                <div className="font-medium">{formatDate(user.lastLogin)}</div>
+                                <div className="text-xs text-nuvia-deep/50 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {new Date(user.lastLogin).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </div>
+                                <div className="text-[10px] text-nuvia-deep/30">
+                                  Desde registro: {formatDate(user.createdAt)}
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleViewUser(user)}
+                                  className="h-8 w-8 hover:bg-nuvia-peach/20"
+                                  title="Ver detalles">
+                                  <Eye className="h-4 w-4 text-nuvia-deep/70" />
+                                </Button>
+
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-56">
+                                    <DropdownMenuLabel className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                                      <span>{user.username}</span>
+                                      {user.role === "admin" && (
+                                        <Badge variant="outline" className="ml-auto text-[10px]">
+                                          Admin
+                                        </Badge>
+                                      )}
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+
+                                    <DropdownMenuItem onClick={() => handleViewUser(user)} className="cursor-pointer">
+                                      <Eye className="mr-2 h-4 w-4" />
+                                      <span>Ver detalles completos</span>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedUser(user);
+                                        setNewStorageLimit(user.storageLimit.toString());
+                                        setShowStorageDialog(true);
+                                      }}
+                                      className="cursor-pointer">
+                                      <HardDrive className="mr-2 h-4 w-4" />
+                                      <div className="flex-1">
+                                        <div>Cambiar almacenamiento</div>
+                                        <div className="text-xs text-nuvia-deep/60">Actual: {user.storageLimit} GB</div>
+                                      </div>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem
+                                      onClick={() => handleSuspendUser(user.userId?.toString() || user.id)}
+                                      className={`cursor-pointer ${
+                                        user.status === "active"
+                                          ? "text-amber-600 hover:text-amber-700"
+                                          : "text-green-600 hover:text-green-700"
+                                      }`}>
+                                      <UserX className="mr-2 h-4 w-4" />
+                                      {user.status === "active" ? "Suspender usuario" : "Reactivar usuario"}
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuSeparator />
+
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        // Función para copiar email al portapapeles
+                                        navigator.clipboard.writeText(user.email);
+                                        toast({
+                                          title: "✅ Email copiado",
+                                          description: `Email de ${user.username} copiado al portapapeles`,
+                                        });
+                                      }}
+                                      className="cursor-pointer">
+                                      <Copy className="mr-2 h-4 w-4" />
+                                      Copiar email
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuSeparator />
+
+                                    <DropdownMenuItem
+                                      className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => {
+                                        setSelectedUser(user);
+                                        setShowDeleteDialog(true);
+                                      }}>
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Eliminar usuario permanentemente
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Pestaña: Almacenamiento (con StorageIndicator) */}
+          <TabsContent value="storage" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* StorageIndicator para vista general del sistema */}
+              <StorageIndicator 
+                variant="detailed" 
+                showRefresh={true}
+                showBreakdown={true}
+              />
+
+              {/* Vista de usuarios con mayor uso de almacenamiento */}
+              <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/80 to-nuvia-silver/10 shadow-nuvia-medium rounded-2xl">
+                <CardHeader className="border-b border-nuvia-peach/20 bg-gradient-to-r from-nuvia-peach/5 to-nuvia-rose/5 p-4 md:p-6">
+                  <CardTitle className="flex items-center gap-2 text-nuvia-deep font-semibold text-base md:text-lg">
+                    <TrendingUp className="w-5 h-5 text-nuvia-mauve" />
+                    Top Usuarios por Almacenamiento
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 md:p-6">
+                  <div className="space-y-4">
+                    {sortedUsers
+                      .sort((a, b) => b.storageUsed - a.storageUsed)
+                      .slice(0, 5)
+                      .map((user, index) => (
+                        <div key={user.id} className="flex items-center justify-between p-3 rounded-lg border border-nuvia-silver/20 bg-white/50">
+                          <div className="flex items-center gap-3">
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-nuvia-mauve/20 to-nuvia-rose/20 flex items-center justify-center">
+                              <span className="text-sm font-bold text-nuvia-deep">{index + 1}</span>
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm">{user.username}</div>
+                              <div className="text-xs text-nuvia-deep/60">
+                                {user.storageUsed.toFixed(1)} GB / {user.storageLimit} GB
                               </div>
                             </div>
                           </div>
-                        </TableCell>
-
-                        <TableCell className="text-nuvia-deep/70 hidden xl:table-cell">
-                          <div className="space-y-2 min-w-[120px]">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs font-medium">
-                                {user.storageUsed.toFixed(1)} / {user.storageLimit} GB
-                              </span>
-                              <span className="text-xs text-nuvia-deep/60">
-                                {Math.round((user.storageUsed / user.storageLimit) * 100)}%
-                              </span>
+                          <div className="text-right">
+                            <div className="font-bold text-nuvia-deep">
+                              {Math.round((user.storageUsed / user.storageLimit) * 100)}%
                             </div>
-                            <div className="w-full bg-nuvia-silver/20 rounded-full h-2">
+                            <div className="w-32 bg-nuvia-silver/30 rounded-full h-2 mt-1">
                               <div
-                                className="bg-gradient-to-r from-nuvia-mauve to-nuvia-rose h-2 rounded-full transition-all duration-500"
+                                className={`h-2 rounded-full ${
+                                  user.storageUsed / user.storageLimit > 0.8
+                                    ? "bg-red-500"
+                                    : "bg-gradient-to-r from-nuvia-mauve to-nuvia-rose"
+                                }`}
                                 style={{
                                   width: `${Math.min((user.storageUsed / user.storageLimit) * 100, 100)}%`,
                                 }}
                               />
                             </div>
-                            <div className="flex justify-between text-[10px] text-nuvia-deep/50">
-                              <span>Disponible: {(user.storageLimit - user.storageUsed).toFixed(1)} GB</span>
-                              <span
-                                className={`${
-                                  user.storageUsed / user.storageLimit > 0.8 ? "text-red-500 font-medium" : ""
-                                }`}>
-                                {user.storageUsed / user.storageLimit > 0.8 && "⚠️ Límite cercano"}
-                              </span>
-                            </div>
                           </div>
-                        </TableCell>
-
-                        <TableCell className="text-nuvia-deep/70 text-sm hidden xl:table-cell">
-                          <div className="space-y-1">
-                            <div className="font-medium">{formatDate(user.lastLogin)}</div>
-                            <div className="text-xs text-nuvia-deep/50 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {new Date(user.lastLogin).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </div>
-                            <div className="text-[10px] text-nuvia-deep/30">
-                              Desde registro: {formatDate(user.createdAt)}
-                            </div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleViewUser(user)}
-                              className="h-8 w-8 hover:bg-nuvia-peach/20"
-                              title="Ver detalles">
-                              <Eye className="h-4 w-4 text-nuvia-deep/70" />
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-nuvia-peach/20">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-green-500" />
-                                  <span>{user.username}</span>
-                                  {user.role === "admin" && (
-                                    <Badge variant="outline" className="ml-auto text-[10px]">
-                                      Admin
-                                    </Badge>
-                                  )}
-                                </DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem onClick={() => handleViewUser(user)} className="cursor-pointer">
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  <span>Ver detalles completos</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedUser(user);
-                                    setNewStorageLimit(user.storageLimit.toString());
-                                    setShowStorageDialog(true);
-                                  }}
-                                  className="cursor-pointer">
-                                  <HardDrive className="mr-2 h-4 w-4" />
-                                  <div className="flex-1">
-                                    <div>Cambiar almacenamiento</div>
-                                    <div className="text-xs text-nuvia-deep/60">Actual: {user.storageLimit} GB</div>
-                                  </div>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                  onClick={() => handleSuspendUser(user.userId?.toString() || user.id)}
-                                  className={`cursor-pointer ${
-                                    user.status === "active"
-                                      ? "text-amber-600 hover:text-amber-700"
-                                      : "text-green-600 hover:text-green-700"
-                                  }`}>
-                                  <UserX className="mr-2 h-4 w-4" />
-                                  {user.status === "active" ? "Suspender usuario" : "Reactivar usuario"}
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    // Función para copiar email al portapapeles
-                                    navigator.clipboard.writeText(user.email);
-                                    toast({
-                                      title: "✅ Email copiado",
-                                      description: `Email de ${user.username} copiado al portapapeles`,
-                                    });
-                                  }}
-                                  className="cursor-pointer">
-                                  <Copy className="mr-2 h-4 w-4" />
-                                  Copiar email
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem
-                                  className="cursor-pointer text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  onClick={() => {
-                                    setSelectedUser(user);
-                                    setShowDeleteDialog(true);
-                                  }}>
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Eliminar usuario permanentemente
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                        </div>
+                      ))}
+                  </div>
+                  <div className="mt-6 grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-lg border border-green-200 bg-green-50/50">
+                      <div className="text-sm font-medium text-green-800">Total Almacenamiento</div>
+                      <div className="text-2xl font-bold text-green-900">{stats.totalStorage} GB</div>
+                      <div className="text-xs text-green-700">Límite total del sistema</div>
+                    </div>
+                    <div className="p-4 rounded-lg border border-nuvia-mauve/30 bg-nuvia-mauve/10">
+                      <div className="text-sm font-medium text-nuvia-mauve">Almacenamiento Usado</div>
+                      <div className="text-2xl font-bold text-nuvia-mauve">{stats.usedStorage.toFixed(1)} GB</div>
+                      <div className="text-xs text-nuvia-mauve">
+                        {Math.round((stats.usedStorage / stats.totalStorage) * 100)}% del total
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+          </TabsContent>
+        </Tabs>
 
+        {/* Diálogos (se mantienen igual) */}
         {/* User Details Dialog */}
         <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
           <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">

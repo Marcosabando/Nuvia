@@ -74,25 +74,23 @@ export default function Recent() {
       <div className="max-w-7xl mx-auto space-y-8 p-6">
         <div className="space-y-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
-              Recientes
-            </h1>
+            <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">Recientes</h1>
             <p className="text-sm sm:text-base text-white mt-1">
               {recentItems.length} archivos accedidos recientemente
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-            <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+            <Card className="bg-gradient-to-br from-white to-nuvia-mauve/10 border border-nuvia-mauve/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
               <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Última actividad</p>
-                  <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
-                    <Clock className="w-4 h-4 text-white" />
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Hoy</p>
+                  <div className="p-2 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft">
+                    <span className="text-white text-sm">📊</span>
                   </div>
                 </div>
                 <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.lastActivity ? getRelativeTime(stats.lastActivity) : "Sin actividad"}
+                  {stats?.counts.today || 0} archivos
                 </p>
               </CardContent>
             </Card>
@@ -111,20 +109,6 @@ export default function Recent() {
               </CardContent>
             </Card>
 
-            <Card className="bg-gradient-to-br from-white to-nuvia-mauve/10 border border-nuvia-mauve/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-              <CardContent className="p-3 md:p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Hoy</p>
-                  <div className="p-2 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft">
-                    <span className="text-white text-sm">📊</span>
-                  </div>
-                </div>
-                <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.counts.today || 0} archivos
-                </p>
-              </CardContent>
-            </Card>
-
             <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
               <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
@@ -133,8 +117,20 @@ export default function Recent() {
                     <span className="text-white text-sm">⚡</span>
                   </div>
                 </div>
+                <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">{stats?.counts.week || 0} archivos</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+              <CardContent className="p-3 md:p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Última actividad</p>
+                  <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
+                    <Clock className="w-4 h-4 text-white" />
+                  </div>
+                </div>
                 <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.counts.week || 0} archivos
+                  {stats?.lastActivity ? getRelativeTime(stats.lastActivity) : "Sin actividad"}
                 </p>
               </CardContent>
             </Card>
@@ -153,15 +149,14 @@ export default function Recent() {
                     timeFilter === filter
                       ? "gap-2 px-4 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all"
                       : "gap-2 px-4 rounded-xl bg-white/50 border border-nuvia-silver/30 text-nuvia-mauve hover:bg-nuvia-peach/10 transition-all"
-                  }
-                >
+                  }>
                   {filter === "today"
                     ? "Hoy"
                     : filter === "week"
-                    ? "Esta semana"
-                    : filter === "month"
-                    ? "Este mes"
-                    : "Todos"}
+                      ? "Esta semana"
+                      : filter === "month"
+                        ? "Este mes"
+                        : "Todos"}
                 </Button>
               ))}
             </div>
@@ -177,10 +172,9 @@ export default function Recent() {
             <h2 className="text-lg font-semibold mb-4 text-nuvia-deep">Línea de tiempo</h2>
             <div className="space-y-4">
               {recentItems.map((item, index) => (
-                <div 
-                  key={`${item.type}-${item.id}`} 
-                  className="flex gap-4 group hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 p-4 rounded-lg transition-all"
-                >
+                <div
+                  key={`${item.type}-${item.id}`}
+                  className="flex gap-4 group hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 p-4 rounded-lg transition-all">
                   <div className="flex flex-col items-center">
                     <div className="w-3 h-3 rounded-full bg-gradient-to-r from-nuvia-rose to-nuvia-mauve ring-4 ring-nuvia-rose/20" />
                     {index < recentItems.length - 1 && (
@@ -218,10 +212,9 @@ export default function Recent() {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 
+                            <h3
                               className="font-medium text-nuvia-deep hover:text-nuvia-rose cursor-pointer transition-colors break-words"
-                              onClick={() => handleOpen(item.name, item.path)}
-                            >
+                              onClick={() => handleOpen(item.name, item.path)}>
                               {item.title}
                             </h3>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-sm text-nuvia-deep mt-1">
@@ -238,9 +231,7 @@ export default function Recent() {
                           </div>
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 ml-0 sm:ml-16 mt-2 sm:mt-0">
-                          <Badge className={`${getTypeColor(item.type)} text-xs`}>
-                            {item.type}
-                          </Badge>
+                          <Badge className={`${getTypeColor(item.type)} text-xs`}>{item.type}</Badge>
                           <span className="text-xs text-nuvia-deep break-words">
                             Subido {getRelativeTime(item.uploadedAt)}
                           </span>
@@ -248,38 +239,26 @@ export default function Recent() {
                       </div>
 
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-0 sm:ml-4">
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg" 
-                          onClick={() => window.open(getFileUrl(item.path), "_blank")}
-                        >
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg"
+                          onClick={() => window.open(getFileUrl(item.path), "_blank")}>
                           <Download className="w-4 h-4 text-nuvia-mauve" />
                         </Button>
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg"
-                        >
+                        <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg">
                           <Share2 className="w-4 h-4 text-nuvia-mauve" />
                         </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg"
-                            >
+                            <Button size="sm" variant="ghost" className="h-8 w-8 hover:bg-nuvia-peach/20 rounded-lg">
                               <MoreVertical className="w-4 h-4 text-nuvia-mauve" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent 
-                            align="end" 
-                            className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium"
-                          >
-                            <DropdownMenuItem onClick={() => handleOpen(item.name, item.path)}>
-                              Abrir
-                            </DropdownMenuItem>
+                          <DropdownMenuContent
+                            align="end"
+                            className="bg-white/95 backdrop-blur-sm rounded-xl shadow-nuvia-medium">
+                            <DropdownMenuItem onClick={() => handleOpen(item.name, item.path)}>Abrir</DropdownMenuItem>
                             <DropdownMenuItem>Duplicar</DropdownMenuItem>
                             <DropdownMenuItem>Mover a favoritos</DropdownMenuItem>
                             <DropdownMenuItem className="text-red-600">Eliminar</DropdownMenuItem>

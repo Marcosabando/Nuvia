@@ -1,3 +1,8 @@
+// ============================================================================
+// AppSidebar.tsx
+// Sidebar principal de la aplicación con navegación, carpetas y configuración
+// ============================================================================
+
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useLocation, NavLink } from "react-router-dom";
 import {
@@ -14,8 +19,12 @@ import {
   Trash,
   Shield,
 } from "lucide-react";
+
+// Services & Hooks
 import { AuthService } from "@/services/auth.service";
 import { useFolders, Folder } from "@/hooks/useFolders";
+
+// Components
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { EditFolderDialog } from "@/components/EditFolderDialog";
 import {
@@ -51,11 +60,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const MAIN_ITEMS = [
   { title: "Todos los archivos", url: "/home", icon: Images },
   { title: "Favoritos", url: "/favorites", icon: Heart },
   { title: "Recientes", url: "/recent", icon: Clock },
-];
+] as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 type EditFolderPayload = {
   id: number;
@@ -63,15 +80,18 @@ type EditFolderPayload = {
   description?: string | null;
 };
 
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 export function AppSidebar() {
+  // ──────────────────────────────────────────────────────────────────────────
+  // HOOKS
+  // ──────────────────────────────────────────────────────────────────────────
+
   const { state } = useSidebar();
   const location = useLocation();
   const collapsed = state === "collapsed";
-
-  useEffect(() => {
-    const img = new Image();
-    img.src = "/nuvia-color.png";
-  }, []);
 
   const {
     systemFolders,
@@ -83,50 +103,79 @@ export function AppSidebar() {
     updateFolder,
   } = useFolders();
 
-  const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // ──────────────────────────────────────────────────────────────────────────
+  // STATE
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [folderToEdit, setFolderToEdit] = useState<EditFolderPayload | null>(null);
+  const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // REFS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // COMPUTED VALUES
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const isAdmin = useMemo(() => {
+    // Verificar del localStorage
+    const role = localStorage.getItem("userRole");
+
+    // Verificar del usuario almacenado
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        return (
+          user.role === "admin" ||
+          user.role === "Administrador" ||
+          user.userRole === "admin"
+        );
+      } catch (e) {
+        console.error("Error parsing user data:", e);
+      }
+    }
+
+    return role === "admin";
+  }, []);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // CALLBACKS
+  // ──────────────────────────────────────────────────────────────────────────
 
   const safeRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
     }
-    
+
     refreshTimerRef.current = setTimeout(() => {
       refreshFolders();
     }, 300);
   }, [refreshFolders]);
 
-  useEffect(() => {
-    const handleRefresh = () => {
-      safeRefresh();
-    };
+  const isActive = useCallback(
+    (path: string) => location.pathname === path,
+    [location.pathname]
+  );
 
-    window.addEventListener("folders:refresh", handleRefresh);
+  const getNavClasses = useCallback(
+    (path: string) => {
+      const base = "w-full justify-start gap-3 h-10 transition-all duration-200";
+      return isActive(path)
+        ? `${base} bg-primary text-primary-foreground shadow-md`
+        : `${base} hover:bg-orange-100/50 dark:hover:bg-orange-900/30 text-muted-foreground hover:text-foreground`;
+    },
+    [isActive]
+  );
 
-    return () => {
-      window.removeEventListener("folders:refresh", handleRefresh);
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    };
-  }, [safeRefresh]);
-
-  // ✅ ELIMINADO: El listener de location.pathname que causaba el doble conteo
-  // Ya no se refresca automáticamente al cambiar de ruta
-
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [folderToDelete, setFolderToDelete] = useState<number | null>(null);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [folderToEdit, setFolderToEdit] = useState<EditFolderPayload | null>(null);
-
-  const isAdmin = useMemo(() => localStorage.getItem("userRole") === "admin", []);
-  const isActive = (path: string) => location.pathname === path;
-
-  const getNavClasses = (path: string) => {
-    const base = "w-full justify-start gap-3 h-10 transition-all duration-200";
-    return isActive(path)
-      ? `${base} bg-primary text-primary-foreground shadow-md`
-      : `${base} hover:bg-orange-100/50 dark:hover:bg-orange-900/30 text-muted-foreground hover:text-foreground`;
-  };
+  // ──────────────────────────────────────────────────────────────────────────
+  // HANDLERS
+  // ──────────────────────────────────────────────────────────────────────────
 
   const handleCreateFolder = async (data: any) => {
     try {
@@ -143,7 +192,11 @@ export function AppSidebar() {
       setFolderToDelete(null);
     } catch (error: any) {
       console.error("Error al eliminar carpeta:", error);
-      alert(error?.response?.data?.error || error?.message || "Error al eliminar la carpeta");
+      alert(
+        error?.response?.data?.error ||
+          error?.message ||
+          "Error al eliminar la carpeta"
+      );
     }
   };
 
@@ -169,9 +222,45 @@ export function AppSidebar() {
     }
   };
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // EFFECTS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Precargar logo
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/nuvia-color.png";
+  }, []);
+
+  // Listener para refrescar carpetas
+  useEffect(() => {
+    const handleRefresh = () => {
+      safeRefresh();
+    };
+
+    window.addEventListener("folders:refresh", handleRefresh);
+
+    return () => {
+      window.removeEventListener("folders:refresh", handleRefresh);
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, [safeRefresh]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ──────────────────────────────────────────────────────────────────────────
+
   return (
     <>
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* SIDEBAR PRINCIPAL                                                    */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
       <Sidebar className="border-r border-border/50 bg-gradient-to-br from-orange-100/90 to-peach-100/80 dark:from-orange-950/50 dark:to-peach-950/40 backdrop-blur-sm">
+        {/* ──────────────────────────────────────────────────────────────────── */}
+        {/* HEADER - Logo y título                                               */}
+        {/* ──────────────────────────────────────────────────────────────────── */}
         <SidebarHeader className="p-6 border-b border-orange-200/30 dark:border-orange-900/30 bg-gradient-to-r from-orange-50/50 to-transparent dark:from-orange-950/30 dark:to-transparent">
           <div className="flex items-center gap-4">
             <div className="relative group">
@@ -199,7 +288,13 @@ export function AppSidebar() {
           </div>
         </SidebarHeader>
 
+        {/* ──────────────────────────────────────────────────────────────────── */}
+        {/* CONTENT - Navegación y carpetas                                      */}
+        {/* ──────────────────────────────────────────────────────────────────── */}
         <SidebarContent className="p-4">
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* SECCIÓN: Biblioteca (Todos, Favoritos, Recientes)                 */}
+          {/* ────────────────────────────────────────────────────────────────── */}
           <SidebarGroup>
             {!collapsed && (
               <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-2">
@@ -211,9 +306,14 @@ export function AppSidebar() {
                 {MAIN_ITEMS.map((item) => (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild>
-                      <NavLink to={item.url} className={getNavClasses(item.url)}>
+                      <NavLink
+                        to={item.url}
+                        className={getNavClasses(item.url)}
+                      >
                         <item.icon className="w-5 h-5 flex-shrink-0" />
-                        {!collapsed && <span className="flex-1">{item.title}</span>}
+                        {!collapsed && (
+                          <span className="flex-1">{item.title}</span>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -222,6 +322,9 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* SECCIÓN: Carpetas del Sistema                                      */}
+          {/* ────────────────────────────────────────────────────────────────── */}
           {systemFolders.length > 0 && (
             <SidebarGroup>
               {!collapsed && (
@@ -234,13 +337,24 @@ export function AppSidebar() {
                   {systemFolders.map((folder) => (
                     <SidebarMenuItem key={folder.id}>
                       <SidebarMenuButton asChild>
-                        <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
-                          <FolderIcon className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
+                        <NavLink
+                          to={`/folders/${folder.id}`}
+                          className={getNavClasses(`/folders/${folder.id}`)}
+                        >
+                          <FolderIcon
+                            className="w-5 h-5 flex-shrink-0"
+                            style={{ color: folder.color }}
+                          />
                           {!collapsed && (
                             <>
-                              <span className="flex-1 truncate">{folder.name}</span>
+                              <span className="flex-1 truncate">
+                                {folder.name}
+                              </span>
                               {folder.itemCount > 0 && (
-                                <Badge variant="secondary" className="text-xs ml-auto">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs ml-auto"
+                                >
                                   {folder.itemCount}
                                 </Badge>
                               )}
@@ -255,6 +369,9 @@ export function AppSidebar() {
             </SidebarGroup>
           )}
 
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* SECCIÓN: Mis Carpetas (del usuario)                                */}
+          {/* ────────────────────────────────────────────────────────────────── */}
           <SidebarGroup>
             {!collapsed ? (
               <div className="flex items-center justify-between mb-2 px-2">
@@ -267,6 +384,7 @@ export function AppSidebar() {
                   className="h-6 w-6 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
                   onClick={() => setCreateDialogOpen(true)}
                   title="Crear carpeta"
+                  aria-label="Crear nueva carpeta"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -278,6 +396,7 @@ export function AppSidebar() {
                 className="w-full h-10 hover:bg-orange-200/50 dark:hover:bg-orange-900/30 mb-2"
                 onClick={() => setCreateDialogOpen(true)}
                 title="Crear carpeta"
+                aria-label="Crear nueva carpeta"
               >
                 <Plus className="h-5 w-5" />
               </Button>
@@ -286,25 +405,32 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
                 {loading ? (
-                  <div className="text-sm text-muted-foreground px-3 py-2">Cargando...</div>
+                  <div className="text-sm text-muted-foreground px-3 py-2">
+                    Cargando...
+                  </div>
                 ) : userFolders.length === 0 ? (
-                  !collapsed && <div className="text-sm text-muted-foreground px-3 py-2">No hay carpetas</div>
+                  !collapsed && (
+                    <div className="text-sm text-muted-foreground px-3 py-2">
+                      No hay carpetas
+                    </div>
+                  )
                 ) : (
                   userFolders.map((folder) => (
                     <SidebarMenuItem key={folder.id}>
                       <div className="flex items-center gap-1 w-full">
                         <SidebarMenuButton asChild className="flex-1">
-                          <NavLink to={`/folders/${folder.id}`} className={getNavClasses(`/folders/${folder.id}`)}>
-                            <FolderIcon className="w-5 h-5 flex-shrink-0" style={{ color: folder.color }} />
+                          <NavLink
+                            to={`/folders/${folder.id}`}
+                            className={getNavClasses(`/folders/${folder.id}`)}
+                          >
+                            <FolderIcon
+                              className="w-5 h-5 flex-shrink-0"
+                              style={{ color: folder.color }}
+                            />
                             {!collapsed && (
-                              <>
-                                <span className="flex-1 truncate">{folder.name}</span>
-                                {/* {folder.itemCount > 0 && (
-                                  <Badge variant="secondary" className="text-xs ml-auto">
-                                    {folder.itemCount}
-                                  </Badge>
-                                )} */}
-                              </>
+                              <span className="flex-1 truncate">
+                                {folder.name}
+                              </span>
                             )}
                           </NavLink>
                         </SidebarMenuButton>
@@ -317,13 +443,16 @@ export function AppSidebar() {
                                 size="icon"
                                 className="h-8 w-8 flex-shrink-0 hover:bg-orange-200/50 dark:hover:bg-orange-900/30"
                                 onClick={(e) => e.stopPropagation()}
+                                aria-label={`Opciones de ${folder.name}`}
                               >
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
 
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleOpenEdit(folder)}>
+                              <DropdownMenuItem
+                                onClick={() => handleOpenEdit(folder)}
+                              >
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar
                               </DropdownMenuItem>
@@ -348,6 +477,9 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
+          {/* ────────────────────────────────────────────────────────────────── */}
+          {/* SECCIÓN: Papelera                                                  */}
+          {/* ────────────────────────────────────────────────────────────────── */}
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -364,8 +496,12 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
 
+        {/* ──────────────────────────────────────────────────────────────────── */}
+        {/* FOOTER - Admin y configuración                                       */}
+        {/* ──────────────────────────────────────────────────────────────────── */}
         <SidebarFooter className="p-4 border-t border-orange-200/30 dark:border-orange-900/30">
           <SidebarMenu className="space-y-1">
+            {/* Panel de administración (solo para admins) */}
             {isAdmin && (
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
@@ -377,6 +513,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             )}
 
+            {/* Configuración y cerrar sesión */}
             <SidebarMenuItem>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -406,12 +543,18 @@ export function AppSidebar() {
         </SidebarFooter>
       </Sidebar>
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* DIÁLOGOS Y MODALES                                                   */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {/* Diálogo para crear carpeta */}
       <CreateFolderDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onCreateFolder={handleCreateFolder}
       />
 
+      {/* Diálogo para editar carpeta */}
       <EditFolderDialog
         open={editDialogOpen}
         onOpenChange={(open) => {
@@ -422,47 +565,30 @@ export function AppSidebar() {
         onUpdateFolder={handleUpdateFolder}
       />
 
-      <AlertDialog open={folderToDelete !== null} onOpenChange={() => setFolderToDelete(null)}>
-        <AlertDialogContent
-          className="
-            sm:max-w-[440px]
-            border border-gray-200 dark:border-gray-800
-            bg-white dark:bg-gray-900
-            text-gray-900 dark:text-gray-100
-            shadow-2xl
-          "
-        >
+      {/* Diálogo de confirmación para eliminar carpeta */}
+      <AlertDialog
+        open={folderToDelete !== null}
+        onOpenChange={() => setFolderToDelete(null)}
+      >
+        <AlertDialogContent className="sm:max-w-[440px] border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg font-semibold">¿Eliminar carpeta?</AlertDialogTitle>
+            <AlertDialogTitle className="text-lg font-semibold">
+              ¿Eliminar carpeta?
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
-              Esta acción no se puede deshacer. La carpeta se eliminará permanentemente.
+              Esta acción no se puede deshacer. La carpeta se eliminará
+              permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel
-              className="
-                bg-gray-100 hover:bg-gray-200
-                text-gray-800
-                border border-gray-200
-                dark:bg-gray-800 dark:hover:bg-gray-700
-                dark:text-gray-100 dark:border-gray-700
-                transition
-              "
-            >
+            <AlertDialogCancel className="bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-100 dark:border-gray-700 transition">
               Cancelar
             </AlertDialogCancel>
 
             <AlertDialogAction
               onClick={() => folderToDelete && handleDeleteFolder(folderToDelete)}
-              className="
-                bg-red-600 hover:bg-red-700
-                text-white
-                border border-red-600
-                dark:border-red-500
-                transition
-                disabled:opacity-70
-              "
+              className="bg-red-600 hover:bg-red-700 text-white border border-red-600 dark:border-red-500 transition disabled:opacity-70"
             >
               Eliminar
             </AlertDialogAction>
