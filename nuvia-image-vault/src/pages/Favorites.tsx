@@ -140,74 +140,82 @@ const Favorites = () => {
 
         const allFavorites: FavoriteItem[] = [];
 
-        // Procesar imágenes
+        // Procesar imágenes - 🔥 SOLO LAS QUE SON FAVORITAS DE VERDAD
         if (imagesResponse.success && imagesResponse.data) {
-          const images = imagesResponse.data.map(
-            (img: any): FavoriteImage => ({
-              id: img.imageId,
-              imageId: img.imageId,
-              userId: img.userId,
-              title: img.title,
-              originalFilename: img.originalFilename,
-              filename: img.filename,
-              imagePath: img.imagePath,
-              thumbnailPath: img.thumbnailPath,
-              fileSize: img.fileSize,
-              mimeType: img.mimeType,
-              createdAt: img.createdAt,
-              isFavorite: img.isFavorite,
-              type: "image",
-            }),
-          );
+          const images = imagesResponse.data
+            .filter((img: any) => img.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (img: any): FavoriteImage => ({
+                id: img.imageId,
+                imageId: img.imageId,
+                userId: img.userId,
+                title: img.title,
+                originalFilename: img.originalFilename,
+                filename: img.filename,
+                imagePath: img.imagePath,
+                thumbnailPath: img.thumbnailPath,
+                fileSize: img.fileSize,
+                mimeType: img.mimeType,
+                createdAt: img.createdAt,
+                isFavorite: img.isFavorite,
+                type: "image",
+              })
+            );
           allFavorites.push(...images);
         }
 
-        // Procesar videos
+        // Procesar videos - 🔥 SOLO LOS QUE SON FAVORITOS DE VERDAD
         if (videosResponse.success && videosResponse.data) {
-          const videos = videosResponse.data.map(
-            (vid: any): FavoriteVideo => ({
-              id: vid.videoId,
-              videoId: vid.videoId,
-              userId: vid.userId,
-              title: vid.title,
-              originalFilename: vid.originalFilename,
-              filename: vid.filename,
-              videoPath: vid.videoPath,
-              thumbnailPath: vid.thumbnailPath,
-              fileSize: vid.fileSize,
-              mimeType: vid.mimeType,
-              createdAt: vid.createdAt,
-              isFavorite: vid.isFavorite,
-              type: "video",
-            }),
-          );
+          const videos = videosResponse.data
+            .filter((vid: any) => vid.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (vid: any): FavoriteVideo => ({
+                id: vid.videoId,
+                videoId: vid.videoId,
+                userId: vid.userId,
+                title: vid.title,
+                originalFilename: vid.originalFilename,
+                filename: vid.filename,
+                videoPath: vid.videoPath,
+                thumbnailPath: vid.thumbnailPath,
+                fileSize: vid.fileSize,
+                mimeType: vid.mimeType,
+                createdAt: vid.createdAt,
+                isFavorite: vid.isFavorite,
+                type: "video",
+              })
+            );
           allFavorites.push(...videos);
         }
 
-        // Procesar documentos
+        // Procesar documentos - 🔥 SOLO LOS QUE SON FAVORITOS DE VERDAD
         if (documentsResponse.success && documentsResponse.data) {
-          const documents = documentsResponse.data.map(
-            (doc: any): FavoriteDocument => ({
-              id: doc.documentId,
-              documentId: doc.documentId,
-              userId: doc.userId,
-              title: doc.title,
-              originalFilename: doc.originalFilename,
-              filename: doc.filename,
-              documentPath: doc.documentPath,
-              thumbnailPath: doc.thumbnailPath,
-              fileSize: doc.fileSize,
-              mimeType: doc.mimeType,
-              createdAt: doc.createdAt,
-              isFavorite: doc.isFavorite,
-              type: "document",
-            }),
-          );
+          const documents = documentsResponse.data
+            .filter((doc: any) => doc.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (doc: any): FavoriteDocument => ({
+                id: doc.documentId,
+                documentId: doc.documentId,
+                userId: doc.userId,
+                title: doc.title,
+                originalFilename: doc.originalFilename,
+                filename: doc.filename,
+                documentPath: doc.documentPath,
+                thumbnailPath: doc.thumbnailPath,
+                fileSize: doc.fileSize,
+                mimeType: doc.mimeType,
+                createdAt: doc.createdAt,
+                isFavorite: doc.isFavorite,
+                type: "document",
+              })
+            );
           allFavorites.push(...documents);
         }
 
         // Ordenar por fecha de creación (más reciente primero)
-        allFavorites.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        allFavorites.sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
 
         setFavorites(allFavorites);
       } catch (err: any) {
@@ -240,16 +248,21 @@ const Favorites = () => {
           break;
       }
 
-      // ✅ CAMBIO: usar PATCH en lugar de POST
       const response = await apiService.patch(endpoint);
 
       if (response.success) {
         console.log("✅ Favorito removido:", response.data);
 
-        setFavorites((prev) => prev.filter((fav) => !(fav.type === item.type && fav.id === item.id)));
+        setFavorites((prev) =>
+          prev.filter((fav) => !(fav.type === item.type && fav.id === item.id))
+        );
 
         // Cerrar modal si el archivo seleccionado fue removido
-        if (selectedFile && selectedFile.id === item.id && selectedFile.type === item.type) {
+        if (
+          selectedFile &&
+          selectedFile.id === item.id &&
+          selectedFile.type === item.type
+        ) {
           setIsModalOpen(false);
           setSelectedFile(null);
         }
@@ -259,44 +272,47 @@ const Favorites = () => {
     }
   };
 
-const clearAllFavorites = async () => {
-  try {
-    if (!confirm("¿Estás seguro de que quieres quitar todos los archivos de favoritos?")) {
-      return;
-    }
-
-    console.log("🧹 Limpiando todos los favoritos...");
-    
-    const promises = favorites.map(fav => {
-      let endpoint = '';
-      
-      switch (fav.type) {
-        case 'image':
-          endpoint = `/images/${fav.id}/favorite`;
-          break;
-        case 'video':
-          endpoint = `/videos/${fav.id}/favorite`;
-          break;
-        case 'document':
-          endpoint = `/documents/${fav.id}/favorite`;
-          break;
+  const clearAllFavorites = async () => {
+    try {
+      if (
+        !confirm(
+          "¿Estás seguro de que quieres quitar todos los archivos de favoritos?"
+        )
+      ) {
+        return;
       }
-      
-      // ✅ CAMBIO: usar PATCH en lugar de POST
-      return apiService.patch(endpoint);
-    });
-    
-    await Promise.all(promises);
-    
-    setFavorites([]);
-    setIsModalOpen(false);
-    setSelectedFile(null);
-    
-    console.log("✅ Todos los favoritos removidos");
-  } catch (error) {
-    console.error("❌ Error limpiando favoritos:", error);
-  }
-};
+
+      console.log("🧹 Limpiando todos los favoritos...");
+
+      const promises = favorites.map((fav) => {
+        let endpoint = "";
+
+        switch (fav.type) {
+          case "image":
+            endpoint = `/images/${fav.id}/favorite`;
+            break;
+          case "video":
+            endpoint = `/videos/${fav.id}/favorite`;
+            break;
+          case "document":
+            endpoint = `/documents/${fav.id}/favorite`;
+            break;
+        }
+
+        return apiService.patch(endpoint);
+      });
+
+      await Promise.all(promises);
+
+      setFavorites([]);
+      setIsModalOpen(false);
+      setSelectedFile(null);
+
+      console.log("✅ Todos los favoritos removidos");
+    } catch (error) {
+      console.error("❌ Error limpiando favoritos:", error);
+    }
+  };
 
   const handleFileClick = (file: FavoriteItem) => {
     setSelectedFile(file);
@@ -340,7 +356,9 @@ const clearAllFavorites = async () => {
   };
 
   const filteredFavorites = favorites.filter((favorite) => {
-    const matchesSearch = favorite.originalFilename.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = favorite.originalFilename
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
     const fileType = favorite.type;
     const matchesFilter = filterType === "all" || fileType === filterType;
     return matchesSearch && matchesFilter;
@@ -396,8 +414,12 @@ const clearAllFavorites = async () => {
           {/* Header Section */}
           <div className="space-y-4">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">Favoritos</h1>
-              <p className="text-sm sm:text-base text-white/80 mt-1">Tus archivos más importantes y destacados</p>
+              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
+                Favoritos
+              </h1>
+              <p className="text-sm sm:text-base text-white/80 mt-1">
+                Tus archivos más importantes y destacados
+              </p>
             </div>
 
             {/* Stats Cards */}
@@ -512,7 +534,8 @@ const clearAllFavorites = async () => {
                     return (
                       <div
                         key={`${favorite.type}-${favorite.id}`}
-                        className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all">
+                        className="p-4 hover:bg-gradient-to-r hover:from-nuvia-peach/10 hover:to-nuvia-rose/10 transition-all"
+                      >
                         <div className="grid grid-cols-12 gap-4 items-center">
                           {/* Archivo */}
                           <div className="col-span-12 sm:col-span-6 lg:col-span-5">
@@ -558,7 +581,8 @@ const clearAllFavorites = async () => {
                               <div className="min-w-0 flex-1">
                                 <p
                                   className="font-medium text-nuvia-deep truncate hover:text-nuvia-rose cursor-pointer transition-colors"
-                                  onClick={() => handleFileClick(favorite)}>
+                                  onClick={() => handleFileClick(favorite)}
+                                >
                                   {favorite.originalFilename}
                                 </p>
                                 <div className="sm:hidden flex flex-wrap gap-2 mt-1">
@@ -566,9 +590,13 @@ const clearAllFavorites = async () => {
                                     {formatFileSize(favorite.fileSize)}
                                   </span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
-                                  <span className="text-xs text-nuvia-mauve/70 capitalize">{favorite.type}</span>
+                                  <span className="text-xs text-nuvia-mauve/70 capitalize">
+                                    {favorite.type}
+                                  </span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
-                                  <span className="text-xs text-nuvia-mauve/70">{formatDate(favorite.createdAt)}</span>
+                                  <span className="text-xs text-nuvia-mauve/70">
+                                    {formatDate(favorite.createdAt)}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -596,7 +624,8 @@ const clearAllFavorites = async () => {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve">
+                                  className="h-8 w-8 hover:bg-nuvia-peach/20 text-nuvia-mauve"
+                                >
                                   <MoreVertical className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -611,7 +640,8 @@ const clearAllFavorites = async () => {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-red-600"
-                                  onClick={() => removeFromFavorites(favorite)}>
+                                  onClick={() => removeFromFavorites(favorite)}
+                                >
                                   <Trash2 className="w-4 h-4 mr-2" />
                                   Quitar de favoritos
                                 </DropdownMenuItem>
@@ -632,8 +662,12 @@ const clearAllFavorites = async () => {
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
               <CardContent className="py-16 text-center">
                 <Heart className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
-                <p className="text-nuvia-deep text-lg font-semibold mb-2">No tienes archivos en favoritos</p>
-                <p className="text-nuvia-mauve/70">Marca algunos archivos como favoritos para verlos aquí</p>
+                <p className="text-nuvia-deep text-lg font-semibold mb-2">
+                  No tienes archivos en favoritos
+                </p>
+                <p className="text-nuvia-mauve/70">
+                  Marca algunos archivos como favoritos para verlos aquí
+                </p>
               </CardContent>
             </Card>
           )}
@@ -642,8 +676,12 @@ const clearAllFavorites = async () => {
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
               <CardContent className="py-16 text-center">
                 <Search className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
-                <p className="text-nuvia-deep text-lg font-semibold mb-2">No se encontraron favoritos</p>
-                <p className="text-nuvia-mauve/70">Intenta con otros términos de búsqueda o filtros</p>
+                <p className="text-nuvia-deep text-lg font-semibold mb-2">
+                  No se encontraron favoritos
+                </p>
+                <p className="text-nuvia-mauve/70">
+                  Intenta con otros términos de búsqueda o filtros
+                </p>
               </CardContent>
             </Card>
           )}
@@ -656,10 +694,13 @@ const clearAllFavorites = async () => {
           <div
             className={`bg-gradient-to-br from-nuvia-mauve to-nuvia-rose rounded-2xl shadow-nuvia-strong ${
               selectedFile.type === "document" ? "max-w-4xl" : "max-w-2xl"
-            } w-full max-h-[90vh] overflow-hidden border border-white/20`}>
+            } w-full max-h-[90vh] overflow-hidden border border-white/20`}
+          >
             {/* Header del modal - Fondo morado con texto blanco */}
             <div className="flex items-center justify-between p-6 border-b border-white/20">
-              <h3 className="text-lg font-semibold text-white truncate">{selectedFile.originalFilename}</h3>
+              <h3 className="text-lg font-semibold text-white truncate">
+                {selectedFile.originalFilename}
+              </h3>
               <div className="flex items-center gap-2">
                 {selectedFile.type === "document" && (
                   <Button
@@ -669,7 +710,8 @@ const clearAllFavorites = async () => {
                       openDocumentFullscreen(selectedFile as FavoriteDocument);
                     }}
                     className="h-8 w-8 hover:bg-white/20 text-white"
-                    title="Ver en pantalla completa">
+                    title="Ver en pantalla completa"
+                  >
                     <Maximize2 className="w-4 h-4" />
                   </Button>
                 )}
@@ -680,7 +722,8 @@ const clearAllFavorites = async () => {
                     setIsModalOpen(false);
                     setSelectedFile(null);
                   }}
-                  className="h-8 w-8 hover:bg-white/20 text-white">
+                  className="h-8 w-8 hover:bg-white/20 text-white"
+                >
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -738,14 +781,16 @@ const clearAllFavorites = async () => {
                 <div className="flex gap-3 w-full justify-center">
                   <Button
                     onClick={() => handleDownload(selectedFile)}
-                    className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow">
+                    className="gap-2 bg-gradient-to-r from-nuvia-mauve to-nuvia-rose text-white shadow-nuvia-strong hover:shadow-nuvia-glow"
+                  >
                     <Download className="w-4 h-4" />
                     Descargar
                   </Button>
                   <Button
                     onClick={() => removeFromFavorites(selectedFile)}
                     variant="outline"
-                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700">
+                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
                     <Trash2 className="w-4 h-4" />
                     Quitar de favoritos
                   </Button>
@@ -768,7 +813,8 @@ const clearAllFavorites = async () => {
             <div className="flex items-center gap-2">
               <Button
                 onClick={() => handleDownload(fullscreenDocument)}
-                className="gap-2 bg-white/20 hover:bg-white/30 text-white">
+                className="gap-2 bg-white/20 hover:bg-white/30 text-white"
+              >
                 <Download className="w-4 h-4" />
                 Descargar
               </Button>
@@ -776,7 +822,8 @@ const clearAllFavorites = async () => {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsFullscreenOpen(false)}
-                className="h-8 w-8 hover:bg-white/20 text-white">
+                className="h-8 w-8 hover:bg-white/20 text-white"
+              >
                 <X className="w-4 h-4" />
               </Button>
             </div>
