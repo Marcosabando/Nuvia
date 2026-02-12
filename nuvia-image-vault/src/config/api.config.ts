@@ -1,4 +1,4 @@
-// src/config/api.config.ts - VERSIÓN CORREGIDA
+// src/config/api.config.ts - VERSIÓN ÚNICA Y CORREGIDA
 export const API_CONFIG = {
   // Base URL desde variable de entorno
   BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
