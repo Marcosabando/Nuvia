@@ -1,6 +1,6 @@
 // src/services/UserService.ts - MIGRADO A PRISMA
 import { Request, Response } from "express";
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import bcrypt from "bcrypt";
 import { generateToken, generateRefreshToken } from "@src/config/jwt";
 
@@ -26,8 +26,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const prisma = new PrismaClient();
-
+    // NO crees una nueva instancia, usa la importada
     const existingUser = await prisma.users.findFirst({
       where: {
         OR: [
@@ -38,7 +37,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     });
 
     if (existingUser) {
-      await prisma.$disconnect();
+      // NO desconectes - usa la conexión compartida
       res.status(409).json({
         success: false,
         error: "Email or username already registered"
@@ -57,7 +56,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
         isActive: true,
         emailVerified: false,
         storageUsed: 0,
-        storageLimit: 5368709120,
+        storageLimit: 5368709120, // 5GB en bytes
         imageCount: 0,
         videoCount: 0,
         documentCount: 0,
@@ -76,8 +75,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     const token = generateToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    await prisma.$disconnect();
-
+    // NO desconectes - mantén la conexión para reutilizarla
     res.status(201).json({
       success: true,
       message: "User registered successfully",
@@ -115,8 +113,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const prisma = new PrismaClient();
-
+    // Usa la instancia importada de prisma
     const user = await prisma.users.findFirst({
       where: {
         OR: [
@@ -127,7 +124,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     });
 
     if (!user) {
-      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Invalid credentials"
@@ -136,7 +132,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!user.isActive) {
-      await prisma.$disconnect();
       res.status(403).json({
         success: false,
         error: "Account deactivated"
@@ -147,7 +142,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
-      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Invalid credentials"
@@ -169,8 +163,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     const token = generateToken(payload);
     const refreshToken = generateRefreshToken(payload);
-
-    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -199,8 +191,6 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
   try {
     const userId = req.user!.userId;
 
-    const prisma = new PrismaClient();
-
     const user = await prisma.users.findUnique({
       where: { userId: userId },
       select: {
@@ -218,7 +208,6 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     });
 
     if (!user) {
-      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -257,8 +246,6 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       })
     ]);
 
-    await prisma.$disconnect();
-
     const responseData = {
       userId: user.userId,
       username: user.username,
@@ -294,8 +281,6 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
   try {
     const userId = req.user!.userId;
 
-    const prisma = new PrismaClient();
-
     const user = await prisma.users.findUnique({
       where: { userId: userId },
       select: {
@@ -314,7 +299,6 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
     });
 
     if (!user) {
-      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -322,54 +306,52 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const images = await prisma.images.findMany({
-      where: {
-        userId: userId,
-        deletedAt: null
-      },
-      select: {
-        imageId: true,
-        originalFilename: true,
-        filename: true,
-        fileSize: true,
-        mimeType: true,
-        width: true,
-        height: true,
-        uploadDate: true,
-        takenDate: true,
-        cameraInfo: true,
-        location: true
-      },
-      orderBy: {
-        uploadDate: 'desc'
-      }
-    });
-
-    const videos = await prisma.videos.findMany({
-      where: {
-        userId: userId,
-        deletedAt: null
-      },
-      select: {
-        videoId: true,
-        originalFilename: true,
-        filename: true,
-        fileSize: true,
-        mimeType: true,
-        duration: true,
-        width: true,
-        height: true,
-        uploadDate: true,
-        recordedDate: true,
-        cameraInfo: true,
-        location: true
-      },
-      orderBy: {
-        uploadDate: 'desc'
-      }
-    });
-
-    const [imagesStats, videosStats, todayImagesStats, todayVideosStats] = await Promise.all([
+    const [images, videos, imagesStats, videosStats, todayImagesStats, todayVideosStats] = await Promise.all([
+      prisma.images.findMany({
+        where: {
+          userId: userId,
+          deletedAt: null
+        },
+        select: {
+          imageId: true,
+          originalFilename: true,
+          filename: true,
+          fileSize: true,
+          mimeType: true,
+          width: true,
+          height: true,
+          uploadDate: true,
+          takenDate: true,
+          cameraInfo: true,
+          location: true
+        },
+        orderBy: {
+          uploadDate: 'desc'
+        }
+      }),
+      prisma.videos.findMany({
+        where: {
+          userId: userId,
+          deletedAt: null
+        },
+        select: {
+          videoId: true,
+          originalFilename: true,
+          filename: true,
+          fileSize: true,
+          mimeType: true,
+          duration: true,
+          width: true,
+          height: true,
+          uploadDate: true,
+          recordedDate: true,
+          cameraInfo: true,
+          location: true
+        },
+        orderBy: {
+          uploadDate: 'desc'
+        }
+      }),
       prisma.images.aggregate({
         where: {
           userId: userId,
@@ -411,8 +393,6 @@ export const getAllUserData = async (req: Request, res: Response): Promise<void>
         }
       })
     ]);
-
-    await prisma.$disconnect();
 
     const totalImages = imagesStats._count.imageId || 0;
     const totalVideos = videosStats._count.videoId || 0;
@@ -478,8 +458,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const prisma = new PrismaClient();
-
     if (email || username) {
       const existingUser = await prisma.users.findFirst({
         where: {
@@ -494,7 +472,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       });
 
       if (existingUser) {
-        await prisma.$disconnect();
         res.status(409).json({
           success: false,
           error: "Email or username already in use"
@@ -511,8 +488,6 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       where: { userId: userId },
       data: updateData
     });
-
-    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -547,15 +522,11 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const prisma = new PrismaClient();
-
     const user = await prisma.users.findUnique({
-      where: { userId: userId },
-      select: { password: true }
+      where: { userId: userId }
     });
 
     if (!user) {
-      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -566,7 +537,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     const isValid = await bcrypt.compare(currentPassword, user.password);
 
     if (!isValid) {
-      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Current password is incorrect"
@@ -580,8 +550,6 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
       where: { userId: userId },
       data: { password: newPasswordHash }
     });
-
-    await prisma.$disconnect();
 
     res.json({
       success: true,
@@ -608,15 +576,11 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const prisma = new PrismaClient();
-
     const user = await prisma.users.findUnique({
-      where: { userId: userId },
-      select: { password: true }
+      where: { userId: userId }
     });
 
     if (!user) {
-      await prisma.$disconnect();
       res.status(404).json({
         success: false,
         error: "User not found"
@@ -627,7 +591,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
-      await prisma.$disconnect();
       res.status(401).json({
         success: false,
         error: "Incorrect password"
@@ -638,8 +601,6 @@ export const deleteAccount = async (req: Request, res: Response): Promise<void> 
     await prisma.users.delete({
       where: { userId: userId }
     });
-
-    await prisma.$disconnect();
 
     res.json({
       success: true,

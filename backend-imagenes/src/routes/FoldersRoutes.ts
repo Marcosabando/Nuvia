@@ -28,6 +28,16 @@ router.post("/", FolderService.createFolder);
 router.patch("/:id", FolderService.updateFolder);
 
 // ============================================================================
+// AÑADIR DOCUMENTOS A CARPETA
+// ============================================================================
+router.post('/:id/documents', FolderService.addDocumentToFolder);
+
+// ============================================================================
+// 🗑️ ELIMINAR DOCUMENTO DE CARPETA
+// ============================================================================
+router.delete('/:id/documents/:documentId', FolderService.removeDocumentFromFolder);
+
+// ============================================================================
 // 🗑️ ELIMINAR CARPETA
 // ============================================================================
 router.delete("/:id", FolderService.deleteFolder);

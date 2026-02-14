@@ -128,65 +128,71 @@ const Favorites = () => {
         const allFavorites: FavoriteItem[] = [];
 
         if (imagesResponse.success && imagesResponse.data) {
-          const images = imagesResponse.data.map(
-            (img: any): FavoriteImage => ({
-              id: img.imageId,
-              imageId: img.imageId,
-              userId: img.userId,
-              title: img.title,
-              originalFilename: img.originalFilename,
-              filename: img.filename,
-              imagePath: img.imagePath,
-              thumbnailPath: img.thumbnailPath,
-              fileSize: img.fileSize,
-              mimeType: img.mimeType,
-              createdAt: img.createdAt,
-              isFavorite: img.isFavorite,
-              type: "image",
-            }),
-          );
+          const images = imagesResponse.data
+            .filter((img: any) => img.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (img: any): FavoriteImage => ({
+                id: img.imageId,
+                imageId: img.imageId,
+                userId: img.userId,
+                title: img.title,
+                originalFilename: img.originalFilename,
+                filename: img.filename,
+                imagePath: img.imagePath,
+                thumbnailPath: img.thumbnailPath,
+                fileSize: img.fileSize,
+                mimeType: img.mimeType,
+                createdAt: img.createdAt,
+                isFavorite: img.isFavorite,
+                type: "image",
+              })
+            );
           allFavorites.push(...images);
         }
 
         if (videosResponse.success && videosResponse.data) {
-          const videos = videosResponse.data.map(
-            (vid: any): FavoriteVideo => ({
-              id: vid.videoId,
-              videoId: vid.videoId,
-              userId: vid.userId,
-              title: vid.title,
-              originalFilename: vid.originalFilename,
-              filename: vid.filename,
-              videoPath: vid.videoPath,
-              thumbnailPath: vid.thumbnailPath,
-              fileSize: vid.fileSize,
-              mimeType: vid.mimeType,
-              createdAt: vid.createdAt,
-              isFavorite: vid.isFavorite,
-              type: "video",
-            }),
-          );
+          const videos = videosResponse.data
+            .filter((vid: any) => vid.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (vid: any): FavoriteVideo => ({
+                id: vid.videoId,
+                videoId: vid.videoId,
+                userId: vid.userId,
+                title: vid.title,
+                originalFilename: vid.originalFilename,
+                filename: vid.filename,
+                videoPath: vid.videoPath,
+                thumbnailPath: vid.thumbnailPath,
+                fileSize: vid.fileSize,
+                mimeType: vid.mimeType,
+                createdAt: vid.createdAt,
+                isFavorite: vid.isFavorite,
+                type: "video",
+              })
+            );
           allFavorites.push(...videos);
         }
 
         if (documentsResponse.success && documentsResponse.data) {
-          const documents = documentsResponse.data.map(
-            (doc: any): FavoriteDocument => ({
-              id: doc.documentId,
-              documentId: doc.documentId,
-              userId: doc.userId,
-              title: doc.title,
-              originalFilename: doc.originalFilename,
-              filename: doc.filename,
-              documentPath: doc.documentPath,
-              thumbnailPath: doc.thumbnailPath,
-              fileSize: doc.fileSize,
-              mimeType: doc.mimeType,
-              createdAt: doc.createdAt,
-              isFavorite: doc.isFavorite,
-              type: "document",
-            }),
-          );
+          const documents = documentsResponse.data
+            .filter((doc: any) => doc.isFavorite === true)  // ← FILTRO CLAVE
+            .map(
+              (doc: any): FavoriteDocument => ({
+                id: doc.documentId,
+                documentId: doc.documentId,
+                userId: doc.userId,
+                title: doc.title,
+                originalFilename: doc.originalFilename,
+                filename: doc.filename,
+                documentPath: doc.documentPath,
+                thumbnailPath: doc.thumbnailPath,
+                fileSize: doc.fileSize,
+                mimeType: doc.mimeType,
+                createdAt: doc.createdAt,
+                isFavorite: doc.isFavorite,
+                type: "document",
+              })
+            );
           allFavorites.push(...documents);
         }
 
@@ -360,8 +366,12 @@ const Favorites = () => {
           {/* Header Section */}
           <div className="space-y-4">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">Favoritos</h1>
-              <p className="text-sm sm:text-base text-white/80 mt-1">Tus archivos más importantes y destacados</p>
+              <h1 className="text-3xl sm:text-4xl font-display font-bold text-white">
+                Favoritos
+              </h1>
+              <p className="text-sm sm:text-base text-white/80 mt-1">
+                Tus archivos más importantes y destacados
+              </p>
             </div>
 
             {/* Stats Cards */}
@@ -369,7 +379,7 @@ const Favorites = () => {
               <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm text-nuvia-deep/70 font-medium">Total Favoritos</p>
+                    <p className="text-sm text-nuvia-deep/70 font-medium">Favoritos</p>
                     <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
                       <Heart className="w-4 h-4 text-white" />
                     </div>
@@ -523,9 +533,13 @@ const Favorites = () => {
                                 <div className="sm:hidden flex flex-wrap gap-2 mt-1">
                                   <span className="text-xs text-nuvia-mauve/70">{formatFileSize(favorite.fileSize)}</span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
-                                  <span className="text-xs text-nuvia-mauve/70 capitalize">{favorite.type}</span>
+                                  <span className="text-xs text-nuvia-mauve/70 capitalize">
+                                    {favorite.type}
+                                  </span>
                                   <span className="text-xs text-nuvia-mauve/70">•</span>
-                                  <span className="text-xs text-nuvia-mauve/70">{formatDate(favorite.createdAt)}</span>
+                                  <span className="text-xs text-nuvia-mauve/70">
+                                    {formatDate(favorite.createdAt)}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -588,8 +602,12 @@ const Favorites = () => {
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
               <CardContent className="py-16 text-center">
                 <Heart className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
-                <p className="text-nuvia-deep text-lg font-semibold mb-2">No tienes archivos en favoritos</p>
-                <p className="text-nuvia-mauve/70">Marca algunos archivos como favoritos para verlos aquí</p>
+                <p className="text-nuvia-deep text-lg font-semibold mb-2">
+                  No tienes archivos en favoritos
+                </p>
+                <p className="text-nuvia-mauve/70">
+                  Marca algunos archivos como favoritos para verlos aquí
+                </p>
               </CardContent>
             </Card>
           )}
@@ -598,8 +616,12 @@ const Favorites = () => {
             <Card className="border-nuvia-silver/30 backdrop-blur-sm bg-gradient-to-br from-white/90 to-nuvia-silver/10 shadow-nuvia-soft rounded-2xl">
               <CardContent className="py-16 text-center">
                 <Search className="w-16 h-16 mx-auto text-nuvia-mauve/60 mb-4" />
-                <p className="text-nuvia-deep text-lg font-semibold mb-2">No se encontraron favoritos</p>
-                <p className="text-nuvia-mauve/70">Intenta con otros términos de búsqueda o filtros</p>
+                <p className="text-nuvia-deep text-lg font-semibold mb-2">
+                  No se encontraron favoritos
+                </p>
+                <p className="text-nuvia-mauve/70">
+                  Intenta con otros términos de búsqueda o filtros
+                </p>
               </CardContent>
             </Card>
           )}
@@ -615,7 +637,9 @@ const Favorites = () => {
             } w-full max-h-[90vh] overflow-hidden border border-white/20`}
           >
             <div className="flex items-center justify-between p-6 border-b border-white/20">
-              <h3 className="text-lg font-semibold text-white truncate">{selectedFile.originalFilename}</h3>
+              <h3 className="text-lg font-semibold text-white truncate">
+                {selectedFile.originalFilename}
+              </h3>
               <div className="flex items-center gap-2">
                 {selectedFile.type === "document" && (
                   <Button

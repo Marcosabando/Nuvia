@@ -19,14 +19,18 @@ const safeBigIntToNumber = (value: bigint | null | undefined): number => {
 
 export const getUserProfile = async (req: Request, res: Response) => {
   try {
+     console.log('🔍 [ProfileService.getUserProfile] Iniciando');
     const userId = req.user?.userId;
     
     if (!userId) {
+      console.log('❌ [ProfileService.getUserProfile] No hay userId en el request');
       return res.status(401).json({
         success: false,
         error: 'Usuario no autenticado'
       });
     }
+
+    console.log(`🔍 [ProfileService.getUserProfile] Buscando usuario con ID: ${userId}`);
 
     const user = await prisma.users.findFirst({
       where: {
@@ -52,6 +56,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
     });
 
     if (!user) {
+      console.log(`❌ [ProfileService.getUserProfile] Usuario con ID ${userId} no encontrado`);
       return res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'

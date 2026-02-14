@@ -117,7 +117,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With, X-File-Size, X-File-Name, Accept, Origin, Cache-Control"
+      "Content-Type, Authorization, X-Requested-With, X-File-Size, X-File-Name, Accept, Origin, Cache-Control",
     );
     res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Type, Content-Disposition, Authorization");
     res.setHeader("Access-Control-Max-Age", "86400");
@@ -228,61 +228,59 @@ app.use(
       }
       return compression.filter(req, res);
     },
-  })
+  }),
 );
 
 /******************************************************
  * ⚡ RATE LIMITING - CONFIGURACIÓN CORREGIDA
  ******************************************************/
 const apiLimiter = rateLimit({
-  windowMs: parseInt(ENV.RateLimitWindowMs || "60000"),       // 1 minuto por defecto
-  max: parseInt(ENV.RateLimitMaxRequests || "500"),          // 500 requests por minuto
-  message: { 
+  windowMs: parseInt(ENV.RateLimitWindowMs || "60000"), // 1 minuto por defecto
+  max: parseInt(ENV.RateLimitMaxRequests || "500"), // 500 requests por minuto
+  message: {
     success: false,
-    error: "Demasiadas peticiones desde esta IP. Intenta de nuevo en un momento." 
+    error: "Demasiadas peticiones desde esta IP. Intenta de nuevo en un momento.",
   },
   skip: (req: Request) => {
     const fullPath = req.originalUrl;
     const method = req.method;
-    
-    // 1. Excluir TODAS las rutas de upload (en cualquier parte de la URL)
-    if (fullPath.toLowerCase().includes('upload')) {
+
+    if (fullPath.toLowerCase().includes("upload")) {
       console.log(`📤 [RATE LIMIT SKIP] Upload route: ${fullPath}`);
       return true;
     }
-    
-    // 2. Excluir rutas de streaming de videos y documentos
-    if (fullPath.includes('/api/video/') || fullPath.includes('/api/documents/')) {
+
+    if (fullPath.includes("/api/video/") || fullPath.includes("/api/documents/")) {
       return true;
     }
-    
-    // 3. Excluir rutas de folders que manejan contenido (IMPORTANTE!)
-    // Estas son las que te estaban causando el 429
-    const isFolderContentRoute = 
-      (fullPath.includes('/folders/') && fullPath.includes('/images')) ||
-      (fullPath.includes('/folders/') && fullPath.includes('/videos'));
-    
-    if (isFolderContentRoute && (method === 'POST' || method === 'DELETE')) {
+
+    const isFolderContentRoute =
+      (fullPath.includes("/folders/") && fullPath.includes("/images")) ||
+      (fullPath.includes("/folders/") && fullPath.includes("/videos"));
+
+    if (isFolderContentRoute && (method === "POST" || method === "DELETE")) {
       console.log(`📁 [RATE LIMIT SKIP] Folder content route: ${fullPath}`);
       return true;
     }
-    
-    // 4. Excluir creación de carpetas durante uploads
-    if (fullPath.includes('/api/folders') && method === 'POST') {
+
+    if (fullPath.includes("/api/folders") && method === "POST") {
       console.log(`📁 [RATE LIMIT SKIP] Folder creation: ${fullPath}`);
       return true;
     }
-    
-    // 5. Excluir health checks y system routes
-    if (fullPath === '/health' || fullPath === '/api/system/disks') {
+
+    if (fullPath === "/health" || fullPath === "/api/system/disks") {
       return true;
     }
-    
-    // Solo mostrar logs en desarrollo
+
+    if (fullPath.includes("/api/profile") || fullPath.includes("/api/stats")) {
+      console.log(`👤 [RATE LIMIT SKIP] Profile/Stats route: ${fullPath}`);
+      return true;
+    }
+
     if (ENV.NodeEnv === NodeEnvs.Dev) {
       console.log(`⏱️ [RATE LIMIT ACTIVE] ${method} ${fullPath}`);
     }
-    
+
     return false;
   },
   standardHeaders: true,
@@ -302,7 +300,7 @@ if (ENV.NodeEnv === NodeEnvs.Dev) {
           req.path.includes("/uploads/") || req.path.includes("/api/video/") || req.path.includes("/api/documents/")
         );
       },
-    })
+    }),
   );
 }
 
@@ -330,7 +328,7 @@ if (ENV.NodeEnv === NodeEnvs.Production && !process.env.DISABLE_HELMET) {
         },
       },
       crossOriginEmbedderPolicy: false,
-    })
+    }),
   );
 }
 
@@ -372,7 +370,7 @@ app.use(
         res.setHeader("Cache-Control", "public, max-age=3600");
       }
     },
-  })
+  }),
 );
 
 /******************************************************
@@ -530,6 +528,7 @@ app.use("/api/stats", statsRouter);
 app.use("/api/trash", trashRouter);
 app.use("/api/recents", recentsRouter);
 app.use("/api/folders", foldersRouter);
+// app.use('/api', foldersRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/documents", documentsRouter);

@@ -81,16 +81,16 @@ export default function Recent() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-            <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+            <Card className="bg-gradient-to-br from-white to-nuvia-mauve/10 border border-nuvia-mauve/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
               <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Última actividad</p>
-                  <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
-                    <Clock className="w-4 h-4 text-white" />
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Hoy</p>
+                  <div className="p-2 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft">
+                    <span className="text-white text-sm">📊</span>
                   </div>
                 </div>
                 <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.lastActivity ? getRelativeTime(stats.lastActivity) : "Sin actividad"}
+                  {stats?.counts.today || 0} archivos
                 </p>
               </CardContent>
             </Card>
@@ -109,20 +109,6 @@ export default function Recent() {
               </CardContent>
             </Card>
 
-            <Card className="bg-gradient-to-br from-white to-nuvia-mauve/10 border border-nuvia-mauve/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
-              <CardContent className="p-3 md:p-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Hoy</p>
-                  <div className="p-2 rounded-lg bg-gradient-nuvia-ethereal shadow-nuvia-soft">
-                    <span className="text-white text-sm">📊</span>
-                  </div>
-                </div>
-                <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.counts.today || 0} archivos
-                </p>
-              </CardContent>
-            </Card>
-
             <Card className="bg-gradient-to-br from-white to-nuvia-deep/10 border border-nuvia-deep/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
               <CardContent className="p-3 md:p-4">
                 <div className="flex items-center justify-between">
@@ -131,8 +117,20 @@ export default function Recent() {
                     <span className="text-white text-sm">⚡</span>
                   </div>
                 </div>
+                <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">{stats?.counts.week || 0} archivos</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-white to-nuvia-peach/10 border border-nuvia-peach/30 shadow-nuvia-soft rounded-2xl hover:shadow-nuvia-glow transition-all">
+              <CardContent className="p-3 md:p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs md:text-sm text-nuvia-deep/70 font-medium">Última actividad</p>
+                  <div className="p-2 rounded-lg bg-gradient-nuvia-royal shadow-nuvia-soft">
+                    <Clock className="w-4 h-4 text-white" />
+                  </div>
+                </div>
                 <p className="text-xl md:text-2xl font-bold mt-2 text-nuvia-deep">
-                  {stats?.counts.week || 0} archivos
+                  {stats?.lastActivity ? getRelativeTime(stats.lastActivity) : "Sin actividad"}
                 </p>
               </CardContent>
             </Card>
@@ -158,10 +156,10 @@ export default function Recent() {
                   {filter === "today"
                     ? "Hoy"
                     : filter === "week"
-                    ? "Esta semana"
-                    : filter === "month"
-                    ? "Este mes"
-                    : "Todos"}
+                      ? "Esta semana"
+                      : filter === "month"
+                        ? "Este mes"
+                        : "Todos"}
                 </Button>
               ))}
             </div>
@@ -221,8 +219,7 @@ export default function Recent() {
                           <div className="flex-1 min-w-0">
                             <h3
                               className="font-medium text-nuvia-deep hover:text-nuvia-rose cursor-pointer transition-colors break-words"
-                              onClick={() => handleOpen(item.name, item.path)}
-                            >
+                              onClick={() => handleOpen(item.name, item.path)}>
                               {item.title}
                             </h3>
 
