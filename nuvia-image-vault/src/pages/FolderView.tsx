@@ -92,12 +92,12 @@ const FolderView = () => {
     if (bytes === null || bytes === undefined || isNaN(bytes) || bytes === 0) {
       return "0 Bytes";
     }
-    
+
     const k = 1024;
     const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     const value = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
-    
+
     return `${value} ${sizes[i]}`;
   };
 
@@ -382,6 +382,12 @@ const FolderView = () => {
     return FileText;
   };
 
+  // ✅ NUEVO: estilo con CONTRASTE usando SOLO colores existentes del CSS
+  // Base: nuvia-deep (más contrastado)
+  // Hover: nuvia-peach (naranjita)
+  const nuviaContrastBtn =
+    "gap-2 !bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all";
+
   if (loading) {
     return (
       <AppLayout>
@@ -406,7 +412,9 @@ const FolderView = () => {
               <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
               <h2 className="text-2xl font-bold mb-2 text-white">Error al cargar carpeta</h2>
               <p className="text-red-500 mb-4">{error || "Carpeta no encontrada"}</p>
-              <Button onClick={() => navigate("/home")} variant="outline">
+
+              {/* ✅ BOTÓN VOLVER (ERROR STATE) */}
+              <Button onClick={() => navigate("/home")} variant="outline" className={nuviaContrastBtn}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Volver al inicio
               </Button>
@@ -444,14 +452,20 @@ const FolderView = () => {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={() => navigate("/home")} variant="outline" className="gap-2">
+            {/* ✅ VOLVER (AHORA CONTRASTE: deep + hover peach) */}
+            <Button onClick={() => navigate("/home")} variant="outline" className={nuviaContrastBtn}>
               <ArrowLeft className="w-4 h-4" />
               Volver
             </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-10 w-10">
+                {/* ✅ ENGRANAJE (AHORA CONTRASTE: deep + hover peach) */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={`h-10 w-10 !bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all`}
+                >
                   <Settings className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -530,7 +544,8 @@ const FolderView = () => {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button className="gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-nuvia-rose via-nuvia-peach to-nuvia-mauve text-white shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] transition-all">
+              {/* ✅ FILTRAR (AHORA CONTRASTE: deep + hover peach) */}
+              <Button variant="outline" className={nuviaContrastBtn}>
                 <Filter className="w-5 h-5" />
                 Filtrar
               </Button>
