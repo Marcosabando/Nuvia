@@ -313,6 +313,8 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
     return (
       <div className="text-center py-8">
         <p className="text-red-500 mb-4">{error}</p>
+
+        {/* ✅ Reintentar (lo dejo como estaba, si también lo quieres estilo deep/peach dímelo) */}
         <Button onClick={refetch} variant="outline">
           <RefreshCw className="w-4 h-4 mr-2" />
           Reintentar
@@ -337,13 +339,18 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
               />
             </div>
 
+            {/* ✅ FAVORITOS (SIN RING) */}
             <Button
-              variant={favoritesOnly ? "default" : "outline"}
+              variant="outline"
               size="sm"
               onClick={() => setFavoritesOnly(!favoritesOnly)}
-              className={`whitespace-nowrap border-nuvia-silver/30 ${
-                favoritesOnly ? "bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white" : "text-white"
-              }`}
+              className={
+                favoritesOnly
+                  // Activo: naranjita fijo
+                  ? "whitespace-nowrap gap-2 !bg-nuvia-peach !text-nuvia-deep border border-nuvia-peach/40 shadow-nuvia-strong hover:!bg-nuvia-peach-hover transition-all"
+                  // Inactivo: deep + white + hover peach
+                  : "whitespace-nowrap gap-2 !bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all"
+              }
             >
               <Filter className="w-4 h-4 mr-2" />
               Favoritos
@@ -351,12 +358,13 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
           </div>
 
           <div className="flex items-center gap-2">
+            {/* ✅ REFRESH (SIN RING) */}
             <Button
               variant="outline"
               size="icon"
               onClick={refetch}
               disabled={loading}
-              className="border-nuvia-silver/30 text-white"
+              className="!bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
@@ -529,10 +537,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                               if (!fid || isNaN(fid)) return null;
                                               return (
                                                 <DropdownMenuItem key={fid} onClick={() => addToFolder(image.id, fid)}>
-                                                  <div
-                                                    className="w-3 h-3 rounded mr-2"
-                                                    style={{ backgroundColor: folder.color }}
-                                                  />
+                                                  <div className="w-3 h-3 rounded mr-2" style={{ backgroundColor: folder.color }} />
                                                   <span className="truncate flex-1">{folder.name}</span>
                                                   {folder.itemCount > 0 && (
                                                     <span className="text-xs text-gray-500 ml-2">({folder.itemCount})</span>
@@ -550,9 +555,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                       Descargar
                                     </DropdownMenuItem>
 
-                                    <DropdownMenuItem
-                                      onClick={() => setRenameModal({ open: true, image, name: displayName })}
-                                    >
+                                    <DropdownMenuItem onClick={() => setRenameModal({ open: true, image, name: displayName })}>
                                       <Edit3 className="w-4 h-4 mr-2" />
                                       Renombrar
                                     </DropdownMenuItem>
@@ -648,11 +651,7 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
                                 <MoreHorizontal className="w-3 h-3" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              className="w-48 z-[9999]"
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <DropdownMenuContent align="end" className="w-48 z-[9999]" onClick={(e) => e.stopPropagation()}>
                               <DropdownMenuItem onClick={() => toggleFavorite(image.id)}>
                                 <Heart className={`w-4 h-4 mr-2 ${image.isFavorite ? "text-red-500 fill-current" : ""}`} />
                                 {image.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"}
@@ -794,8 +793,6 @@ export default function ImageGallery({ viewMode = "grid" }: { viewMode?: "grid" 
               </div>
 
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
-                {/* ❗️Aquí quitamos el botón X extra.
-                    Shadcn DialogContent ya trae su propia X por defecto (la de la esquina). */}
                 <div className="p-4 border-b border-nuvia-silver/30 sticky top-0 bg-white/95 z-10">
                   <div className="min-w-0 pr-2">
                     <h3 className="text-lg font-semibold text-nuvia-deep break-words">

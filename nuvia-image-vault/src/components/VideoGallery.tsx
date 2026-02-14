@@ -348,9 +348,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               <p className="text-red-600 text-xs font-medium">Error en video</p>
             </div>
             <div className="p-3 bg-white border-t border-nuvia-silver/30">
-              <p className="text-sm font-medium truncate text-nuvia-deep mb-1">
-                {displayName}
-              </p>
+              <p className="text-sm font-medium truncate text-nuvia-deep mb-1">{displayName}</p>
               <div className="text-xs text-nuvia-deep/60">
                 <p>Formato no disponible</p>
               </div>
@@ -392,11 +390,7 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                 showControls ? "bg-black/30" : "bg-black/0 group-hover:bg-black/20"
               }`}
             >
-              <div
-                className={`transform transition-all duration-300 ${
-                  showControls ? "scale-110" : "scale-100"
-                }`}
-              >
+              <div className={`transform transition-all duration-300 ${showControls ? "scale-110" : "scale-100"}`}>
                 <Play className="w-10 h-10 text-white fill-current opacity-90" />
               </div>
             </div>
@@ -503,7 +497,9 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
                   </DropdownMenuItem>
 
                   <DropdownMenuItem
-                    onClick={() => setRenameModal({ open: true, video, name: video.title || video.originalFilename || "" })}
+                    onClick={() =>
+                      setRenameModal({ open: true, video, name: video.title || video.originalFilename || "" })
+                    }
                   >
                     <Edit3 className="w-4 h-4 mr-2" />
                     Renombrar
@@ -559,13 +555,16 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
             />
           </div>
 
+          {/* ✅ FAVORITOS (igual que ImageGallery, sin ring) */}
           <Button
-            variant={favoritesOnly ? "default" : "outline"}
+            variant="outline"
             size="sm"
             onClick={() => setFavoritesOnly(!favoritesOnly)}
-            className={`whitespace-nowrap border-nuvia-silver/30 ${
-              favoritesOnly ? "bg-nuvia-mauve hover:bg-nuvia-mauve/90 text-white" : "bg-white/50"
-            }`}
+            className={
+              favoritesOnly
+                ? "whitespace-nowrap gap-2 !bg-nuvia-peach !text-nuvia-deep border border-nuvia-peach/40 shadow-nuvia-strong hover:!bg-nuvia-peach-hover transition-all"
+                : "whitespace-nowrap gap-2 !bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all"
+            }
           >
             <Filter className="w-4 h-4 mr-2" />
             Favoritos
@@ -573,7 +572,14 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={refetch} disabled={loading} className="border-nuvia-silver/30">
+          {/* ✅ REFRESH (igual que ImageGallery, sin ring) */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={refetch}
+            disabled={loading}
+            className="!bg-nuvia-deep !text-white border border-white/10 shadow-nuvia-soft hover:!bg-nuvia-peach hover:!text-nuvia-deep hover:border-nuvia-peach/40 transition-all"
+          >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
 
@@ -727,14 +733,15 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
               </div>
 
               <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-nuvia-silver/30 bg-white/95 backdrop-blur-sm">
-                {/* ✅ Quitada la X extra: DialogContent ya trae su propia X */}
                 <div className="p-4 border-b border-nuvia-silver/30 sticky top-0 bg-white/95 z-10">
                   <div className="flex-1 min-w-0 pr-2">
                     <h3 className="text-lg font-semibold text-nuvia-deep break-words">
                       {selectedVideo.title || selectedVideo.originalFilename}
                     </h3>
                     {selectedVideo.title && selectedVideo.title !== selectedVideo.originalFilename && (
-                      <p className="text-sm text-nuvia-deep/60 mt-1 break-words">Original: {selectedVideo.originalFilename}</p>
+                      <p className="text-sm text-nuvia-deep/60 mt-1 break-words">
+                        Original: {selectedVideo.originalFilename}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -892,7 +899,10 @@ export const VideoGallery = ({ viewMode = "grid" }: VideoGalleryProps) => {
       </Dialog>
 
       {/* Modal Renombrar */}
-      <Dialog open={renameModal.open} onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}>
+      <Dialog
+        open={renameModal.open}
+        onOpenChange={(open) => !open && setRenameModal({ open: false, video: null, name: "" })}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
