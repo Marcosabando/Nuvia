@@ -1,8 +1,8 @@
-// 👇 CÓDIGO COMPLETO YA MODIFICADO
 import React, { useState } from "react";
-import { Lock, Mail, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Lock, Mail, Eye, EyeOff, ArrowRight, CheckCircle, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { API_CONFIG, buildUrl } from "../config/api.config";
+import { buildUrl } from "../config/api.config";
+import { useToast } from "@/hooks/use-toast";
 
 interface LoginFormProps {
   openRegister: () => void;
@@ -10,6 +10,8 @@ interface LoginFormProps {
 
 export default function LoginForm({ openRegister }: LoginFormProps) {
   const navigate = useNavigate();
+  const { toast } = useToast();
+
   const [formData, setFormData] = useState({
     identifier: "",
     password: "",
@@ -53,14 +55,32 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
           localStorage.removeItem("rememberMe");
         }
 
+        // ✅ Toast de éxito (morado estilo UploadZone)
+        toast({
+          title: "✅ Sesión iniciada",
+          description: "Has iniciado sesión correctamente",
+        });
+
         // Redirigir al home
         navigate("/home");
       } else {
-        alert(data.error || "Credenciales inválidas");
+        const msg = data.error || "Credenciales inválidas";
+
+        // ✅ Toast de error (en vez de alert, estilo consistente)
+        toast({
+          title: "❌ Error de autenticación",
+          description: msg,
+          variant: "destructive",
+        });
       }
     } catch (error: any) {
       console.error("Error en login:", error);
-      alert("Error de autenticación: " + error.message);
+
+      toast({
+        title: "❌ Error de autenticación",
+        description: "Error de autenticación: " + (error?.message || "Error desconocido"),
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +95,10 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
   };
 
   const handleForgotPassword = () => {
-    alert("Función de recuperación de contraseña no implementada");
+    toast({
+      title: "ℹ️ Recuperación de contraseña",
+      description: "Función de recuperación de contraseña no implementada",
+    });
   };
 
   return (
@@ -93,7 +116,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
       <form className="space-y-6" onSubmit={handleSubmit}>
         {/* Email */}
         <div className="space-y-3">
-          <label htmlFor="email" className="text-sm font-semibold block text-nuvia-deep">
+          <label htmlFor="identifier" className="text-sm font-semibold block text-nuvia-deep">
             Correo electrónico o nombre de usuario
           </label>
           <div className="relative group">
@@ -107,7 +130,7 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
               placeholder="Correo o nombre de usuario"
               required
               disabled={isLoading}
-              className="w-full pl-12 pr-4 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl ..."
+              className="w-full pl-12 pr-4 py-4 border-2 border-nuvia-peach/30 bg-gradient-to-r from-white to-nuvia-peach/5 text-nuvia-deep rounded-xl focus:outline-none focus:border-nuvia-rose focus:shadow-nuvia-accent transition-all duration-300 hover:border-nuvia-mauve/50 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -134,7 +157,8 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               disabled={isLoading}
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300 disabled:opacity-50">
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-nuvia-mauve hover:text-nuvia-rose hover:bg-nuvia-peach/10 rounded-lg p-1 transition-all duration-300 disabled:opacity-50"
+            >
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
@@ -159,7 +183,8 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
             type="button"
             onClick={handleForgotPassword}
             disabled={isLoading}
-            className="text-sm font-medium text-nuvia-rose hover:text-nuvia-peach hover:underline transition-all duration-300 disabled:opacity-50">
+            className="text-sm font-medium text-nuvia-rose hover:text-nuvia-peach hover:underline transition-all duration-300 disabled:opacity-50"
+          >
             ¿Olvidaste tu contraseña?
           </button>
         </div>
@@ -168,7 +193,8 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+          className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+        >
           {isLoading ? (
             <div className="flex items-center space-x-3">
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -189,7 +215,8 @@ export default function LoginForm({ openRegister }: LoginFormProps) {
             type="button"
             onClick={openRegister}
             disabled={isLoading}
-            className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+            className="w-full text-white font-bold py-4 px-6 rounded-xl bg-gradient-to-r from-nuvia-deep via-nuvia-mauve to-nuvia-rose hover:from-nuvia-mauve hover:via-nuvia-rose hover:to-nuvia-peach transition-all duration-500 flex items-center justify-center space-x-3 shadow-nuvia-strong hover:shadow-nuvia-glow transform hover:scale-[1.02] group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          >
             Crear cuenta nueva
           </button>
         </div>

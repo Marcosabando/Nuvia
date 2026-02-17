@@ -292,7 +292,7 @@ export function TopBar({ onUploadComplete }: { onUploadComplete?: () => void }) 
               <DropdownMenuItem
                 onClick={() => {
                   localStorage.clear();
-                  navigate("/login");
+                  navigate("/");
                 }}
                 className="text-red-600 focus:text-red-600"
               >
